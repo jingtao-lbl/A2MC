@@ -2,7 +2,7 @@
 name: onboard-session
 visibility: public
 category: meta
-description: Cold-start runbook — orient at the start of a session or after a context reset/compaction. Use when a session begins, resumes, or is compacted (especially if the SessionStart snapshot shows in-flight work or pending proposals), or when the user says "catch up", "where did we leave off", "onboard", "what's the current state". Reads the latest handoff, re-reads CLAUDE.md, checks live HPC processes + run state, and hands off to arm-hpc-monitoring / curate-knowledge as needed.
+description: Cold-start runbook — orient at the start of a session or after a context reset/compaction. Use when a session begins, resumes, or is compacted (especially if the SessionStart snapshot shows in-flight work or pending proposals), or when the user says "catch up", "where did we leave off", "onboard", "what's the current state". Reads the latest calibration log and the case's offline workflow state, re-reads CLAUDE.md, checks live HPC processes + run state, and hands off to arm-hpc-monitoring / curate-knowledge as needed.
 modes:
   requires_fates: false
   nutrient_pathway: any
@@ -12,76 +12,38 @@ modes:
 
 # Onboard a Session (cold-start runbook)
 
-The interactive agent often starts cold — a fresh session, a resume, or after
-compaction. This skill is the checklist that restores full context and catches in-flight
-work before you act. It **pairs with the G2 `SessionStart` hook**
-(`.claude/hooks/session-start.py`), which already surfaces a snapshot (branch,
-uncommitted count, latest handoff, pending-knowledge count, live processes). The hook
-gives the *data*; this skill is what you *do* with it.
+The interactive agent often starts cold — a fresh session, a resume, or after compaction. This skill is the checklist that restores full context and catches in-flight work before you act. It **pairs with the G2 `SessionStart` hook** (`.claude/hooks/session-start.py`), which already surfaces a snapshot (branch, uncommitted count, latest handoff, pending-knowledge count, live processes). The hook gives the *data*; this skill is what you *do* with it.
 
-> Run this whenever the snapshot shows in-flight work, after a compaction, or when the
-> user asks you to catch up. Skip the HPC steps if no ensemble is active.
+> Run this whenever the snapshot shows in-flight work, after a compaction, or when the user asks you to catch up. Skip the HPC steps if no ensemble is active.
 
 ## Step 1 — restore context
 
-1. **Re-read `CLAUDE.md`** (root). Required after compaction (memory:
-   `re-read CLAUDE.md after compaction`) — it carries the branch banner (this branch is
-   intentionally pinned to api-31-0, disconnected from `main`) and the operating rules.
-   Don't reconstruct the knowledge system from `AGENTS.md`'s one-liner — `CLAUDE.md`
-   §"RAG/GraphRAG System" (+ `docs/a2mc_reference/rag_reference.md`) carries the full
-   hybrid vector + two-layer knowledge graph + curated YAML detail.
-2. **Read the latest handoff / session log** — the SessionStart snapshot names it; else
-   `ls -t memory/dev_logs/*Handoff* memory/dev_logs/*Session_Log* | head`. Read it for
-   open threads + "state at session end". Skim the 2–3 most recent dated dev_logs for
-   anything still mid-flight.
-3. **Verify branch:** `git branch --show-current` → confirm it matches your intended working branch (`main` or your feature branch).
-   `git status -s` for uncommitted work the previous session left.
-4. **Read the offline resume brain** (docs/31/34) — the SessionStart snapshot prints an `Offline state:`
-   line from the highest-round `workflow_state_offline_r{RR}.json` (position + `next_action` + any
-   `phase6_decision` binding target). If a round is mid-refinement, note the **binding target + next
-   targeted experiment** — that is the objective to drive toward (`feedback_performance_experiment_is_the_objective`),
-   not the loudest crash thread. **Validate it:** the SessionStart hook flags a corrupt state
-   (`⚠ Offline state INVALID …`); if it does, run `python3 tools/check_workflow_state_offline.py` and fix
-   the invariants before driving.
-5. **Recall the operating discipline.** Skim `AGENTS.md` §"Offline-Agent Operating Discipline" — the four
-   recurring failure modes (verify before claiming · track the objective · drive, don't wait · trust the
-   skill) and the gate enforcing each. Lead memory: `feedback_offline_agent_operating_discipline`.
+1. **Re-read `CLAUDE.md`** (root). Required after compaction (memory: `re-read CLAUDE.md after compaction`) — it carries the branch banner and the operating rules. Don't reconstruct the knowledge system from `AGENTS.md`'s one-liner — `CLAUDE.md` §"RAG/GraphRAG System" (+ `docs/a2mc_reference/rag_reference.md`) carries the full hybrid vector + two-layer knowledge graph + curated YAML detail.
+2. **Verify branch:** `git branch --show-current` → confirm it matches your intended working branch (`main` or your feature branch). `git status -s` for uncommitted work the previous session left.
+3. **Read the latest calibration log and round/cycle report** — the SessionStart snapshot lists the most recently CHANGED of both across the clone's cases; else, newest-touched first: `ls -t use_cases/*/memory/logs/*.md use_cases/*/reports/*/*.md | grep -v README | head`. Narrow to the active case once you know it. A round or cycle **report** is usually the fastest single read for where the calibration campaign stands; the **phase logs** carry the finer-grained trail, so read the report first and the logs for detail. Read for open threads and the `## Next` section; skim the 2–3 most recent for anything still mid-flight. Sorting by mtime rather than by the filename date is deliberate: a file revised today still surfaces even if its stem is older.
+4. **Read the offline resume brain** (docs/31/34) — the SessionStart snapshot prints an `Offline state:` line from the highest-round `workflow_state_offline_r{RR}.json` (position + `next_action` + any `phase6_decision` binding target). If a round is mid-refinement, note the **binding target + next targeted experiment** — that is the objective to drive toward (`feedback_performance_experiment_is_the_objective`), not the loudest crash thread. **Validate it:** the SessionStart hook flags a corrupt state (`⚠ Offline state INVALID …`); if it does, run `python3 tools/check_workflow_state_offline.py` and fix the invariants before driving.
+5. **Recall the operating discipline.** Skim `AGENTS.md` §"Offline-Agent Operating Discipline" — the four recurring failure modes (verify before claiming · track the objective · drive, don't wait) and the gate enforcing each. Lead memory: `feedback_offline_agent_operating_discipline`.
 
 ## Step 2 — check for in-flight HPC work
 
 ```bash
 ps -ef | grep "$USER" | grep -E 'monitor|submit|extract' | grep -v grep
 ```
-- **If an auto-monitor / submitter / extractor is running** → an ensemble is in flight.
-  Invoke the **`arm-hpc-monitoring`** skill (CLAUDE.md Rule 6) to arm `Monitor` on the
-  live logs with the event + error filters. Read the active handoff log for the
-  round-scoped event names/filenames.
-- **Check run state** if a round is active: `squeue -u "$USER"` (or the round's job
-  prefix) and, for completion, `tools/diagnose_ensemble_status.py`. Re-derive counts from
-  live `squeue` + disk NC counts + the most recent dated log (memory:
-  `verify run-state before quoting`) — don't trust stale numbers in an old log.
+- **If an auto-monitor / submitter / extractor is running** → an ensemble is in flight. Invoke the **`arm-hpc-monitoring`** skill (CLAUDE.md Rule 6) to arm `Monitor` on the live logs with the event + error filters. Read the active handoff log for the round-scoped event names/filenames.
+- **Check run state** if a round is active: `squeue -u "$USER"` (or the round's job prefix) and, for completion, `tools/diagnose_ensemble_status.py`. Re-derive counts from live `squeue` + disk NC counts + the most recent dated log (memory: `verify run-state before quoting`) — don't trust stale numbers in an old log.
 
 ## Step 3 — check pending knowledge
 
-If the snapshot reports pending proposals (or
-`use_cases/*/memory/gained_knowledge/auto_discovered_pending.json` has open items),
-invoke the **`curate-knowledge`** skill to review + promote/discard them. Online runs
-stage proposals here; they only enter the curated KB when a human-in-the-loop session
-curates them.
+If the snapshot reports pending proposals (or `use_cases/*/memory/gained_knowledge/auto_discovered_pending.json` has open items), invoke the **`curate-knowledge`** skill to review + promote/discard them. Online runs stage proposals here; they only enter the curated KB when a human-in-the-loop session curates them.
 
 ## Step 4 — drive the next action, don't wait (docs/35)
 
-Close the onboarding by **advancing the workflow**, not with a bare readout. When the offline resume
-brain (`workflow_state_offline`) holds an active goal + a `next_action` (the SessionStart `► NEXT:`
-line), **execute it** — you are the superset of the autonomous orchestrator, which drives itself with no
-per-phase prompt ([[feedback_offline_agent_drives_the_workflow]]). Lead with: *"Round R{N}, phase X;
-next action = `<...>`. Proceeding with it — will pause only at a fork or hard stop."* Then do it.
+Close the onboarding by **advancing the workflow**, not with a bare readout. When the offline resume brain (`workflow_state_offline`) holds an active goal + a `next_action` (the SessionStart `► NEXT:` line), **execute it** — you are the superset of the autonomous orchestrator, which drives itself with no per-phase prompt ([[feedback_offline_agent_drives_the_workflow]]). Lead with: *"Round R{N}, phase X; next action = `<...>`. Proceeding with it — will pause only at a fork or hard stop."* Then do it.
 
 > **To drive the *whole* calibration to the goal (not just this one action), hand off to `calibration-goal`** — the run-to-convergence driver that loops this drive-the-next-action over the full 7-phase workflow (via `resolve_next_action`) until Phase-7 CONVERGED or a loop limit, pausing only at the gates. `onboard-session` orients + resumes; `calibration-goal` drives.
 
 **DRIVE (just do it — surface results, not permission requests):**
-- arm/re-arm monitors; extract completed data; run a **planned** experiment; skip-test on existing data;
-  advance to the next phase per the 7-phase workflow + iteration rules; regenerate a plot; commit routine work.
+- arm/re-arm monitors; extract completed data; run a **planned** experiment; skip-test on existing data; advance to the next phase per the 7-phase workflow + iteration rules; regenerate a plot; commit routine work.
 
 **PAUSE for the human (a genuine fork or hard stop):**
 - a **Phase-6** converge / redesign / **stop→model-dev** decision (the `docs/34` objective gate — a hard pause);
@@ -92,19 +54,14 @@ next action = `<...>`. Proceeding with it — will pause only at a fork or hard 
 Everything not in the PAUSE list, you drive. Surface **proposals + results**, not "shall I…?" for mechanical steps.
 
 ## What this skill does NOT do
-- It does not replace the **G2 SessionStart hook** (that runs automatically and surfaces
-  the snapshot); this skill acts on it.
+- It does not replace the **G2 SessionStart hook** (that runs automatically and surfaces the snapshot); this skill acts on it.
 - It does not arm monitors itself — it delegates to `arm-hpc-monitoring`.
-- For the full monitoring reactions, invoke the `arm-hpc-monitoring` skill
-  (required when an ensemble is in flight, per CLAUDE.md Rule 6).
+- For the full monitoring reactions, invoke the `arm-hpc-monitoring` skill (required when an ensemble is in flight, per CLAUDE.md Rule 6).
 
 ## Changelog
 
+- 2026-08-28: **Step 1 leads with the CALIBRATION log, not the framework-dev handoff.** The old point 2 sent every reader to `memory/dev_logs*/*Handoff*` — a stream that exists only in a clone carrying framework-development history, and one a public clone never has. The calibration log under `use_cases/<Model>_<Case>/memory/logs/` is the application-agent record and is present in every clone, so it is now the primary read; the dev-log lines stay in the SessionStart hook, where their globs simply return nothing when the directory is absent. Selection is by **mtime**, so a log revised today surfaces even if its filename date is older. `.claude/hooks/session-start.py` gained the matching `Recent calibration logs` block, which makes this step's "the snapshot lists them" clause true rather than aspirational. Also dropped a stale banner claim (this branch is not pinned to api-31-0 — that is the demo branch) and resequenced the five points, which had run 1, 2, 3, 5, 6.
 - 2026-07-15: Step 1 point 4 now validates the offline state (`tools/check_workflow_state_offline.py`); the SessionStart hook flags a corrupt state loudly. Ported from demo `d3cbbf5` (offline-workflow enforcement sweep).
-- 2026-07-06: Point Step 1 at `AGENTS.md` §"Offline-Agent Operating Discipline" — the consolidated
-  4-failure-mode stance (docs/36, reinforcement #4); lead memory `feedback_offline_agent_operating_discipline`.
-- 2026-07-06: Cold-start **driving** reinforcement (docs/35, FM-3): Step 1 reads the offline resume brain
-  (`workflow_state_offline` + `phase6_decision`); Step 4 reframed from "summarize + propose" to "**drive the
-  next action, don't wait**" with an explicit DRIVE-vs-PAUSE list. Pairs with the SessionStart `► NEXT:` line
-  + AGENTS.md core rule 10. See `feedback_offline_agent_drives_the_workflow`.
+- 2026-07-06: Point Step 1 at `AGENTS.md` §"Offline-Agent Operating Discipline" — the consolidated 4-failure-mode stance (docs/36, reinforcement #4); lead memory `feedback_offline_agent_operating_discipline`.
+- 2026-07-06: Cold-start **driving** reinforcement (docs/35, FM-3): Step 1 reads the offline resume brain (`workflow_state_offline` + `phase6_decision`); Step 4 reframed from "summarize + propose" to "**drive the next action, don't wait**" with an explicit DRIVE-vs-PAUSE list. Pairs with the SessionStart `► NEXT:` line + AGENTS.md core rule 10. See `feedback_offline_agent_drives_the_workflow`.
 - 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

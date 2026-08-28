@@ -157,3 +157,25 @@ def test_a_grandfathered_log_is_STILL_checked_for_dead_pointers(tmp_path):
                 figures=["plot.png"], extras=["NOTES.md", "make.py", "d.csv"])
     errs, _ = cole.check_log(log, REPO)
     assert any("dead artifact pointer" in e for e in errs)
+
+
+# --- a target that resolves to nothing must FAIL, not pass (2026-08-28) -------------------
+# A mistyped path returned exit 0 with the same green tick as a clean run, differing only in a
+# "0 offline log(s) scanned" line the reader has no reason to distrust. Found when the 3-hourly
+# self-review ran `--site PFLOTRAN_miniLEO` (missing the `use_cases/` prefix) and quoted the
+# resulting tick as evidence the case's logs were clean.
+
+def test_a_nonexistent_target_FAILS(tmp_path):
+    """The whole point is to gate; a typo must not read as a clean gate."""
+    assert cole.main(["--site", str(tmp_path / "no_such_case")]) == 1
+
+
+def test_a_nonexistent_bare_path_FAILS(tmp_path):
+    assert cole.main([str(tmp_path / "nope.md")]) == 1
+
+
+def test_an_existing_dir_with_no_matching_logs_still_PASSES(tmp_path):
+    """A young case legitimately has no offline logs yet -- that is empty, not broken."""
+    d = tmp_path / "use_cases" / "New_Case" / "memory" / "logs"
+    d.mkdir(parents=True)
+    assert cole.main(["--site", str(tmp_path / "use_cases" / "New_Case")]) == 0

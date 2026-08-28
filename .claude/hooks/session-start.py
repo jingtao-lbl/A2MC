@@ -2,10 +2,16 @@
 """SessionStart hook — surface a brief operating snapshot into context at session start
 (also runs on resume / after compaction). Best-effort and read-only; never blocks.
 
-Shows: current branch, uncommitted-file count, the latest Handoff/Session dev_log plus
-the latest dev_log and ana_log of ANY type (both logging streams), the count of pending
-knowledge proposals awaiting curation, and any live long-running A2MC processes. Helps the
-cold-start runbook (CLAUDE.md Rule 6) fire reliably.
+Shows: current branch, uncommitted-file count, the most recently changed CALIBRATION
+logs and round/cycle reports across the clone's cases, the latest Handoff/Session dev_log plus the latest dev_log
+and ana_log of ANY type, the count of pending knowledge proposals awaiting curation, and
+any live long-running A2MC processes. Helps the cold-start runbook (CLAUDE.md Rule 6) fire
+reliably.
+
+The calibration line is the one present in EVERY clone. The three dev_log/ana_log lines
+describe framework-development history, which a clone without any `memory/dev_logs*/` simply
+does not have -- their globs return nothing and the lines are omitted, so no reader is
+pointed at a directory they lack.
 """
 import sys, os, re, json, glob, subprocess
 
@@ -202,20 +208,52 @@ def main():
     n_dirty = len([l for l in dirty.splitlines() if l.strip()])
     lines.append("Uncommitted files: %d" % n_dirty)
 
-    def latest(pattern):
+    def latest(pattern, with_stream=False):
         # Newest by the YYYYMMDDx naming convention (basename lexical sort).
         hits = glob.glob(pattern)
-        return os.path.basename(sorted(hits, key=os.path.basename)[-1]) if hits else ""
+        if not hits:
+            return ""
+        best = sorted(hits, key=os.path.basename)[-1]
+        if with_stream:
+            return "%s / %s" % (os.path.basename(os.path.dirname(best)),
+                                os.path.basename(best))
+        return os.path.basename(best)
+
+    # Calibration logs AND round/cycle reports — the application-agent record, and the
+    # only such stream that exists in every clone. Reports are included because a round
+    # or cycle report is often the single fastest read for "where does this stand", while
+    # the phase logs carry the finer-grained trail. Newest by MTIME (what was actually
+    # touched last), not by the filename date, so an older file revised today still
+    # surfaces. READMEs are excluded: a template case carries one and it would otherwise
+    # lead the list.
+    cal = [f for f in
+           glob.glob(os.path.join(root, "use_cases", "*", "memory", "logs", "*.md"))
+           + glob.glob(os.path.join(root, "use_cases", "*", "reports", "*", "*.md"))
+           if os.path.basename(f) != "README.md"]
+    if cal:
+        cal.sort(key=os.path.getmtime, reverse=True)
+        lines.append("Recent calibration logs + reports (newest first):")
+        for f in cal[:4]:
+            parts = f.split(os.sep + "use_cases" + os.sep)[-1].split(os.sep)
+            kind = "report" if "reports" in parts else "log"
+            lines.append("  %s (%s) / %s" % (parts[0], kind, os.path.basename(f)))
 
     # Narrow cold-start pointer: latest Handoff/Session log specifically.
-    hs = (glob.glob(os.path.join(root, "memory", "dev_logs", "*Handoff*")) +
-          glob.glob(os.path.join(root, "memory", "dev_logs", "*Session_Log*")))
+    # `dev_logs*` — NOT `dev_logs`. Every feature branch keeps its own stream
+    # (`memory/dev_logs_<branchname>/`) and writes only there, so globbing the bare
+    # directory reports main's newest file and silently misses the branch's own. Measured
+    # 2026-08-28 on adapter-kit: it named a 2026-07-14 log while the branch's latest was
+    # 2026-08-28, six weeks stale, and nothing looked wrong. The stream is named in the
+    # output for the same reason — with 13 directories, the filename alone is ambiguous.
+    hs = (glob.glob(os.path.join(root, "memory", "dev_logs*", "*Handoff*")) +
+          glob.glob(os.path.join(root, "memory", "dev_logs*", "*Session_Log*")))
     if hs:
-        lines.append("Latest handoff/session log: %s"
-                     % os.path.basename(sorted(hs, key=os.path.basename)[-1]))
+        _h = sorted(hs, key=os.path.basename)[-1]
+        lines.append("Latest handoff/session log: %s / %s"
+                     % (os.path.basename(os.path.dirname(_h)), os.path.basename(_h)))
 
     # Latest of ANY type in each stream, so no recent work is missed.
-    dev = latest(os.path.join(root, "memory", "dev_logs", "20*.md"))
+    dev = latest(os.path.join(root, "memory", "dev_logs*", "20*.md"), with_stream=True)
     if dev:
         lines.append("Latest dev_log (any type): %s" % dev)
     ana = latest(os.path.join(root, "memory", "ana_logs", "20*.md"))

@@ -50,7 +50,7 @@ A2MC replaces the manual process with an autonomous, interpretable workflow that
   <img src="plot/A2MC_Workflow_Horizontal_Finalized_General.png" width="100%" alt="A2MC 7-phase calibration workflow for process-based models">
 </p>
 
-<p align="center"><sub>The <b>AI</b> badges mark where the <b>online</b> loop calls the AI API. Offline, every phase is agent-driven, Phase 5 included — see the note under the phase table below.</sub></p>
+<p align="center"><sub>The <b>AI</b> badges mark where the <b>online</b> loop calls the AI API. Offline, every phase is agent-driven.</sub></p>
 
 ---
 

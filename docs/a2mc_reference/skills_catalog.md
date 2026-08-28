@@ -89,8 +89,9 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 
 ### `onboard-session`
 - **Purpose:** Cold-start runbook — orient at the start of a session or after a context
-  reset/compaction (read the latest handoff, re-read CLAUDE.md, check live HPC processes +
-  run state, check pending knowledge), delegating to `arm-hpc-monitoring` / `curate-knowledge`.
+  reset/compaction (read the most recently changed calibration log and the case's offline
+  workflow state, re-read CLAUDE.md, check live HPC processes + run state, check pending
+  knowledge), delegating to `arm-hpc-monitoring` / `curate-knowledge`.
 - **Invoke when:** a session begins/resumes/compacts; "catch up", "where did we leave off", "onboard".
 - **Modes:** `any` — model-agnostic. Pairs with the `SessionStart` hook. For a **first-run** (no
   config yet), use `a2mc-init` instead.

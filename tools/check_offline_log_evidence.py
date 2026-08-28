@@ -306,7 +306,25 @@ def main(argv):
     else:
         target = argv[0]
     repo_root = Path(__file__).resolve().parent.parent
+
+    # A TARGET THAT RESOLVES TO NOTHING IS AN ERROR, NOT A PASS.
+    # Until 2026-08-28 a mistyped path -- `--site PFLOTRAN_miniLEO` instead of
+    # `--site use_cases/PFLOTRAN_miniLEO`, or any typo'd case name -- returned exit 0 and printed
+    # the same green tick as a clean run, differing only in a "0 offline log(s) scanned" the reader
+    # has no reason to distrust. That is the vacuous-green-tick failure this file already warns
+    # about further down for SKIPPED files; the same hole was open one level up for a target that
+    # was never found at all. Found by the 3-hourly self-review quoting its own green tick.
+    # An existing path holding no matching logs stays a PASS: a young case legitimately has none.
+    if not Path(target).exists():
+        print(f"\n✘ target does not exist: {target}")
+        print("  A non-existent target is a FAILED check, not an empty one -- otherwise a typo")
+        print("  reads as a clean gate. Did you mean `--site use_cases/<Site>`?")
+        return 1
     files = gather(target)
+    if not files:
+        print(f"  [note] {target} exists but holds no offline logs matching the stem pattern "
+              f"(YYYYMMDDx_phase{{N}}_{{name}}_r{{RR}}...). Passing: a case with no offline logs yet "
+              f"is legitimate. If you expected logs here, the STEM is what did not match.")
     all_err, all_warn = [], []
     for f in files:
         e, w = check_log(f, repo_root)
