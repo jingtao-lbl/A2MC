@@ -1,0 +1,50 @@
+#!/bin/bash
+# =============================================================================
+# A2MC run template: HPC + CIME (ELM / CESM / E3SM family)
+# =============================================================================
+#
+# Rendered by `scripts/init_adapter.py` Step 11 with values the user provides
+# during the CLI walkthrough. Placeholders are `{{VARNAME}}` style.
+#
+# The kit's reference implementation for this template is `tools/create_case.sh`
+# (FATES adapter, in A2MC-elm). Copy this template as a starting point if your
+# model is part of the CIME family and runs on HPC with a scheduler.
+#
+# After the CLI fills in placeholders, this script becomes per-case invokable
+# from the orchestrator's case-submission step.
+
+#SBATCH --job-name={{CASE_NAME}}
+#SBATCH --account={{ACCOUNT}}
+#SBATCH --partition={{QUEUE}}
+#SBATCH --time={{WALLTIME}}
+#SBATCH --nodes={{NODES}}
+#SBATCH --ntasks-per-node={{TASKS_PER_NODE}}
+# TODO(adapter-kit): replace #SBATCH lines above with your scheduler's directives
+# if you're not on Slurm. PBS uses #PBS, LSF uses #BSUB, SGE uses #$, etc.
+
+set -euo pipefail
+
+# ---- Module loads ----
+{{MODULES}}
+
+# ---- Pre-run hook (optional) ----
+{{PRE_RUN_HOOK}}
+
+# ---- CIME case setup + build + submit ----
+# {{CREATE_CASE_CMD}} expands to the full create_newcase invocation
+# (e.g., './create_newcase --case ${CASE_DIR} --compset I1850Clm50FatesCnpRdSPGs --res ELM_USRDAT ...').
+{{CREATE_CASE_CMD}}
+
+cd "${CASE_DIR}"
+
+# Apply A2MC parameter modifications (the orchestrator stages these)
+# TODO(adapter-kit): if your CIME case uses non-standard parameter-file
+# placement, adjust the line below.
+ln -sf "${A2MC_MODIFIED_PARAM_FILE}" "user_param_file.nc"
+
+./case.setup
+./case.build
+./case.submit
+
+# ---- Post-run hook (optional) ----
+{{POST_RUN_HOOK}}

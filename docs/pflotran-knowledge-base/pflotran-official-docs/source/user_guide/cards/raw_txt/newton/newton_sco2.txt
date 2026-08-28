@@ -1,0 +1,2 @@
+CENTRAL_DIFFERENCE_JACOBIAN
+ Uses a central difference formulation when calculating the entries in the Jacobian. Default is a forward difference.

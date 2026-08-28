@@ -1,0 +1,12 @@
+GAS_SAT_CHANGE_TS_GOVERNOR <float>
+ Time step size will be reduced on the subsequent time step when the maximum change in gas saturation is above the governor value. Default = 0.3
+
+LIQ_PRES_CHANGE_TS_GOVERNOR <float>
+ Time step size will be reduced on the subsequent time step when the maximum change in liquid pressure is above the governor value. Default = 5.e5
+
+GAS_SAT_GOV_SWITCH_ABS_TO_REL <float>
+ When the gas saturation is greater than this value, a relative change in gas saturation will be used to calculate the new time step size based on the GAS_SAT_CHANGE_TS_GOVERNOR, while absolute change is used below the value. Default = 0.01
+
+MINIMUM_TIMESTEP_SIZE <float>
+ Value below which the time step size is truncated to MINIMUM_TIMESTEP_SIZE. Default = 8.64e-4 sec.
+

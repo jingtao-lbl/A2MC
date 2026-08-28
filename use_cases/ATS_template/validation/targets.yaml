@@ -1,0 +1,97 @@
+# =============================================================================
+# Validation Targets — ATS TEMPLATE
+# =============================================================================
+# Copy to use_cases/ATS_<YourCase>/validation/targets.yaml and edit.
+#
+# ATS has NO PFT axis and no `PFT<id>_<vartype>` bare-key convention -- that resolution
+# rule is FATES-only. ATS's grouping axis is the mesh REGION / material
+# (`models/ats/spec.py` grouping_axis="region"), which fills the schema's grouping-axis
+# slot, exactly as PFLOTRAN's mesh region does. Observation targets are already reduced
+# over a region by their `functional`, so there is no per-group array indexing to do
+# (spec.py: `default_groups=()`).
+#
+# This file is the SINGLE SOURCE for (a) the calibration targets, (b) how each
+# observation reduces from the extracted series, and (c) the cost metric.
+# Full design: docs/24_Generic_Obs_Comparison_Plan.md.
+#
+# ★ EVERY `observed` VALUE BELOW IS null, ON PURPOSE ★
+# Structure is wired; values are NOT. A target with a plausible-looking invented number
+# is worse than a missing one, because it scores. Wire the structure, leave `observed`
+# null, and let the RED gate be the deliverable
+# ([[feedback_placeholder_targets_structure_not_values]]).
+# Only CALIBRATION data belongs here -- validation data is not scored
+# ([[reference_calibration_vs_validation_data_taxonomy]]).
+# =============================================================================
+
+site: MySite
+model: ats
+observation_source: "[Source/Citation of the observation bundle]"
+observation_period: "[e.g. 2015-2018, or 0-8760 h]"
+reference_run: "[path to the reference ATS observation file used to validate the extraction path]"
+
+grouping_axis: region        # ATS's grouping axis is the mesh region / material name
+
+cost_config:
+  error_method: relative_error
+  aggregation_method: rmsre
+  tolerance: 0.25
+  tolerance_type: relative
+
+# --- Targets -----------------------------------------------------------------
+# `variable` MUST be an ATS field name as the deck's observations block writes it:
+# lower-case, underscores, with a domain prefix where applicable (`surface-`, `snow-`).
+# `models/ats/spec.py::output_categories` lists the categories ATS knows:
+#   water_storage, water_flux, runoff, evapotranspiration, water_table, surface_water,
+#   saturation, pressure, thermal, snow, forcing
+#
+# `reduce` is dispatched through models/ats/backend.py -- READ THAT MODULE for the
+# current, authoritative list rather than copying a keyword from another model's file.
+# An UNREGISTERED reduce keyword is the dangerous case: it does not raise, it falls
+# through to a snapshot and returns a plausible wrong number (measured on EcoSIM,
+# v2.247). If a target has no valid reducer, leave it UNDECLARED and say so here.
+
+targets:
+
+  - name: surface_runoff
+    variable: "surface-total_runoff"      # <- confirm against YOUR deck's observations block
+    region: "[outlet]"                    # the mesh region this observation belongs to
+    category: runoff
+    units: "m^3 s^-1"
+    reduce: "[see models/ats/backend.py for the registered keywords]"
+    observed: null                        # ← REQUIRED and deliberately null
+    uncertainty: null
+    weight: 1.0
+    notes: >-
+      Placeholder. Replace `observed` with the measured value and `uncertainty` with its
+      error bar, and name the dataset in `observation_source` above. Until then this
+      target is structurally wired and will not score, which is the intended state.
+
+  - name: evapotranspiration
+    variable: "surface-total_evapotranspiration"
+    region: "[domain]"
+    category: evapotranspiration
+    units: "m s^-1"
+    reduce: "[see models/ats/backend.py]"
+    observed: null
+    uncertainty: null
+    weight: 1.0
+    notes: >-
+      Placeholder, as above.
+
+  - name: water_table_depth
+    variable: "water_table_depth"
+    region: "[upland]"
+    category: water_table
+    units: "m"
+    reduce: "[see models/ats/backend.py]"
+    observed: null
+    uncertainty: null
+    weight: 1.0
+    notes: >-
+      Placeholder, as above.
+
+# --- Not yet declared --------------------------------------------------------
+# Record here any observation you have but cannot yet score, and WHY -- so the next
+# reader does not "fix" it by inventing a reducer. A reducer that runs without
+# complaining while being the wrong statistic is more dangerous than a missing target.
+not_yet_declared: []

@@ -1,0 +1,118 @@
+# =============================================================================
+# A2MC PARAMETER LIST — TEMPLATE (canonical explicit-column format)
+# Copy to use_cases/<Prefix>_<Case>/parameters/, replace the example rows, keep the schema.
+# Canonical form = EcoSIM's (PI decision 2026-08-02). Worked reference lists:
+#   use_cases/ELM-FATES_Kougarok/parameters/FATES_Parameter_List_api43_para168.csv  (168 rows; FATES LEGACY
+#     dialect — see the loader note below. Ships with this repo.)
+#   The EcoSIM (40-row, all columns) and PFLOTRAN (17-row, core only) lists that set this format
+#     live in per-case folders that are NOT distributed — the example rows below carry the schema.
+# A user-supplied list in another dialect is CONVERTED on intake (the `onboard-case` skill).
+# =============================================================================
+#
+# INVARIANT: one row = one independently-sampled parameter = one Morris/Sobol matrix COLUMN,
+# in file order.
+#
+# ★ RULE — SEPARATE THE OFFICIAL NAME FROM ITS AXIS IDs ★
+#   The `name` column holds ONLY the official variable/parameter name, EXACTLY as it appears in
+#   the model's parameter file (e.g. `CNLF`, `RATE_CONSTANT`, `fates_stoich_nitr`). NEVER bake an
+#   axis id into the name — no `VCMX_1`, no `fates_stoich_nitr_leaf`. Each axis gets its OWN
+#   column. A2MC builds the canonical id from (name + its axis values) and the model backend
+#   interprets it -> the parameter-file slot. Baking an id into the name breaks that interpretation
+#   (the backend cannot tell the variable from its index) and the per-axis dispatch.
+#
+# ★ THE AXIS SET IS EXTENSIBLE — THAT IS THE POINT ★
+#   `pft` and `organ` are the BASIC axes and ship in this template. A model ADDS the axes it needs
+#   as further columns, and a COUPLED run carries several at once:
+#       pft              plant functional type / plant type index          (FATES, EcoSIM)
+#       organ            1=leaf 2=fineroot 3=sapwood 4=structure           (FATES)
+#       mineral / phase  a mineral or solid phase (Calcite, Glass_FB)      (PFLOTRAN)
+#       microbial_guild  a microbial functional group                      (planned)
+#       species          a chemical species                               (planned)
+#   A blank cell means "this parameter has no value on that axis". A row is identified by `name`
+#   PLUS every non-blank axis cell, so adding an axis never renames anything that already exists.
+#   Add a column; do NOT overload `pft` with a non-PFT meaning, and do NOT rename `pft` to
+#   something neutral — `pft` is meaningful where it appears, and the neutral name loses that.
+#
+#   INTERIM, AND THE REASON THE EXAMPLES BELOW LOOK NARROWER THAN THIS RULE: the id builders
+#   consume ONE axis today. `ModelSpec.grouping_axis` (models/base.py:199) is a singular `str`,
+#   `create_adapter_parameter_sample.py::parse_pft_param_list` ids on (name, pft), and only
+#   `tools/param_spec.py` reads `organ` (FATES). So until multi-axis ids land, a model whose axis
+#   is not PFT puts its axis value in `pft` as a stopgap — which is what PFLOTRAN's live list does
+#   with mineral names, and is a symptom of the singular axis, NOT the target schema. Declare the
+#   real axis column anyway; it is carried through and becomes live when the loader does.
+#
+# ★ NAME THE BOUND COLUMNS WITH THE `_bound` SUFFIX ★
+#   Write them as lower-underscore-bound and upper-underscore-bound, NOT as the bare words.
+#   This is not cosmetic. The header detector in
+#   phases/phase0_design/create_parameter_sample.py::_find_header_row picks the first line where
+#   `'lower' in line.split()` — a WHITESPACE split — so in a comma-separated header the bare form
+#   `...,lower,upper,...` is a single token and never matches, and the file fails to parse.
+#   SAME TRAP IN THIS PREAMBLE: a comment line containing BOTH suffixed names would itself be
+#   selected as the header row. That is why the two names are never written together above.
+#
+# COLUMNS — REQUIRED
+#   name          Official parameter name (bare; must exist in the model's parameter file).
+#   lower/upper   The two bound columns, named per the rule above. upper must exceed lower.
+#   (at least one axis column, per the axis rule above; all blank = a GLOBAL/scalar parameter)
+#
+# COLUMNS — STRONGLY RECOMMENDED
+#   default       Operative (unperturbed baseline) value. SHOULD equal the base parameter file's
+#                 value for this (name + axes), so the unperturbed base IS the V0 baseline case.
+#   description   Human-readable note: meaning, caveats.
+#   bound_source  Where the bounds CAME FROM. See the vocabulary below — this column is the
+#                 difference between a calibration you can defend and one you cannot.
+#
+# COLUMNS — OPTIONAL
+#   NO COMMAS in any free-text cell (description, bound_source) -- this is a CSV and there is no
+#   quoting step; use a semicolon or ' -- ' instead. A stray comma shifts every later column.
+#
+#   category      Grouping for reporting/screening (stoichiometry, uptake, allocation, kinetics).
+#   units         Physical units of the value.
+#   nc_dim        The parameter's dimension name in a NetCDF parameter file (e.g. `npfts`).
+#
+# ★ bound_source VOCABULARY — start every entry with one of these ★
+#   measured:     Derived from THIS project's own measurements. Name the dataset/campaign and the
+#                 statistic used (mean +/- SD, min-max, IQR) so the range is reproducible.
+#   literature:   From a literature review. MUST carry the citation AND a DOI —
+#                 e.g. `literature: growth yield Yg; Amthor 2000 doi:10.1006/anbo.2000.1175`.
+#                 A claim without a resolvable DOI is not a literature bound.
+#   database:     From a trait/data centre — TRY, FRED, FLUXNET, and similar. Name the DATABASE,
+#                 the trait/record, and its citation or DOI —
+#                 e.g. `database: FRED absorptive fine-root radius; Iversen 2017 doi:10.1111/nph.14486`.
+#   prior_round:  Carried from an earlier calibration round. Name the round and what narrowed it.
+#   provisional:  No evidence yet — say so explicitly and give the basis (e.g. `provisional:
+#                 default +/-50% -- refine before the next round`). NEVER leave the cell blank: a
+#                 blank reads as "not recorded", which the next reader cannot distinguish from a
+#                 published range.
+#   Add `source-verified` when the parameter's MEANING and UNITS were confirmed against the model
+#   source, not just its name — a long_name or a units attribute can be wrong.
+#
+# WHICH LOADER READS THIS (auto-detected from the header)
+#   * Canonical / adapter (this form): `name` + `pft` + the two suffixed bound columns
+#     -> scripts/create_adapter_parameter_sample.py::parse_pft_param_list, id `{name}_{pft}`.
+#     USE THIS FORM for a new model. Extra columns are carried along and never break the parse.
+#   * FATES LEGACY: `fates_name` + `pft` + `organ` + the bare bound names (+ `default_api43`)
+#     -> tools/param_spec.py, id `fates_name#p{pft}#o{organ}`. Retained because the live
+#     168-parameter Kougarok list must not be rewritten under a running round. Do NOT start a new
+#     list in this dialect. `organ` is in the canonical schema too (above); only the multi-axis
+#     ID BUILDER is pending.
+#
+# EXAMPLE ROWS (delete + replace with your model's parameters) — drawn from more than one model,
+# so the schema reads as model-neutral rather than as one model's list.
+# =============================================================================
+name,pft,organ,category,description,units,nc_dim,default,lower_bound,upper_bound,bound_source
+# --- per-PFT, no organ (EcoSIM: plant type 1) ---
+CNLF,1,,stoichiometry,Plant leaf N:C mass ratio,gN (gC)-1,npfts,0.2,0.02,0.2,literature: leaf N:C ceiling; Kerkhoff 2005 doi:10.1086/430237 (source-verified: rNCLeaf_pft is a MAX not the realized value)
+CNRT,1,,stoichiometry,Plant root N:C mass ratio,gN (gC)-1,npfts,0.016,0.008,0.02,database: FRED root N:C; Iversen 2017 doi:10.1111/nph.14486
+# --- per-PFT AND per-organ: two axes on one row (FATES-style; read today by param_spec.py) ---
+fates_stoich_nitr,1,1,stoichiometry,Leaf N stoichiometry,gN (gC)-1,,0.033,0.0187,0.0387,database: TRY leaf N per PFT; Kattge 2020 doi:10.1111/gcb.14904
+# --- GLOBAL / scalar: every axis blank = applies to the whole variable ---
+DIFFUSIVITY,,,transport,Bulk aqueous diffusion coefficient,m2 s-1,,1.0e-09,5.0e-10,2.0e-09,provisional: default +/-50% -- refine before the next round
+# --- INTERIM: a non-PFT axis carried in `pft` until multi-axis ids land (PFLOTRAN, see above) ---
+RATE_CONSTANT,Calcite,,kinetics,log10 dissolution rate constant,log10 mol m-2 s-1,,-8.8,-9.8,-7.8,literature: Palandri & Kharaka 2004 Table 1 doi:10.3133/ofr20041068
+RATE_CONSTANT,Glass_FB,,kinetics,log10 rate constant for basaltic glass,log10 mol m-2 s-1,,-12.6,-13.6,-11.6,literature: Palandri & Kharaka 2004 Table 1 doi:10.3133/ofr20041068
+# --- TARGET SHAPE once ModelSpec.grouping_axis accepts several axes: the same two rows become
+#     a declared `mineral` column, and a coupled EcoSIM<->PFLOTRAN list carries pft AND mineral.
+#     Uncomment the column and drop the stopgap only after the multi-axis id builder lands.
+# name,pft,organ,mineral,category,...,lower_bound,upper_bound,bound_source
+# RATE_CONSTANT,,,Calcite,kinetics,...,-9.8,-7.8,literature: Palandri & Kharaka 2004 doi:10.3133/ofr20041068

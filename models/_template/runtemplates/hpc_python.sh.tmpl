@@ -1,0 +1,45 @@
+#!/bin/bash
+# =============================================================================
+# A2MC run template: HPC + Python-implemented model
+# =============================================================================
+#
+# Rendered by `scripts/init_adapter.py` Step 11. Use this template when your
+# model is:
+#     - A Python library or script (e.g., a JAX-based BGC model, a PyTorch
+#       differentiable land-surface model)
+#     - Run on HPC with a scheduler
+#     - Invoked as `python -m mymodel` or `python /path/to/run.py`
+#
+# Compiled-binary models use hpc_standalone.sh.tmpl. CIME-managed models
+# use hpc_cime.sh.tmpl.
+
+#SBATCH --job-name={{CASE_NAME}}
+#SBATCH --account={{ACCOUNT}}
+#SBATCH --partition={{QUEUE}}
+#SBATCH --time={{WALLTIME}}
+#SBATCH --nodes={{NODES}}
+#SBATCH --ntasks-per-node={{TASKS_PER_NODE}}
+# TODO(adapter-kit): replace #SBATCH lines if not on Slurm.
+
+set -euo pipefail
+
+# ---- Module loads (typically: python, cuda if GPU, etc.) ----
+{{MODULES}}
+
+# ---- Activate Python env ----
+# Examples:
+#     source ~/myenv/bin/activate
+#     conda activate myenv
+#     module load conda/2024 && conda activate myenv
+{{PYTHON_ENV_ACTIVATE}}
+
+# ---- Pre-run hook ----
+{{PRE_RUN_HOOK}}
+
+# ---- Run ----
+# {{PYTHON_INVOKE}} expands to e.g. 'python -m mymodel' or 'python /path/to/run.py'.
+# For multi-rank MPI Python (mpi4py), prefix with `srun` and adjust RANKS.
+{{MPI_LAUNCHER}} {{MPI_RANKS}} {{PYTHON_INVOKE}} {{RUN_CMD}}
+
+# ---- Post-run hook ----
+{{POST_RUN_HOOK}}

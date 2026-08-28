@@ -1,0 +1,54 @@
+ARITHMETIC_GAS_DIFFUSIVE_DENSITY
+ Use arithmetic weighting for gas diffusivity.
+
+CHECK_MAX_DPL_LIQ_STATE_ONLY
+ @EXPERT
+ When calculating the maximum change in liquid pressure over a time step, consider only liquid state cells. Helpful when capillary pressures are extreme.
+
+DIFFUSE_XMASS
+ @EXPERT
+ Calculate gradietns of dissolved gas in diffusion equation based on mass fraction instead of mole fraction.
+
+GAS_COMPONENT_FORMULA_WEIGHT <float>
+ Specifies the molecular weight of the gas component [g/mol].
+
+HARMONIC_GAS_DIFFUSIVE_DENSITY
+ Use harmonic weighting for gas diffusivity.
+
+IMMISCIBLE
+ Disables solubility calculations.
+
+LIQUID_COMPONENT_FORMULA_WEIGHT <float>
+ Specifies the molecular weight of the liquid component [g/mol].
+
+NO_STATE_TRANSITION_OUTPUT
+ Eliminates “State Transition” screen output. E.g. *State Transition: 2 Phase -> Gas at Cell 23331*
+
+NO_TEMP_DEPENDENT_DIFFUSION
+ Turns off temperature-dependent diffusion coefficients.
+
+PHASE_CHANGE_EPSILON <float>
+ @EXPERT
+ Assign a fixed initial saturation of a new phase that is created upon a state change.
+
+RESTRICT_STATE_CHANGE
+ @EXPERT
+ Restricts any changes of state to only occur once per Newton iteration.
+
+TWO_PHASE_STATE_ENERGY_DOF <string>
+ @EXPERT
+ Sets the primary dependent variable for the energy conservation equation for cells in a two-phsae state (3rd dof) [TEMPERATURE, AIR_PRESSURE]. (default = TEMPERATURE, which is most tested)
+
+WINDOW_EPSILON <float>
+ @EXPERT
+ Specifies the tolerance or window that must be exceeded before state change
+ will occur.
+
+NUMBER_OF_EQUATIONS <int>
+ Specifies the number of equations solved (3: air/water/energy (default), 4: air/water/solute/energy)
+
+SOLUBLE_MATRIX
+ Allows the rock matrix to dissolve with changing solubility conditions. Requires NUMBER_OF_EQUATIONS 4 and SOLUTE SALT.
+
+SOLUTE <string>
+ Specifies the solute used when NUMBER_OF_EQUATIONS 4. Default SALT.

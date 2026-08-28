@@ -1,0 +1,118 @@
+{
+  "version": 2,
+  "updated_at": "2026-07-11T00:00:00+00:00",
+  "milestones": {
+    "api-43-1": {
+      "description": "FATES api.43.1 epoch \u2014 built against E3SM-master-pinned sci.1.91.1 (canonical)",
+      "fates_api_epoch": "43.1",
+      "fates_tag_built": "sci.1.91.1_api.43.1.0",
+      "fates_commit_built": "e027a4030d2a0f09039fb337ad67ced7461dd4f0",
+      "fates_param_file_format": "json",
+      "elm_commit_built": "d40b84318cd4e309ca66f014a7b6e9e5f43a3adc",
+      "elm_wiki_subdir": "elm-codebase-wiki-d40b843",
+      "fates_wiki_subdir": "fates-codebase-wiki-e027a40",
+      "fates_output_cdl": "elm_fates_output_info_e027a40.cdl",
+      "elm_output_cdl": "elm_output_info_d40b843.cdl",
+      "fates_param_cdl": "fates_params_info_e027a40.json",
+      "expected_counts": {
+        "documents": 6328,
+        "nodes": 3178,
+        "edges": 2772
+      },
+      "covers_sci_tags": [
+        "sci.1.90.0_api.43.1.0",
+        "sci.1.90.1_api.43.1.0",
+        "sci.1.90.2_api.43.1.0",
+        "sci.1.91.0_api.43.1.0",
+        "sci.1.91.1_api.43.1.0",
+        "sci.1.91.2_api.43.1.0",
+        "sci.1.91.3_api.43.1.0",
+        "sci.1.91.4_api.43.1.0"
+      ],
+      "canonical": true,
+      "legacy": false,
+      "available_locally": true,
+      "published_at": "2026-04-28",
+      "curated_yaml_path": "rag/data/curated_relationships_api-43-1.yaml",
+      "notes": "fates_output_cdl + elm_output_cdl added in v2.96; ELM CDL extracted via scripts/extract_elm_outputs.py",
+      "collection_name": "fates_knowledge"
+    },
+    "api-31-0": {
+      "description": "FATES api.31.0 epoch \u2014 Kougarok manuscript reproducibility target (legacy)",
+      "fates_api_epoch": "31.0",
+      "fates_tag_built": "sci.1.68.2_api.31.0.0",
+      "fates_commit_built": "e85d997798368fff093ca55e52722fcf5d489314",
+      "fates_param_file_format": "cdl",
+      "elm_commit_built": "60d9aad0577967d963aeed60240614080a326d1b",
+      "elm_wiki_subdir": "elm-codebase-wiki-60d9aad",
+      "fates_wiki_subdir": "fates-codebase-wiki-e85d997",
+      "fates_output_cdl": "elm_fates_output_info.cdl",
+      "elm_output_cdl": null,
+      "fates_param_cdl": "fates_params_info.cdl",
+      "expected_counts": {
+        "documents": 2581,
+        "nodes": 1295,
+        "edges": 2197
+      },
+      "covers_sci_tags": [
+        "sci.1.68.2_api.31.0.0",
+        "sci.1.68.3_api.31.0.0",
+        "sci.1.68.4_api.31.0.0",
+        "sci.1.69.0_api.31.0.0"
+      ],
+      "canonical": false,
+      "legacy": true,
+      "available_locally": true,
+      "published_at": "2026-04-28",
+      "curated_yaml_path": "rag/data/curated_relationships_api-31-0.yaml",
+      "notes": "Kougarok manuscript RAG profile; YAML is frozen pre-Phase-3.5 snapshot matching api-31 source names (do not rebuild against canonical YAML). elm_output_cdl is null since the legacy build used the old case-specific elm_fates_output_info.cdl that already had ELM core variables.",
+      "collection_name": "fates_knowledge"
+    },
+    "ecosim-2dea74d9": {
+      "description": "EcoSIM at upstream commit 2dea74d9 \u2014 first non-FATES adapter-kit dogfood (BioCON test1_ex1)",
+      "adapter": "ecosim",
+      "model_commit_built": "2dea74d992bb821269d0a755e8cb3074c6cc453e",
+      "param_file_format": "nc",
+      "knowledge_base_dir": "docs/ecosim-knowledge-base",
+      "model_wiki_subdir": "ecosim-codebase-wiki-2dea74d9",
+      "output_cdl": "ecosim_output_info_2dea74d9.cdl",
+      "param_file": "Offline/EcoSIM_sample_files/input/ds_input__pft_test__ex1.nc",
+      "expected_counts": {
+        "documents": 1935,
+        "nodes": 715,
+        "edges": 321
+      },
+      "canonical": false,
+      "legacy": false,
+      "available_locally": true,
+      "published_at": "2026-07-11",
+      "curated_yaml_path": "models/ecosim/curated_seed.yaml",
+      "upstream_url": "https://github.com/jinyun1tang/EcoSIM/tree/2dea74d9",
+      "notes": "First adapter-kit non-FATES milestone. Uses the generic `adapter`/`model_commit_built`/`model_wiki_subdir` keys (not the FATES-specific fates_*/elm_* schema); version-association dispatches on `adapter`. expected_counts are null placeholders \u2014 filled from the first RAG build (T5) to arm the count-regression guard. Authoritative dataset paths live in models/ecosim/datasets.py (ModelDataset ecosim-2dea74d9); curated_yaml is the v0.1 ai-draft seed pending PI review.",
+      "collection_name": "ecosim_knowledge"
+    },
+    "pflotran-157a26f7": {
+      "description": "PFLOTRAN at upstream commit 157a26f7 \u2014 the commit Jianwen Du's miniLEO build was compiled from",
+      "adapter": "pflotran",
+      "model_commit_built": "157a26f73e4c939a22ffe6eb60155fb9a3d36ff9",
+      "param_file_format": "deck",
+      "knowledge_base_dir": "docs/pflotran-knowledge-base",
+      "model_wiki_subdir": "pflotran-codebase-wiki-157a26f7",
+      "output_cdl": null,
+      "param_file": null,
+      "expected_counts": {
+        "documents": 1374,
+        "nodes": null,
+        "edges": null
+      },
+      "canonical": false,
+      "legacy": false,
+      "available_locally": true,
+      "published_at": "2026-07-31",
+      "curated_yaml_path": "models/pflotran/curated_seed.yaml",
+      "upstream_url": "https://bitbucket.org/pflotran/pflotran/commits/157a26f73e4c939a22ffe6eb60155fb9a3d36ff9",
+      "notes": "Second adapter-kit non-FATES milestone; uses the generic adapter/model_commit_built/model_wiki_subdir schema. Wiki is VALIDATED GREEN (2392/2392 citations, 123/123 routines; docs/a2mc_reference/wiki_source_validation_pflotran_157a26f7.md). param_file/output_cdl are NULL BY NATURE, not pending: PFLOTRAN's parameter surface is a text card deck and its outputs are fixed-width text + Tecplot, and both are PER-CASE files living outside this repo (the miniLEO bundle is 99 MB and belongs to the team's own repository). The build reads them via A2MC_PFLOTRAN_DECK / A2MC_PFLOTRAN_REFERENCE_MAS when present, and degrades to a curated-only graph when absent. curated_yaml_path now points at the v0.2 seed (2026-08-01): source-verified, adversarially re-verified by a 4-agent fan-out whose 13 hard errors are fixed, 231 resolving citations. NOT YET PI-REVIEWED -- promote curated_yaml_status to 'human' only after that review. Pinned to the team's build commit, NOT upstream master, which is 523 commits / a major version ahead (dev log 20260731c).",
+      "collection_name": "pflotran_knowledge"
+    }
+  }
+}

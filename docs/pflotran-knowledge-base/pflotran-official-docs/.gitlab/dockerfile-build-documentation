@@ -1,0 +1,7 @@
+ARG VM_IMAGE
+
+FROM $VM_IMAGE
+
+COPY . /app
+WORKDIR /app
+RUN /app/tools/build-on-gitlab.sh

@@ -1,0 +1,52 @@
+LIQUID_RESIDUAL_INFINITY_TOL <float>
+ Infinity norm tolerance for liquid residual equation. Units depend on the units of the residual: [kg/m\ :sup:`3` \] with BRAGFLO_RESIDUAL_UNITS and [kmol/sec] without. Default = 1.e-2
+
+GAS_RESIDUAL_INFINITY_TOL <float>
+ Infinity norm tolerance for gas residual equation. Units depend on the units of the residual: [kg/m\ :sup:`3`\] with BRAGFLO_RESIDUAL_UNITS and [kmol/sec] without. Default = 1.e-2
+
+MAX_ALLOW_REL_LIQ_PRES_CHANG_NI <float>
+ Maximum allowable relative change in liquid pressure between Newton iterations. Default = 1.e-2
+
+MAX_ALLOW_REL_GAS_SAT_CHANGE_NI <float>
+ Maximum allowable relative change in gas saturation between Newton iterations. Default = 1.e-3
+
+MAX_ALLOW_LIQ_PRES_CHANGE_TS <float>
+ Maximum absolute change in liquid pressure during a time step. Default = 1e7
+
+MAX_ALLOW_GAS_SAT_CHANGE_TS <float>
+ Maximum absolute change in gas saturation during a time step. Default = 1
+
+REL_LIQ_PRESSURE_PERTURBATION <float>
+ Relative liquid pressure perturbation for derivatives.
+
+MIN_LIQ_PRESSURE_PERTURBATION <float>
+ Minimum liquid pressure perturbation for derivatives.
+
+REL_GAS_SATURATION_PERTURBATION <float>
+ Relative gas saturation perturbation for derivatives.
+
+MIN_GAS_SATURATION_PERTURBATION <float>
+ Minimum gas saturation perturbation for derivatives.
+
+GAS_SAT_THRESH_FORCE_TS_CUT <float>
+ Gas saturation threshold forcing a time step cut. If the gas saturation is outside the bounds of -GAS_SAT_THRESH_FORCE_TS_CUT and 1+GAS_SAT_THRESH_FORCE_TS_CUT, the time step will be cut immediately. Default = 0.2
+
+GAS_SAT_THRESH_FORCE_EXTRA_NI <float>
+ Gas saturation threshold forcing an extra Newton iteration. If the gas saturation is outside the bounds of -GAS_SAT_THRESH_FORCE_EXTRA_NI and 1+GAS_SAT_THRESH_FORCE_EXTRA_NI, an extra Newton iteration will be required. Default = 1.e-3
+
+MIN_LIQ_PRES_FORCE_TS_CUT <float>
+ The minimum liquid pressure below which Newton iteration will cease and the time step will be cut. Default = -1.e8
+
+JACOBIAN_PRESSURE_DERIV_SCALE
+ Scalign factor for the liquid pressure derivative. Default = 1.e7
+
+SCALE_JACOBIAN
+ Toggles on scaling of the linear system. The Jacobian pressure derivatives are first right-hand scaled by JACOBIAN_PRESSURE_DERIV_SCALE, and then the Jacobian is left-hand scaled by the reciprocal of the maximum absolute value in each row. Default = TRUE
+
+DO_NOT_SCALE_JACOBIAN
+ Turns off Jacobian scaling.
+
+CONVERGENCE_TEST <string>
+ BOTH - Both the residual infinity tolerance and absolute/relative change criteria must be met to declare convergence.
+ EITHER - Either the residual infinity tolerance or absolute/relative change criter ia must be met to declare convergence.
+ Default = BOTH

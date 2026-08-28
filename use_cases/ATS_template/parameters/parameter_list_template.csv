@@ -1,0 +1,68 @@
+# =============================================================================
+# ATS parameter list TEMPLATE — copy to use_cases/ATS_<Case>/parameters/<case>_param_list.csv
+# =============================================================================
+# ATS-SPECIFIC, CASE-AGNOSTIC. Two things differ from every other model's list:
+#
+#  1. A knob is a full ParameterList-path ADDRESS (`a/b/c/leaf`), so `name` contains
+#     slashes, spaces and bracketed units. That is expected -- `models/ats/spec.py`
+#     sets a permissive `param_name_regex` and `ATSParameterParser` does the real work
+#     (numeric-leaf detection, region multiplicity, unit + category extraction).
+#
+#  2. ATS has NO PFT axis. Its grouping axis is the mesh REGION / material
+#     (`models/ats/spec.py` grouping_axis="region"). Per the canonical template's axis
+#     rule, carry the region name in the `pft` column as the documented single-axis
+#     stopgap and declare the real axis; do NOT rename `pft`.
+#     VERIFIED 2026-08-25: `tools/check_bound_source.py` reads a region axis, and
+#     `tools/param_spec.load_param_spec` RAISES on it (integer-only), exactly as it
+#     does for PFLOTRAN's minerals. Use the sampler path, not the canonical loader.
+#
+# EVERY VALUE BELOW IS A PLACEHOLDER. Structure is wired; values are NOT. Filling them
+# with plausible numbers is worse than leaving them, because a fabricated list looks
+# like a starting point ([[feedback_placeholder_targets_structure_not_values]]).
+#
+# Categories come from `models/ats/spec.py::param_categories` -- water_retention,
+# permeability, porosity, surface_flow, evapotranspiration, thermal, freezing_curve,
+# initial_state, radiation, plant_hydraulics, snow, phenology. NOTE `fluid_property`
+# is NOT calibratable (constants of water; see _PHYSICAL_CATEGORIES in
+# models/ats/parameter_parser.py) -- do not put one in a list.
+# =============================================================================
+# ★ bound_source VOCABULARY — start every entry with one of these ★
+#   measured:     Derived from THIS project's own measurements. Name the dataset/campaign and the
+#                 statistic used (mean +/- SD, min-max, IQR) so the range is reproducible.
+#   literature:   From a literature review. MUST carry the citation AND a DOI —
+#                 e.g. `literature: growth yield Yg; Amthor 2000 doi:10.1006/anbo.2000.1175`.
+#                 A claim without a resolvable DOI is not a literature bound.
+#   database:     From a trait/data centre — TRY, FRED, FLUXNET, and similar. Name the DATABASE,
+#                 the trait/record, and its citation or DOI —
+#                 e.g. `database: FRED absorptive fine-root radius; Iversen 2017 doi:10.1111/nph.14486`.
+#   prior_round:  Carried from an earlier calibration round. Name the round and what narrowed it.
+#   provisional:  No evidence yet — say so explicitly and give the basis (e.g. `provisional:
+#                 default +/-50% -- refine before the next round`). NEVER leave the cell blank: a
+#                 blank reads as "not recorded", which the next reader cannot distinguish from a
+#                 published range.
+#   Add `source-verified` when the parameter's MEANING and UNITS were confirmed against the model
+#   source, not just its name — a long_name or a units attribute can be wrong.
+#
+# WHICH LOADER READS THIS (auto-detected from the header)
+#   * Canonical / adapter (this form): `name` + `pft` + the two suffixed bound columns
+#     -> scripts/create_adapter_parameter_sample.py::parse_pft_param_list, id `{name}_{pft}`.
+#     USE THIS FORM for a new model. Extra columns are carried along and never break the parse.
+#   * FATES LEGACY: `fates_name` + `pft` + `organ` + the bare bound names (+ `default_api43`)
+#     -> tools/param_spec.py, id `fates_name#p{pft}#o{organ}`. Retained because the live
+#     168-parameter Kougarok list must not be rewritten under a running round. Do NOT start a new
+#     list in this dialect. `organ` is in the canonical schema too (above); only the multi-axis
+#     ID BUILDER is pending.
+#
+# EXAMPLE ROWS (delete + replace with your model's parameters) — drawn from more than one model,
+# so the schema reads as model-neutral rather than as one model's list.
+# =============================================================================
+name,pft,category,description,units,nc_dim,default,lower_bound,upper_bound,bound_source
+# ↓ EXAMPLE ROWS -- illustrative shapes, NOT this case's parameters. Replace all three.
+# They are real rows (not commented) so the template itself stays checkable: every sibling
+# template does the same, and `tests/test_bound_source_vocabulary.py::test_every_shipped_
+# template_conforms` asserts it. Their bound_source is `provisional:` because an EXAMPLE has
+# no provenance to cite -- inventing a DOI here would be the exact fabrication the vocabulary
+# exists to prevent.
+flow/water retention model/WRM parameters/upland/van Genuchten alpha [Pa^-1],upland,water_retention,EXAMPLE -- VG alpha for the upland region,Pa^-1,,1.0e-4,5.0e-5,2.0e-4,provisional: EXAMPLE ROW; replace with this case's value and its real provenance
+flow/permeability/upland/permeability [m^2],upland,permeability,EXAMPLE -- intrinsic permeability,m^2,,1.0e-12,5.0e-13,2.0e-12,provisional: EXAMPLE ROW; replace with this case's value and its real provenance
+surface flow/Manning coefficient/hillslope,hillslope,surface_flow,EXAMPLE -- Manning n for overland flow,s m^-1/3,,0.05,0.025,0.1,provisional: EXAMPLE ROW; replace with this case's value and its real provenance

@@ -1,0 +1,180 @@
+SECONDARY_SPECIES
+ List of secondary aqueous species or complexes.
+
+AQUEOUS_DIFFUSION_COEFFICIENTS
+ List of primary species and diffusion coefficients for which the default
+ aqueous diffusion coefficient will be overwritten. Species-dependent 
+ diffusion is not supported for simulations with aqueous complexation.
+ (default units [m\ :sup:`2`\/s])
+
+GAS_DIFFUSION_COEFFICIENTS
+ List of gas species and diffusion coefficients for which the default
+ gas diffusion coefficient will be overwritten.
+ (default units [m\ :sup:`2`\/s])
+
+DECOUPLED_EQUILIBRIUM_REACTIONS
+ List of equilibrium reaction species from the database to be decoupled, 
+ likely so that the associated primary and secondary species in the 
+ database can be used in kinetic reactions.
+
+ACTIVE_GAS_SPECIES
+ List of gas species where the gas phase mass is included in the
+ mass conservation equations.
+
+CALCULATE_INITIAL_POROSITY
+ Calculate the initial porosity as the sum of the initial mineral volume
+ fractions.
+
+:ref:`nucleation-kinetics-card`
+ Specifies nucleation reactions and associated parameters.
+
+:ref:`override-mineral-mass-action-card`
+ Specifies reaction expressions and log Ks that will override what is 
+ defined in the database.
+
+PASSIVE_GAS_SPECIES
+ List of gas species used as reference species (e.g. reaction database,
+ transport constraints, basis swapping, etc.).
+
+IMMOBILE_SPECIES
+ List of immobile species that are included as primary dependent variables
+ (e.g. biomass, NAPL, customization in the reaction sandbox).
+
+:ref:`immobile-decay-reaction-card`
+ Parameters for decay of immobile species (e.g. biomass).
+
+:ref:`radioactive-decay-reaction-card`
+ Parameters for kinetic radioactive decay reactions.
+
+:ref:`general-reaction-card`
+ Parameters for general forward/reverse kinetic reactions.
+
+:ref:`microbial-reaction-card`
+ Parameters for microbially-mediated reactions.
+
+MINERALS
+ List of minerals. 
+
+:ref:`mineral-kinetics-card`
+ Parameters for kinetic mineral precipitation/dissolution reactions.
+
+:ref:`sorption-card`
+ Sorption reactions.
+
+:ref:`reaction-sandbox-card`
+  Reaction sandbox for custom, user-defined reactions.
+
+DATABASE <string>
+ Path/filename for reaction database.  For descriptions of the database format, see the brief :ref:`geochemical-database`, or :ref:`thermodynamic-database`, a more indepth description from the theory guide.
+
+LOG_FORMULATION
+ Flag for solving Newton-Raphson equations with derivatives computed with 
+ respect to the logarithm  (base 10) of the concentrations. Should not be
+ used for linear equations (e.g. conservative tracers).
+
+ACTIVITY_COEFFICIENTS <algorithm string> <frequency string>
+ Specifies algorithms for calculating activity coefficients. 
+ (default = LAG TIMESTEP)
+
+ - Algorithm:
+
+  - OFF:
+     Disables the calculation of activity coefficients. All activity 
+     coefficients are assume to be 1.
+  - LAG: 
+     The update of activity coefficients is lagged by a 
+     TIMESTEP or NEWTON_ITERATION.
+  - NEWTON
+     Ionic strength and activity coefficient calculation iterates to
+     convergence. **Computationally expensive.**
+
+ - Update Frequency:
+
+  - TIMESTEP
+     Update after every time step
+  - NEWTON_ITERATION
+     Update after every Newton iteration
+
+NO_CHECK_UPDATE
+ @EXPERT
+ Disables (pre)check on solution update.
+
+NO_BDOT
+ Use Debye-Huckel formulation without B-dot.
+
+NO_RESTART_MINERAL_VOL_FRAC
+ Disables the reading of mineral volume fractions on restart. Mineral
+ volume fractions specified in the input file will be used instead.
+
+NO_CHECKPOINT_ACT_COEFS
+ Disables checkpointing of activity coefficients. Since activity
+ coefficients are a function of the solution ionic strength from the 
+ previous time step, the original and restarted solutions will not 
+ match identically if such checkpointing is disabled.
+
+UPDATE_POROSITY
+ Update porosity after every time step.  The default minimum porosity is 0,
+ and one can make minimum porosity non-zero using MINIMUM_POROSITY.
+ The initial porosity is calculated as a function of initial mineral volume
+ fractions.
+ See :ref:`material-property-updates` in the :ref:`theory-guide`.
+
+MINIMUM_POROSITY <float>
+ Float specifies minimum porosity to which porosity is truncated if
+ below that value. (default = 0)
+
+UPDATE_PERMEABILITY
+ Update permeabilty after every time step.
+ See :ref:`material-property-updates` in the :ref:`theory-guide`.
+
+UPDATE_TORTUOSITY
+ Update tortuosity after every time step.
+ See :ref:`material-property-updates` in the :ref:`theory-guide`.
+
+MOLAL, MOLALITY
+ Print concentrations as molalities instead of molarities.
+
+ACTIVITY_H2O, ACTIVITY_WATER
+ Calculate activity of water.
+ (default = False)
+
+:ref:`output-chemistry-card`
+ Specifies parameters for output.
+
+MAX_DLNC <float>
+ Specifies maximum change in log concentration for a Newton Raphson iteration.  
+ Changes in concentration larger than this value will be truncated to this 
+ value.  
+ (default = 5)
+
+MAX_RELATIVE_CHANGE_TOLERANCE <float>
+ Specifies the maximum relative change in free ion concentration allowed for 
+ convergence (i.e. ||(c^k+1-c^k)/c^k||_inf).  
+ (default = 1.e-12)
+
+MAX_RESIDUAL_TOLERANCE <float>
+ Specified the maximum residual allowed for a primary species for convergence 
+ (i.e. ||f(c^k+1)||_inf).  
+ (default = 1.e-12)
+
+TRUNCATE_CONCENTRATION <float>
+ Specify a minimum concentration below which free-ion concentration may not 
+ fall.  (Due to the molality/molarity conversion, the concentration may fall 
+ slightly below the prescribed value when the water density is less than 1000 
+ kg/m\ :sup:`3`\)
+ 
+USE_FULL_GEOCHEMISTRY
+ Forces full geochemistry calculation even if only tracers are specified. 
+
+GEOTHERMAL_HPT
+ @EXPERT
+ Turns on the geothermal high pressure-temperature capability.
+
+ELECTRICAL_CONDUCTIVITY_METHOD
+ Specifies the method used to calculate fluid electrical conductivity 
+ (e.g., for use in output, geophysics, etc.). Options include: LINEAR, 
+ PSEUDO_LINEAR, MOBILITY.
+
+# Undocumented
+# UPDATE_ARMOR_MINERAL_SURFACE
+# UPDATE_ARMOR_MINERAL_SURFACE_FLAG

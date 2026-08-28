@@ -1,0 +1,139 @@
+Back to :ref:`card-index`
+
+.. _geomechanics-subsurface-coupling-card:
+
+GEOMECHANICS_SUBSURFACE_COUPLING
+================================
+Information regarding the coupling between flow and geomechanics is provided here.
+
+Required Cards:
+---------------
+GEOMECHANICS_SUBSURFACE_COUPLING <string>
+  Provide the type of coupling under <string>. Options include: ONE_WAY_COUPLED and TWO_WAY_COUPLED. The ONE_WAY_COUPLED option will only update pore pressure in the geomechanics side of things and use it for calculations of stresses and strains. TWO_WAY_COUPLED option will also update the material properties (porosity, permeability) on the flow side of things based on information from geomechanics. 
+
+MAPPING_FILE <filename>
+  Provide the filename of the flow to geomechanics mapping. The first column should be flow cell ids and the second column should be geomechanics vertices.
+
+Examples
+--------
+
+ ::
+
+  
+ 
+  GEOMECHANICS_SUBSURFACE_COUPLING ONE_WAY_COUPLED
+    MAPPING_FILE flow_geomech_mapping.dat
+  END 
+
+Example of a ``flow_geomech_mapping.dat`` file:
+
+  ::
+
+    1 1
+    1 2
+    1 3
+    1 4
+    1 5
+    1 6
+    1 7
+    1 8
+    1 9
+    1 10
+    1 11
+    1 12
+    1 13
+    1 14
+    1 15
+    1 16
+    1 17
+    1 18
+    2 19
+    2 20
+    2 21
+    2 22
+    2 23
+    2 24
+    2 25
+    2 26
+    2 27
+    3 28
+    3 29
+    3 30
+    3 31
+    3 32
+    3 33
+    3 34
+    3 35
+    3 36
+    4 37
+    4 38
+    4 39
+    4 40
+    4 41
+    4 42
+    4 43
+    4 44
+    4 45
+    5 46
+    5 47
+    5 48
+    5 49
+    5 50
+    5 51
+    5 52
+    5 53
+    5 54
+    6 55
+    6 56
+    6 57
+    6 58
+    6 59
+    6 60
+    6 61
+    6 62
+    6 63
+    7 64
+    7 65
+    7 66
+    7 67
+    7 68
+    7 69
+    7 70
+    7 71
+    7 72
+    8 73
+    8 74
+    8 75
+    8 76
+    8 77
+    8 78
+    8 79
+    8 80
+    8 81
+    9 82
+    9 83
+    9 84
+    9 85
+    9 86
+    9 87
+    9 88
+    9 89
+    9 90
+    10 91
+    10 92
+    10 93
+    10 94
+    10 95
+    10 96
+    10 97
+    10 98
+    10 99
+    10 100
+    10 101
+    10 102
+    10 103
+    10 104
+    10 105
+    10 106
+    10 107
+    10 108

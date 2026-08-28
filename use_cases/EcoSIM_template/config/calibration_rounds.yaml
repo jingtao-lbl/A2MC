@@ -1,0 +1,164 @@
+# ECOSIM calibration-rounds TEMPLATE — copy to
+#   use_cases/EcoSIM_<Case>/config/calibration_rounds.yaml
+# MODEL-SPECIFIC, SITE-AGNOSTIC. EcoSIM is a standalone namelist-driven binary, non-CIME:
+# no ADSP/RGSP/TRANS phases, no elm_options, no E3SM checkout. See
+# use_cases/EcoSIM_BioCON/config/calibration_rounds.yaml for what a REAL, adapter-shaped
+# round record looks like; this template mirrors it.
+#
+# Regenerate + validate with the ADAPTER-model generator (NOT tools/generate_calibration_rounds.py,
+# which is FATES/CIME-only):
+#   source a2mc_noncime_config.sh
+#   source use_cases/EcoSIM_<Case>/config/ecosim_<case>_config.sh
+#   python scripts/generate_adapter_calibration_rounds.py --round 1 --write
+#   python scripts/check_adapter_calibration_rounds.py    --round 1
+# --write MERGES: it refreshes DERIVED fields in place and never overwrites AUTHORED
+# ones (rationale, changes_from_previous, outcome, status), so it is safe to re-run on
+# a completed round. A surprise in its report means the CONFIG drifted, not the record.
+#
+# COMMENTS: the generator preserves this header block but cannot preserve inline
+# per-key comments (PyYAML cannot round-trip them). Put anything durable up here.
+# =============================================================================
+
+model: ecosim
+site: MySite            # [AUTHORED] matches $A2MC_SITE_NAME
+
+rounds:
+
+  # ---------------------------------------------------------------------------
+  # Round 1 — the first round on this lineage
+  # ---------------------------------------------------------------------------
+  1:
+    # -- [DERIVED] from the site config; regenerate rather than edit ----------
+    parameters: 40                        # $A2MC_N_PARAMS (from the param list CONTENT)
+    ensembles: 820                        # $A2MC_TOTAL_ENSEMBLE (by scheme; Morris = traj x (P+1))
+    trajectories: 20                      # $A2MC_N_TRAJECTORIES
+    sampling_scheme: morris               # $A2MC_SAMPLING_SCHEME
+    config_file: use_cases/MySite/config/ecosim_mysite_config.sh
+    paths:
+      output_root: <PATH_TO_ENSEMBLE_OUTPUT_ROOT_ON_CFS>   # $A2MC_OUTPUT_ROOT -- CFS, never ~/
+      ensemble_name: R1_<NPARA>Para_Morris<NTRAJ>
+      ensemble_output: ${A2MC_OUTPUT_ROOT}/R1_<NPARA>Para_Morris<NTRAJ>
+      case_name_pattern: <CASE>_case{N}
+      param_list: use_cases/MySite/parameters/ecosim_mysite_param_list.csv
+      salib_problem: use_cases/MySite/parameters/salib_problem_ecosim_mysite.txt
+      base_param_file: <PATH_TO_BASE_PFT_INPUT>.nc    # $A2MC_BASE_PARAM_FILE
+
+    # Targets are variable/reduce/observed dicts, not PFT biomass -- one dict per
+    # target, matching validation/targets.yaml's own schema (kept here too so the
+    # round record is self-contained without cross-referencing the targets file).
+    targets:
+    - variable: NPP_pft
+      observed: X.X
+      units: gC/m2/yr
+      reduce: annual
+      name: NPP
+    - variable:
+      - SHOOT_C_pft
+      - Root_C_pft
+      observed: X.X
+      units: gC/m2
+      reduce: sum_pft_peak
+      name: plant_C
+
+    validation_targets_file: use_cases/MySite/validation/targets.yaml
+
+    # No FATES-style suplphos/suplnitro/elm_options here -- a standalone binary
+    # has no CIME phases. Record what actually varies run to run instead.
+    #
+    # !! `protocol` IS A RECORD, NOT A SWITCH !!  `run_type` is WRITTEN by
+    # scripts/generate_adapter_calibration_rounds.py (from $A2MC_RUN_TYPE, default
+    # single_continuous) and READ BY NOTHING. Setting it to spin_up_then_run does not
+    # cause a spin-up; it DESCRIBES one you configured in the namelist. Because nothing
+    # enforces it, an unfilled or stale value silently misdescribes the round to every
+    # later reader -- EcoSIM_Lusignan ran a 10-yr recycled spin-up for weeks while this
+    # block still carried the scaffold default. FILL IT when you configure the namelist.
+    protocol:
+      run_type: single_continuous           # or: spin_up_then_run -- see the worked example below
+      sim_years: <YYYY-YYYY>                # matches the namelist's simulation window
+      parallelism: SLURM job array (--array); each case a serial srun -n 1 (OMP=1, mpi=0)
+
+    # -- WORKED EXAMPLE: spin-up ---------------------------------------------
+    # EcoSIM HAS NO SPIN-UP SWITCH. You spin up by RECYCLING FORCING, expressed in the
+    # base namelist (case_template/run.nml) as extra `forc_periods` triplets. `forc_periods`
+    # is up to five (year0, year1, REPEATS) triplets; `repeats` replays that block of
+    # forcing years. Full option reference: case_template/OPTIONS.md.
+    #
+    # This is EcoSIM_Lusignan's real configuration -- a site with 2006-2023 forcing that
+    # needed a decade of spin-up first, and no pre-2006 weather to spin up WITH:
+    #
+    #   case_template/run.nml
+    #     start_date   = '19960101000000'          ! MODEL calendar starts 10 yr early
+    #     forc_periods = 2006, 2015, 1,  2006, 2023, 1
+    #                    ^^^^^^^^^^^^^^ replay 2006-2015 once as spin-up (10 yr)
+    #                                   ^^^^^^^^^^^^^^ then the real run  (18 yr)
+    #     stop_n       = 28                        ! 10 + 18; NOT derived, must match
+    #
+    #   config/<model>_<case>_config.sh
+    #     export A2MC_VALIDATION_START_YEAR="1996"  # = start_date's year, NOT 2006.
+    #                                               # It anchors record 0 of the tape.
+    #
+    #   this file
+    #     run_type:  spin_up_then_run
+    #     sim_years: 1996-2023                      # the FULL model calendar, spin-up included
+    #
+    # THREE TRAPS, each one measured on a real run:
+    #  1. `stop_n` is not derived from forc_periods. Mismatch = a truncated or over-long run.
+    #  2. A2MC_VALIDATION_START_YEAR must equal start_date's year. Anchoring it at the first
+    #     ANALYSIS year instead scored Lusignan's GPP at 1981 rather than 1816 gC/m2/yr --
+    #     with no error raised, because the scored window was still fully covered.
+    #  3. Management keys on the FORCING year, not the model year, so recycling replays
+    #     planting, cuts and fertiliser too. Usually what you want; know that it happens.
+    #
+    # Spin-up is not optional polish. On Lusignan it changed which parameter the
+    # calibration should target: annual respiration agreed BETTER before spin-up, because
+    # a cold start leaves an artificially large pool of fresh decomposing material that
+    # props respiration up for the wrong reason.
+
+    # -- [AUTHORED] model provenance -----------------------------------------
+    # Block name is MODEL-NAMESPACED: pflotran_source | ecosim_source | ats_source.
+    # version/checkout are DERIVED (from $A2MC_MODEL_PATH); the rest is authored
+    # and never overwritten by --write.
+    ecosim_source:
+      version: <commit_short>              # [DERIVED] the pinned EcoSIM commit
+      checkout: <PATH_TO_ECOSIM_CHECKOUT>  # [DERIVED] $A2MC_MODEL_PATH -- EcoSIM's OWN
+                                            # checkout, not an E3SM/ELM tree (this is a
+                                            # standalone model with no FATES/ELM commit)
+      branch: ""                            # [AUTHORED] experiment branch, if not the anchor
+      fork: <git@github.com:you/EcoSIM.git>  # [AUTHORED] the fork model-dev pushes land on
+      binary: <PATH_TO_BUILT_BINARY>        # [AUTHORED] the built ecosim.f90.x used this round
+      param_format: per-PFT NetCDF pft input
+    overrides: {}                           # [AUTHORED] per-round parameter overrides
+
+    # -- [AUTHORED] narrative -------------------------------------------------
+    rationale: >
+      Why this round is designed the way it is. What question it answers, and
+      what would count as an answer.
+    changes_from_previous:
+      - First round on this lineage.      # for round N>1, list the concrete deltas
+
+    # -- [AUTHORED] written at the Phase-6 gate, by the agent ------------------
+    outcome: null                         # null until the round completes
+    status: planned                       # planned | in_progress | completed | superseded
+    # completed_date: 2026-08-02          # [AUTHORED] add when status -> completed
+
+  # ---------------------------------------------------------------------------
+  # Round 2 — what a COMPLETED round looks like (delete if not applicable)
+  # ---------------------------------------------------------------------------
+  # 2:
+  #   parameters: 40
+  #   ...derived fields as above...
+  #   changes_from_previous:
+  #     - "Base switched to the R1-best config; first VALID Morris screen"
+  #     - "Added the dominant levers R1 held fixed as inputs"
+  #   rationale: >
+  #     R1 reached only a partial fit and the limiter turned out to be upstream
+  #     of the calibrated parameters. R2 opens those levers and re-screens.
+  #   outcome: >
+  #     R2 completed 820/820 on 2026-09-14. Headline: <the finding>.
+  #     Best case <N>/<M> targets (was <N0>/<M>). See reports/20260914a_R2_ROUND_SUMMARY/.
+  #   status: completed
+  #   completed_date: 2026-09-14
+  #   key_cases:                          # [AUTHORED] the cases worth revisiting
+  #     best: case042
+  #   provenance:                         # [AUTHORED] where the evidence lives
+  #     key_logs: [20260914a_phase6_refinement_r02]

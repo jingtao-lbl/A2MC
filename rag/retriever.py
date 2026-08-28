@@ -1,0 +1,444 @@
+"""
+RAG Retriever for knowledge bases.
+
+Provides high-level interface for retrieving relevant context
+from documentation during AI-assisted calibration.
+
+Supports multiple knowledge bases:
+- FATES: docs/fates-knowledge-base/
+- ELM: docs/elm-knowledge-base/
+"""
+
+from pathlib import Path
+from typing import Optional, Union
+
+from .loader import (
+    load_all_documents,
+    load_knowledge_base,
+    load_multiple_knowledge_bases,
+    chunk_documents,
+    DEFAULT_KNOWLEDGE_BASES
+)
+from .vector_store import FATESVectorStore
+
+
+class FATESRetriever:
+    """
+    RAG retriever for knowledge base documentation.
+
+    Combines document loading, chunking, and vector search
+    to provide relevant context for calibration tasks.
+
+    Supports single or multiple knowledge bases.
+    """
+
+    def __init__(
+        self,
+        knowledge_base_path: Union[str, list[str]] = None,
+        persist_dir: str = None,
+        auto_build: bool = False,
+        wiki_subdirs: list[str] = None,
+        docs_subdirs: list[str] = None,
+        collection_name: str = None,
+        require_existing: bool = False,
+    ):
+        """
+        Initialize the retriever.
+
+        Args:
+            knowledge_base_path: Path(s) to knowledge base directory(ies).
+                                 Can be a single path string or list of paths.
+                                 If None, uses DEFAULT_KNOWLEDGE_BASES.
+            persist_dir: Directory for ChromaDB persistence. If None, derived
+                         from `$A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE` (env
+                         vars must be set; see version-association infra).
+            auto_build: If True, automatically build index if empty
+            wiki_subdirs: Optional list of explicit wiki subdir names, parallel
+                          to `kb_paths`. Required when wiki dirs don't follow
+                          the legacy `<kb>-codebase-wiki/` pattern (e.g.,
+                          post-symlink-removal in v2.90 where dirs are
+                          commit-pinned like `fates-codebase-wiki-e027a40/`).
+            docs_subdirs: Same shape as `wiki_subdirs`, for official-docs dirs.
+        """
+        # Handle default and normalize to list
+        if knowledge_base_path is None:
+            self.kb_paths = DEFAULT_KNOWLEDGE_BASES
+        elif isinstance(knowledge_base_path, str):
+            self.kb_paths = [knowledge_base_path]
+        else:
+            self.kb_paths = knowledge_base_path
+
+        # Keep single path for backward compatibility
+        self.kb_path = self.kb_paths[0] if len(self.kb_paths) == 1 else self.kb_paths
+
+        # Wiki / docs subdir overrides (None per slot = probe fallback)
+        self.wiki_subdirs = wiki_subdirs
+        self.docs_subdirs = docs_subdirs
+
+        # Vector store resolves persist_dir from env vars if not given.
+        # collection_name=None keeps FATESVectorStore's own default ("fates_knowledge"),
+        # so the FATES path is byte-identical to before; adapters pass their own.
+        _vs_kw = {"persist_dir": persist_dir, "require_existing": require_existing}
+        if collection_name:
+            _vs_kw["collection_name"] = collection_name
+        self.vector_store = FATESVectorStore(**_vs_kw)
+        self.persist_dir = self.vector_store.persist_dir
+        self._indexed = self.vector_store.collection.count() > 0
+
+        if auto_build and not self._indexed:
+            print("Index is empty. Building automatically...")
+            self.build_index()
+
+    def build_index(self, chunk_size: int = 1000, chunk_overlap: int = 200):
+        """
+        Build the vector index from the knowledge base(s).
+
+        Args:
+            chunk_size: Target size for document chunks
+            chunk_overlap: Overlap between chunks
+        """
+        # Load documents from all knowledge bases
+        if len(self.kb_paths) == 1:
+            print(f"Building index from: {self.kb_paths[0]}")
+            wiki_sd = self.wiki_subdirs[0] if self.wiki_subdirs else None
+            docs_sd = self.docs_subdirs[0] if self.docs_subdirs else None
+            docs = load_knowledge_base(
+                self.kb_paths[0], wiki_subdir=wiki_sd, docs_subdir=docs_sd,
+            )
+        else:
+            print(f"Building index from {len(self.kb_paths)} knowledge bases:")
+            for path in self.kb_paths:
+                print(f"  - {path}")
+            docs = load_multiple_knowledge_bases(
+                self.kb_paths,
+                wiki_subdirs=self.wiki_subdirs,
+                docs_subdirs=self.docs_subdirs,
+            )
+
+        if not docs:
+            print("Warning: No documents found!")
+            return
+
+        # Chunk documents
+        print(f"\nChunking {len(docs)} documents...")
+        chunks = chunk_documents(docs, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        print(f"Created {len(chunks)} chunks")
+
+        # Add to vector store
+        print("\nAdding to vector store...")
+        self.vector_store.add_documents(chunks)
+
+        self._indexed = True
+        print("\nIndex built successfully!")
+
+    def get_context(
+        self,
+        query: str,
+        n_results: int = 5,
+        filter_type: Optional[str] = None
+    ) -> str:
+        """
+        Get relevant context for a query.
+
+        Args:
+            query: Search query
+            n_results: Number of results to return
+            filter_type: Filter by document type
+
+        Returns:
+            Formatted context string
+        """
+        if not self._indexed:
+            raise ValueError("Index not built. Call build_index() first or set auto_build=True")
+
+        results = self.vector_store.query(
+            query,
+            n_results=n_results,
+            filter_type=filter_type
+        )
+
+        if not results:
+            return "No relevant documentation found."
+
+        # Format context
+        context_parts = []
+        for i, r in enumerate(results, 1):
+            source_info = f"[{i}] Source: {r['source']}"
+            if r.get('title'):
+                source_info += f" ({r['title']})"
+
+            context_parts.append(f"{source_info}\n{r['content']}")
+
+        return "\n\n---\n\n".join(context_parts)
+
+    def get_calibration_context(
+        self,
+        parameters: list[str] = None,
+        outputs: list[str] = None,
+        mechanisms: list[str] = None,
+        n_results_per_query: int = 2,
+        max_total_results: int = 10,
+        kb_source: Optional[str] = None,
+        mode_where: Optional[dict] = None,
+    ) -> str:
+        """
+        Get context relevant to specific calibration targets.
+
+        Generates targeted queries for parameters, outputs, and mechanisms
+        and combines the results.
+
+        Args:
+            parameters: List of parameter names (e.g., ['fates_cnp_pid_kp', 'fates_alloc_storage_cushion'])
+            outputs: List of output variables (e.g., ['leaf_biomass', 'fineroot'])
+            mechanisms: List of mechanisms (e.g., ['PID controller', 'ECA competition'])
+            n_results_per_query: Results per individual query
+            max_total_results: Maximum total results to return
+
+        Returns:
+            Formatted context string
+        """
+        if not self._indexed:
+            raise ValueError("Index not built. Call build_index() first or set auto_build=True")
+
+        queries = []
+
+        # Generate queries for parameters
+        if parameters:
+            for param in parameters:
+                # Clean parameter name for querying
+                clean_param = param.replace('fates_', '').replace('_', ' ')
+                queries.append(f"FATES parameter {clean_param} controls behavior effect")
+                queries.append(f"{param} sensitivity calibration")
+
+        # Generate queries for outputs
+        if outputs:
+            for output in outputs:
+                queries.append(f"FATES {output} biomass allocation mechanism")
+                queries.append(f"{output} sensitivity parameters")
+
+        # Generate queries for mechanisms
+        if mechanisms:
+            for mech in mechanisms:
+                queries.append(f"FATES {mech} mechanism implementation")
+                queries.append(f"{mech} parameters controls")
+
+        if not queries:
+            return "No queries specified. Provide parameters, outputs, or mechanisms."
+
+        # Query with all queries
+        results = self.vector_store.query_multiple(
+            queries,
+            n_results_per_query=n_results_per_query,
+            deduplicate=True,
+            kb_source=kb_source,
+            mode_where=mode_where,
+        )
+
+        # Limit total results
+        results = results[:max_total_results]
+
+        if not results:
+            return "No relevant documentation found."
+
+        # Format context
+        context_parts = []
+        for i, r in enumerate(results, 1):
+            source_info = f"[{i}] Source: {r['source']} (relevance: {r['relevance']:.2f})"
+            context_parts.append(f"{source_info}\n{r['content']}")
+
+        return "\n\n---\n\n".join(context_parts)
+
+    def search(
+        self,
+        query: str,
+        n_results: int = 5,
+        return_raw: bool = False
+    ) -> list[dict] | str:
+        """
+        Search the knowledge base.
+
+        Args:
+            query: Search query
+            n_results: Number of results
+            return_raw: If True, return raw result dictionaries
+
+        Returns:
+            Either formatted string or list of result dicts
+        """
+        if not self._indexed:
+            raise ValueError("Index not built. Call build_index() first or set auto_build=True")
+
+        results = self.vector_store.query(query, n_results=n_results)
+
+        if return_raw:
+            return results
+
+        return self.get_context(query, n_results=n_results)
+
+    def get_parameter_documentation(self, param_name: str) -> str:
+        """
+        Get documentation for a specific parameter.
+
+        Args:
+            param_name: FATES parameter name
+
+        Returns:
+            Relevant documentation context
+        """
+        queries = [
+            f"parameter {param_name} description",
+            f"{param_name} controls affects",
+            f"{param_name} calibration sensitivity"
+        ]
+
+        results = self.vector_store.query_multiple(
+            queries,
+            n_results_per_query=2,
+            deduplicate=True
+        )[:5]
+
+        if not results:
+            return f"No documentation found for parameter: {param_name}"
+
+        context_parts = []
+        for r in results:
+            context_parts.append(f"[{r['source']}]\n{r['content']}")
+
+        return "\n\n---\n\n".join(context_parts)
+
+    def get_mechanism_documentation(self, mechanism: str) -> str:
+        """
+        Get documentation for a specific mechanism.
+
+        Args:
+            mechanism: Mechanism name (e.g., 'PID controller', 'phenology')
+
+        Returns:
+            Relevant documentation context
+        """
+        queries = [
+            f"FATES {mechanism} mechanism",
+            f"{mechanism} implementation code",
+            f"{mechanism} parameters controls"
+        ]
+
+        results = self.vector_store.query_multiple(
+            queries,
+            n_results_per_query=3,
+            deduplicate=True
+        )[:8]
+
+        if not results:
+            return f"No documentation found for mechanism: {mechanism}"
+
+        context_parts = []
+        for r in results:
+            context_parts.append(f"[{r['source']}]\n{r['content']}")
+
+        return "\n\n---\n\n".join(context_parts)
+
+    def query_parameters(
+        self,
+        query: str,
+        n_results: int = 10,
+        category: Optional[str] = None
+    ) -> list[dict]:
+        """Query for parameter definitions. Proxy to vector_store."""
+        if not self._indexed:
+            return []
+        return self.vector_store.query_parameters(query, n_results, category)
+
+    def query_outputs(
+        self,
+        query: str,
+        n_results: int = 10,
+        dimension_level: Optional[str] = None
+    ) -> list[dict]:
+        """Query for output variable definitions. Proxy to vector_store."""
+        if not self._indexed:
+            return []
+        return self.vector_store.query_outputs(query, n_results, dimension_level)
+
+    def get_stats(self) -> dict:
+        """Get retriever statistics."""
+        store_stats = self.vector_store.get_stats()
+        return {
+            **store_stats,
+            'knowledge_base_path': self.kb_path,
+            'indexed': self._indexed
+        }
+
+
+def create_retriever(
+    knowledge_base_path: str = "docs/fates-knowledge-base",
+    persist_dir: str = None,
+    rebuild: bool = False,
+    wiki_subdirs: list = None,
+    docs_subdirs: list = None,
+) -> FATESRetriever:
+    """
+    Factory function to create a retriever with optional rebuild.
+
+    Args:
+        knowledge_base_path: Path to knowledge base
+        persist_dir: ChromaDB persistence directory. If None, derived from
+                     $A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE.
+        rebuild: If True, delete existing index and rebuild
+
+    Returns:
+        Configured FATESRetriever instance
+    """
+    if rebuild and persist_dir is not None:
+        import shutil
+        persist_path = Path(persist_dir)
+        if persist_path.exists():
+            print(f"Removing existing index at: {persist_dir}")
+            shutil.rmtree(persist_dir)
+
+    retriever = FATESRetriever(
+        knowledge_base_path=knowledge_base_path,
+        persist_dir=persist_dir,
+        auto_build=True,
+        wiki_subdirs=wiki_subdirs,
+        docs_subdirs=docs_subdirs,
+    )
+
+    return retriever
+
+
+if __name__ == "__main__":
+    import sys
+
+    kb_path = sys.argv[1] if len(sys.argv) > 1 else "docs/fates-knowledge-base"
+
+    print("Creating FATES retriever...")
+    retriever = FATESRetriever(knowledge_base_path=kb_path, auto_build=True)
+
+    print("\n" + "=" * 50)
+    print("Testing retriever")
+    print("=" * 50)
+
+    # Test basic search
+    print("\n1. Basic search: 'PID controller allocation'")
+    context = retriever.get_context("PID controller allocation", n_results=3)
+    print(context[:500] + "..." if len(context) > 500 else context)
+
+    # Test calibration context
+    print("\n2. Calibration context for PFT#10 optimization")
+    cal_context = retriever.get_calibration_context(
+        parameters=['fates_cnp_pid_kp', 'fates_alloc_storage_cushion'],
+        outputs=['leaf_biomass', 'fineroot_biomass'],
+        mechanisms=['PID controller', 'nutrient competition']
+    )
+    print(cal_context[:500] + "..." if len(cal_context) > 500 else cal_context)
+
+    # Test parameter documentation
+    print("\n3. Parameter documentation: fates_cnp_pid_kp")
+    param_doc = retriever.get_parameter_documentation('fates_cnp_pid_kp')
+    print(param_doc[:500] + "..." if len(param_doc) > 500 else param_doc)
+
+    print("\n" + "=" * 50)
+    print("Retriever stats:")
+    stats = retriever.get_stats()
+    for k, v in stats.items():
+        print(f"  {k}: {v}")

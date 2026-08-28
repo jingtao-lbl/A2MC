@@ -1,0 +1,137 @@
+{
+  "_comment": "EcoSIM generic discoveries - applies to EcoSIM calibration across sites",
+  "_schema_version": "1.0",
+  "_last_updated": "2026-08-14",
+  "_source": "adapter-kit v0.1 seed (ai-draft) from the 15 source-cited findings in memory/dev_logs/20260424g_EcoSIM_Codebase_Wiki_Rewrite.md + models/ecosim/curated_seed.yaml. PENDING PI REVIEW before promotion to confidence >= 0.8. | 2026-08-14: 2 VERIFIED entries appended from the R3 c00 pre-flight work (each carries a file:line or a reproduced runtime error; not ai-draft seeds).",
+  "_affects_convention": "affects lists output-variable names (EcoSIM history vars) or process axes",
+  "discoveries": [
+    {
+      "id": "ecosim_campbell_hydraulics",
+      "name": "EcoSIM hydraulics is Campbell, not van Genuchten/Brooks-Corey",
+      "description": "Soil water retention uses log-log Campbell with an SRP exponent that switches by organic content (mineral 1.00 / semi-organic 0.33 / organic 0.25). K(theta) is a Green-Corey 100-bin numerical integration, and macropores are explicit (Poiseuille).",
+      "mechanism": "Campbell_Soil_Retention",
+      "affects": [
+        "water_stress",
+        "CAN_GPP_pft",
+        "soil_moisture"
+      ],
+      "discovered_by": "adapter-kit seed (finding #1,#2,#3)",
+      "confidence": 0.6,
+      "source": "SoilPhysParaMod.F90:253-277; SoilHydroParaMod.F90:144-293",
+      "actionable": true,
+      "action": "Do NOT port CLM/ELM/FATES soil-hydraulic priors (VG/Clapp-Hornberger/Brooks-Corey). Treat macropore parameters as a first-class calibration axis."
+    },
+    {
+      "id": "ecosim_microbial_explicit_decomp",
+      "name": "Decomposition is microbially-explicit with Johnson-Lewin-Eyring temperature (not Q10/CENTURY)",
+      "description": "7 heterotroph + 6 autotroph functional groups across a 5-complex x 4-kinetic-component SOM structure; decomposition is linear in active colonized biomass. Temperature is JLE Arrhenius with low/high-T inactivation, not Q10.",
+      "mechanism": "Microbially_Explicit_Decomposition",
+      "affects": [
+        "NET_N_MIN_col",
+        "NET_P_MIN_col",
+        "HUMUS_C_col"
+      ],
+      "discovered_by": "adapter-kit seed (finding #5)",
+      "confidence": 0.6,
+      "source": "Microbial_bgc/ (MicrobeModel -> MicBGC1Layer -> SoilBGCOneLayer)",
+      "actionable": true,
+      "action": "Seed decomposition priors from microbial-explicit models, NOT CENTURY-style CN/CNP. Nutrient mineralization is an emergent competition outcome, not a first-order rate."
+    },
+    {
+      "id": "ecosim_langmuir_p_sorption",
+      "name": "P sorption is Langmuir, not Freundlich",
+      "description": "Geochem uses rate forms with both sides of exchange in the denominator (Langmuir-style), relevant for P-limitation calibration.",
+      "mechanism": "Langmuir_P_Sorption",
+      "affects": [
+        "Plant_P_pft",
+        "LEAF_P_pft",
+        "soil_PO4"
+      ],
+      "discovered_by": "adapter-kit seed (finding #6)",
+      "confidence": 0.6,
+      "source": "Geochem/equilibria_and_sorption",
+      "actionable": true,
+      "action": "For P-limited sites (e.g. Kougarok analog), low plant P may be sorption-limited (soil PO4 unavailable) rather than uptake-kinetics-limited. Diagnose soil PO4 before tuning UPMXPO/UPKMPO."
+    },
+    {
+      "id": "ecosim_turgor_stomata",
+      "name": "Stomatal conductance is turgor-based (not Ball-Berry/Medlyn)",
+      "description": "Stomatal resistance is solved from the CO2 diffusion equation with a turgor stress term exp(-PSICanopyTurg/RCS). Photosynthesis is a Farquhar-type biochemical model deriving Vcmax from leaf Rubisco/protein pools; source cites no Ball-Berry/Medlyn.",
+      "mechanism": "Turgor_Based_Stomatal_Stress",
+      "affects": [
+        "CAN_GPP_pft",
+        "dCAN_GPP_CLIM_pft"
+      ],
+      "discovered_by": "adapter-kit seed (finding #7)",
+      "confidence": 0.6,
+      "source": "StomatesMod.F90; plant_bgc/photosynthesis_and_respiration.md",
+      "actionable": true,
+      "action": "There is no Ball-Berry g1 to calibrate. Water stress enters through canopy turgor (RSMX cuticular resistance, OSMO osmotic potential), coupling stomata to the Campbell hydraulics."
+    },
+    {
+      "id": "ecosim_stage_prescribed_allocation",
+      "name": "Allocation is stage-prescribed with structural-N maintenance respiration (not PARTEH sink-source)",
+      "description": "CalcPartitionCoeff uses hard-coded partition fractions across 5 growth stages (e.g. 0.725 leaf / 0.275 petiole pre-floral-init). Maintenance respiration scales with structural N (ShootStructN) - nonstructural reserves do not pay maintenance. Opposite of FATES PARTEH-CNP.",
+      "mechanism": "Stage_Prescribed_Allocation",
+      "affects": [
+        "LEAF_C_pft",
+        "Plant_C_pft",
+        "AUTO_RESP_pft"
+      ],
+      "discovered_by": "adapter-kit seed (finding #8)",
+      "confidence": 0.6,
+      "source": "plant_bgc/growth_and_allocation.md (CalcPartitionCoeff, BranchBiomAllocate)",
+      "actionable": true,
+      "action": "Calibrate allocation via the DM* dry-matter production ratios per growth stage, NOT a sink-source allocation prior. Maintenance-respiration sensitivity tracks structural N, not total biomass."
+    },
+    {
+      "id": "ecosim_hard_plant_species_cap",
+      "name": "EcoSIM caps plant species at JP=5 (compile-time)",
+      "description": "GridConsts.F90 sets JP=5 (max plant species) and JZ=20 (max soil layers) as compile-time parameter constants, not namelist-configurable. BioCON test1_ex1 uses 3 PFTs.",
+      "mechanism": "Plant_Functional_Type_Switches",
+      "affects": [
+        "ensemble_design"
+      ],
+      "discovered_by": "adapter-kit seed (finding #11)",
+      "confidence": 0.75,
+      "source": "f90src/Mesh/GridConsts.F90",
+      "actionable": true,
+      "action": "A calibration cannot exceed 5 plant species without recompiling. Confirm the PFT count from the site pft input file (npfts) before ensemble design."
+    },
+    {
+      "id": "ecosim_daytime_fs_requires_hourly_tape",
+      "name": "growing_season_daytime_mean_abs REQUIRES the hourly tape; it is meaningless on the daily tape",
+      "description": "A daytime-windowed surface-CO2 (Fs) reduction cannot be computed from the daily history tape: the daily tape has already averaged the diel cycle away, so any hour-of-day selection on it is a no-op that silently returns the all-hours mean. The reducer therefore reads whichever tape the TARGET names (`tape: h1`) and hard-fails if the record count is not a multiple of 24.",
+      "mechanism": "diel_averaging_is_irreversible",
+      "affects": [
+        "CO2_SEMIS_FLX_col",
+        "Fs",
+        "growing_season_daytime_mean_abs"
+      ],
+      "discovered_by": "R3 c00 pre-flight tooling (2026-08-14); reducer implemented 2026-08-09",
+      "confidence": 1.0,
+      "source": "models/ecosim/backend.py:658-690 (reads target['tape']; raises ValueError 'expects an hourly tape (24 records/day)'); reduction delegated to tools/subdaily_window_reduce.py::growing_season_window_mean_abs. VERIFIED by reading the code 2026-08-14.",
+      "actionable": true,
+      "action": "Never compute a scored daytime reduction outside the backend. Any analysis or plotting code must extract via backend.extract_history_variables(tape=target['tape']) and reduce through the same function the backend calls. A promoted plotting script that read the daily tape produced a plausible but wrong Fs on 2026-08-14.",
+      "verified": "2026-08-14"
+    },
+    {
+      "id": "ecosim_leap_calendar_breaks_fixed_year_blocking",
+      "name": "EcoSIM writes a REAL leap calendar, so fixed 365-record year blocking slips",
+      "description": "Year blocking must be leap-aware and anchored to a start year. Without an anchor the backend falls back to fixed 365-record years, warns, and then a window selection can fail outright rather than merely drift.",
+      "mechanism": "gregorian_calendar_with_leap_days",
+      "affects": [
+        "window_years",
+        "annual",
+        "sum_pft_peak",
+        "growing_season_daytime_mean_abs"
+      ],
+      "discovered_by": "R1/R2 extraction work; re-confirmed 2026-08-14",
+      "confidence": 1.0,
+      "source": "models/ecosim/backend.py:723 RuntimeWarning ('fell back to a fixed 365 records/year: no start year') and the subsequent TypeError in _select_years:569 when blocks is None. VERIFIED by triggering it 2026-08-14 with A2MC_VALIDATION_START_YEAR unset.",
+      "actionable": true,
+      "action": "Always set A2MC_VALIDATION_START_YEAR (or a per-target start_year) before scoring. targets.yaml carries start_year on Fs but NOT on plant_C/NPP, so the env var is load-bearing.",
+      "verified": "2026-08-14"
+    }
+  ]
+}

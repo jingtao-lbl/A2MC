@@ -1,0 +1,14 @@
+PRESSURE_CHANGE_GOVERNOR <float>
+ Specifies a maximum absolute change in pressure [Pa] that governs time step size. Subsequent time steps are calculated such that the governing pressure change is not exceeded.
+
+TEMPERATURE_CHANGE_GOVERNOR <float>
+ Specifies a maximum absolute change in temperature [C] that governs time step size. Subsequent time steps are calculated such that the governing temperature change is not exceeded.
+
+CONCENTRATION_CHANGE_GOVERNOR <float>
+ Specifies a maximum absolute change in concentration [mole fraction] that governs time step size. Subsequent time steps are calculated such that the governing concentration change is not exceeded.
+
+SATURATION_CHANGE_GOVERNOR <float>
+ Specifies a maximum absolute change in saturation [-] that governs time step size. Subsequent time steps are calculated such that the governing saturation change is not exceeded.
+
+CFL_GOVERNOR <float>
+ Specifies a maximum CFL (Courant–Friedrichs–Lewy) number that governs time step size. Subsequent time steps are calculated as a function of the maximum flow velocity and grid discretization such that the CFL is not exceeded.

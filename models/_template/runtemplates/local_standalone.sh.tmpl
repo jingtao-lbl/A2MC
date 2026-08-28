@@ -1,0 +1,29 @@
+#!/bin/bash
+# =============================================================================
+# A2MC run template: local + standalone (compiled-binary) model
+# =============================================================================
+#
+# Rendered by `scripts/init_adapter.py` Step 11. Worked example: EcoSIM
+# (`./build/bin/ecosim.f90.x <namelist>`) on a MacBook for unit testing.
+#
+# Use this template when your model is:
+#     - A compiled binary (Fortran/C++/etc.), not CIME-managed
+#     - Run on a workstation (no scheduler)
+#     - Single-process or single-node MPI
+#
+# This is the simplest case — just runs the binary in the foreground.
+
+set -euo pipefail
+
+# Optional OpenMP threading
+export OMP_NUM_THREADS={{OMP_NUM_THREADS}}
+
+# ---- Pre-run hook ----
+{{PRE_RUN_HOOK}}
+
+# ---- Run ----
+# {{MPI_LAUNCHER}} typically empty for local serial; or 'mpirun -np 4' for local MPI.
+{{MPI_LAUNCHER}} {{MPI_RANKS}} {{MODEL_BINARY}} {{RUN_CMD}}
+
+# ---- Post-run hook ----
+{{POST_RUN_HOOK}}

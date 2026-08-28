@@ -1,0 +1,60 @@
+# ECOSYS readq.f — full per-PFT plant parameter dictionary (verbatim C-comment definitions)
+# Source: github.com/jinyun1tang/ECOSYS  f77src/ecosys_core/readq.f (the plant-file reader)
+# Extracted 2026-07-14. The authoritative definitions for EcoSIM's ported plant traits.
+# See docs/ecosim-knowledge-base/ecosim_plant_parameter_reference.md
+# ---
+PREFIX=path for files in current or higher level directory
+DATAP=PFT file name
+ICTYP=photosynthesis type:3=C3,4=C4
+IGTYP=root profile:0=shallow (eg bryophytes),1=intermediate(eg herbs),2=deep (eg trees)
+ISTYP=growth habit:0=annual,1=perennial
+IDTYP=growth habit:0=determinate,1=indetermimate
+INTYP=N2 fixation:1,2,3=rapid to slow root symbiosis (e.g.legumes),
+IWTYP=phenology type:0=evergreen,1=cold deciduous,2=drought deciduous,3=1+2
+IPTYP=photoperiod type:0=day neutral,1=short day,2=long day
+IBTYP=turnover:if IGTYP=0 or 1:all above-ground:0,1=rapid(deciduous),2=very slow(evergreen),3=slow(semi-deciduous)
+IRTYP=storage organ:0=above ground,1=below ground
+MY=mycorrhizal:1=no,2=yes
+ZTYPI=thermal adaptation zone:1=arctic,boreal,2=cool temperate,
+VCMX4=specific PEP carboxylase activity (umol g-1 s-1)
+ETMX=specific chlorophyll activity (umol e- g-1 s-1)
+CHL=fraction of leaf protein in mesophyll(C3), bundle sheath(C4) chlorophyll
+CHL4=fraction of leaf protein in mesophyll chlorophyll(C4)
+FCO2=intercellular:atmospheric CO2 concentration ratio 
+CTC=chilling temperature for CO2 fixation, seed loss (oC)
+WDLF=leaf length:width ratio
+PB=nonstructural C concentration needed for branching
+XDL=critical photoperiod (h):<0=maximum daylength from site file
+XPPD=photoperiod sensitivity (node h-1)
+CLASS=fraction of leaf area in 0-22.5,45,67.5,90o inclination classes
+CFI=initial clumping factor
+STMX=maximum potential seed mumber from pre-anthesis stalk growth
+SDMX=maximum seed number per STMX
+GRMX=maximum seed size per SDMX (g)
+GRDM=seed size at planting (g)
+GFILL=grain filling rate at 25 oC (g seed-1 h-1)
+WTSTDI=mass of dead standing biomass at planting 
+PORT=root porosity
+PR=nonstructural C concentration needed for root branching
+PTSHT=rate constant for equilibrating shoot-root nonstructural C concn
+RTFQ=root branching frequency (m-1)
+OSMO=leaf osmotic potential at zero leaf water potential (MPa)
+RCS=shape parameter for stomatal resistance vs leaf turgor potential
+RSMX=cuticular resistance (s m-1)
+DY=planting date DDMMYYYY
+PPI=initial planting density (m-2)
+SDPTHI=seeding depth (m)
+DY=if harvesting: harvesting date DDMMYYYY
+ICUT=harvest type:0=none,1=grain,2=all above-ground,3=pruning
+JCUT=terminate PFT:0=no,1=yes,2=yes,but reseed
+HCUT=if harvesting: >0=cutting height,<0=fraction of LAI removed
+PCUT=if harvesting: thinning,fraction of population removed
+IDY=IDY-0.5*(NTX-1)
+IDY=IDY+0.5*(NTX-1)
+IHVST=harvest type:0=none,1=grain,2=all above-ground,3=pruning,4=grazing,5=fire,6=herbivory
+JHVST=terminate PFT:0=no,1=yes,2=yes,and reseed
+HVST=IHVST=0-2:>0=cutting height,<0=fraction of LAI removed
+IHVST=3:reduction of clumping factor
+IHVST=4 or 6:animal or insect biomass(g LM m2),IHVST=5:fire
+THIN=IHVST=0-3,5: fraction of population removed, 
+IHVST=4 or 6:specific herbivory rate (g DM g-1 LM d-1)

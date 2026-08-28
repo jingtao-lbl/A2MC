@@ -1,0 +1,35 @@
+# `validation/` — the targets, and what is NOT a target
+
+**`targets.yaml` is the calibration surface: everything scored, and nothing else.** Scoring goes through a target's own `reduce` — never a reimplementation — or the number disagrees with the round's for a reason no reader can see.
+
+## Skills to use when working in this folder
+
+| doing what | skill |
+|---|---|
+| setting up a new case's targets | **`onboard-case`** |
+| the sim-vs-obs figure covering every scored target | that model's run-workflow skill, with **`plotting`** |
+| scoring a variant set against these | **`phase6-refinement`** |
+| observations still pending | wire the **structure** with `observed: null` — the RED gate is the deliverable |
+
+## The distinction this folder exists to hold
+
+| | |
+|---|---|
+| **`targets:`** | **scored.** These and only these drive the calibration |
+| **`prescribed_initialization:`** | **NOT scored.** Anything the run's initial state is BUILT FROM. Scoring an input rewards the input |
+
+`validate_model_targets.py` raises if a name appears in both.
+
+## This model's target shape
+
+FATES keys targets `PFT<id>_<vartype>`; an adapter model names them for the quantity. Use the validator for YOUR model.
+
+## Known traps
+
+- **Read the calendar from the model's adapter -- ELM is 365-day no-leap, EcoSIM is a real Gregorian calendar, and a deck-driven model reports its own model time.**
+- **A partially covered window is an ERROR, not a smaller sample.** Early termination is caused by instability, so the surviving tail is biased toward the blow-up. Census the record before scoring anything.
+- **Say which window a number came from.** Spin-up years are not comparable to a target, and naming the window is the cheapest way to keep that straight.
+
+```bash
+python tools/validate_model_targets.py --model <name> --targets validation/targets.yaml
+```

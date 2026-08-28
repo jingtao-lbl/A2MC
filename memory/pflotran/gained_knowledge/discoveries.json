@@ -1,0 +1,127 @@
+{
+  "_comment": "PFLOTRAN generic discoveries - applies to PFLOTRAN calibration across cases",
+  "_schema_version": "1.0",
+  "_last_updated": "2026-08-19",
+  "_source": "adapter-kit v0.1 seed (ai-draft) derived from the 10 mechanisms in models/pflotran/curated_seed.yaml (each carrying its own file:line `source`). 8 of 10 taken; Seepage_Face_Boundary and Aqueous_Speciation are DECK-specific (they cite pflotran.in and the miniLEO 16-component/104-species set) and belong to the case, not to model-level knowledge. Seed YAML reviewed by the PI 2026-08-19; the per-entry wording here is ai-draft and NOT separately curated.",
+  "_affects_convention": "affects lists output-variable names (PFLOTRAN observation names) or process axes",
+  "discoveries": [
+    {
+      "id": "pflotran_tst_two_rate_routines",
+      "name": "TST mineral kinetics has TWO rate routines and the deck picks one implicitly",
+      "description": "Transition-state-theory rate law. The volumetric rate is -(reactive surface area) x (affinity factor) x (rate constant), in mol/sec per m^3 bulk [src: reaction_mineral.F90:1274-1281]. TWO DISTINCT RATE ROUTINES EXIST and the deck selects between them implicitly -- see the AFFINITY_THRESHOLD entry.",
+      "mechanism": "TST_Mineral_Kinetics",
+      "affects": [
+        "mineral_volume_fraction",
+        "aqueous_concentrations"
+      ],
+      "discovered_by": "adapter-kit v0.1 seed (derived from models/pflotran/curated_seed.yaml mechanisms)",
+      "confidence": 0.6,
+      "source": "reaction_mineral.F90:1201-1325 (SIMPLE), :1329+ (COMPLEX); dispatch at :1174-1180",
+      "actionable": true,
+      "action": "Check which routine AFFINITY_THRESHOLD selects before attributing a rate mismatch to the rate constant."
+    },
+    {
+      "id": "pflotran_reactive_surface_area_evolves",
+      "name": "Reactive surface area is not static -- it evolves with porosity and mineral volume fraction",
+      "description": "Specific surface area evolves with porosity and/or mineral volume fraction through SURFACE_AREA_FUNCTION. The porosity factor uses the SOLID fraction, ((1-phi_base)/(1-phi_0))**power [src: reaction_mineral.F90:2052-2055], so its sign of effect is opposite to the naive reading of its name.",
+      "mechanism": "Reactive_Surface_Area_Evolution",
+      "affects": [
+        "mineral_volume_fraction",
+        "aqueous_concentrations"
+      ],
+      "discovered_by": "adapter-kit v0.1 seed (derived from models/pflotran/curated_seed.yaml mechanisms)",
+      "confidence": 0.6,
+      "source": "reaction_mineral.F90:2036-2062",
+      "actionable": true,
+      "action": "SURFACE_AREA_FUNCTION couples area to state; calibrating a rate constant against a fixed-area assumption misattributes the feedback."
+    },
+    {
+      "id": "pflotran_porosity_permeability_feedback",
+      "name": "Mineral volume change updates porosity ABSOLUTELY, and porosity then rescales permeability",
+      "description": "Mineral volume change updates porosity absolutely [src: realization_subsurface.F90:2226-2227], and porosity then rescales permeability through a thresholded power law with a LOWER clamp [src: realization_subsurface.F90:2062-2070]. The source contains NO kozeny or carman string, so naming it Kozeny-Carman would be an invention.",
+      "mechanism": "Porosity_Permeability_Feedback",
+      "affects": [
+        "outflow",
+        "hydrograph",
+        "aqueous_concentrations"
+      ],
+      "discovered_by": "adapter-kit v0.1 seed (derived from models/pflotran/curated_seed.yaml mechanisms)",
+      "confidence": 0.6,
+      "source": "realization_subsurface.F90:2214-2233 (porosity), :2055-2076 (permeability)",
+      "actionable": true,
+      "action": "A reaction parameter therefore moves FLOW. Treat outflow misfit as potentially chemical, not only hydraulic."
+    },
+    {
+      "id": "pflotran_van_genuchten_n_is_derived",
+      "name": "Van Genuchten n is DERIVED from m (n = 1/(1-m)), not an independent parameter",
+      "description": "Capillary-pressure/saturation relation. Pc = (Se**(-1/m) - 1)**(1/n) / alpha, with n = 1/(1-m) DERIVED from m and Se = (Sl - Sr)/(1 - Sr) [src: characteristic_curves_common.F90:860-867]. At or below Sr the capillary pressure is clamped to pcmax [src: characteristic_curves_common.F90:852-854].",
+      "mechanism": "Van_Genuchten_WRM",
+      "affects": [
+        "saturation",
+        "hydrograph"
+      ],
+      "discovered_by": "adapter-kit v0.1 seed (derived from models/pflotran/curated_seed.yaml mechanisms)",
+      "confidence": 0.6,
+      "source": "characteristic_curves_common.F90:809-885",
+      "actionable": true,
+      "action": "Never calibrate n and m as two free parameters -- they are one degree of freedom."
+    },
+    {
+      "id": "pflotran_mualem_separate_param_copies",
+      "name": "Liquid and gas relative permeability take SEPARATE parameter copies",
+      "description": "Relative permeability of liquid and gas derived from the retention curve. The liquid and gas forms take SEPARATE parameter copies -- in this deck MUALEM_VG_LIQ and MUALEM_VG_GAS each carry their own M and LIQUID_RESIDUAL_SATURATION [deck: pflotran.in:574-583].",
+      "mechanism": "Mualem_Relative_Permeability",
+      "affects": [
+        "saturation",
+        "hydrograph",
+        "outflow"
+      ],
+      "discovered_by": "adapter-kit v0.1 seed (derived from models/pflotran/curated_seed.yaml mechanisms)",
+      "confidence": 0.6,
+      "source": "characteristic_curves_common.F90:148-157 (liq type), :159-165 (gas type), :3366-3417 (gas rel-perm, formula at :3409); deck addresses at pflotran.in:574-583",
+      "actionable": true,
+      "action": "Changing the liquid copy alone leaves the gas branch on its old value; set both or state why not."
+    },
+    {
+      "id": "pflotran_girt_solves_chemistry_with_transport",
+      "name": "GIRT solves chemistry and transport TOGETHER (global-implicit), not operator-split",
+      "description": "Global-implicit reactive transport -- chemistry and transport solved together, as opposed to operator-split OSRT. Selected in this deck [deck: pflotran.in:19].",
+      "mechanism": "GIRT_Reactive_Transport",
+      "affects": [
+        "aqueous_concentrations",
+        "outflow"
+      ],
+      "discovered_by": "adapter-kit v0.1 seed (derived from models/pflotran/curated_seed.yaml mechanisms)",
+      "confidence": 0.6,
+      "source": "deck pflotran.in:18-24; reactive_transport.F90",
+      "actionable": false,
+      "action": "Convergence behaviour and timestep sensitivity differ from OSRT; do not carry OSRT intuition across."
+    },
+    {
+      "id": "pflotran_millington_quirk_tortuosity",
+      "name": "Diffusion is modified by tortuosity when USE_MILLINGTON_QUIRK_TORTUOSITY is on",
+      "description": "Solute flux from Darcy advection, mechanical dispersion and molecular diffusion. With USE_MILLINGTON_QUIRK_TORTUOSITY the diffusion coefficient is scaled by saturation**(7/3) * porosity**(1/3) [src: transport.F90:113-114, :157-165]. That option additionally REQUIRES every TORTUOSITY to remain at its default of 1 [src: pm_rt.F90:469-483].",
+      "mechanism": "Advection_Dispersion_Diffusion",
+      "affects": [
+        "aqueous_concentrations"
+      ],
+      "discovered_by": "adapter-kit v0.1 seed (derived from models/pflotran/curated_seed.yaml mechanisms)",
+      "confidence": 0.6,
+      "source": "transport.F90:105-170; pm_rt.F90:237-238, :469-483",
+      "actionable": true,
+      "action": "The effective diffusion coefficient is then saturation-dependent -- a fitted diffusivity absorbs that if the switch is ignored."
+    },
+    {
+      "id": "pflotran_max_ts_cuts_is_per_timestep",
+      "name": "MAX_TS_CUTS is a PER-TIMESTEP consecutive budget that resets, not a run-wide total",
+      "description": "Timestep sizing and cutting. DIAGNOSTIC, never calibration. MAX_TS_CUTS is a PER-TIMESTEP CONSECUTIVE budget -- the counter resets at the top of every timestep [src: timestepper_SNES.F90:371] and the field is documented as \"Maximum number of timestep cuts within one time step\" [src: timestepper_base.F90:32]. The `cuts` figure in an end-of-run summary is a LIFETIME total and is UNRELATED to this limit. A genuine exhaustion aborts with exit status 88 [src: timestepper_base.F90:740-746; pflotran_constants.F90:63 EXIT_FAILURE = 88] and writes a `<pmname>_cut_to_failure` snapshot [src: timestepper_base.F90:764].",
+      "mechanism": "Timestep_Control",
+      "affects": [],
+      "discovered_by": "adapter-kit v0.1 seed (derived from models/pflotran/curated_seed.yaml mechanisms)",
+      "confidence": 0.6,
+      "source": "timestepper_base.F90:32, :158, :279-280, :740-746, :764; timestepper_SNES.F90:371",
+      "actionable": false,
+      "action": "DIAGNOSTIC, never a calibration parameter. Reading it as a run-wide budget mis-diagnoses cut storms."
+    }
+  ]
+}

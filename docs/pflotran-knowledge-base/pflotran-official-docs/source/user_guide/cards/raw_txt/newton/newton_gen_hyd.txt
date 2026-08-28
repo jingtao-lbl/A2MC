@@ -1,0 +1,11 @@
+MAX_ITERATION_BEFORE_DAMPING <integer>
+ @EXPERT
+ Specifies the threshold number of Newton iterations before damping is imposed.
+
+DAMPING_FACTOR <float>
+ @EXPERT
+ The scalar value by which the solution is damped between each Newton-Raphson iteration. Acceptable values on (0,1].
+
+MAXIMUM_PRESSURE_CHANGE <float>
+ @EXPERT
+ The change in pressure is truncated to within this limit.

@@ -1,0 +1,254 @@
+# A2MC Adapter-Kit Modeler Questionnaire
+# ============================================================================
+# Fill this file in BEFORE running scripts/init_adapter.py. The CLI will
+# read it (via --questionnaire path.yaml) and pre-configure your adapter
+# scaffold accordingly.
+#
+# Most fields are multiple-choice. Each "_choices:" comment block lists the
+# valid values; pick exactly one for the matching field unless noted.
+#
+# Legend for support level (in choice comments):
+#   [supported]      A2MC handles this directly today
+#   [supported/code] Supported but requires code you (or we) write
+#   [planned]        On the roadmap, not in main yet
+#   [unsupported]    Cannot run with current A2MC; requires custom work
+# ============================================================================
+
+model:
+  # Free text: short identifier used everywhere (folder names, env vars).
+  # Lowercase, no spaces, no hyphens. e.g., "ecosim", "resom", "sbetr".
+  name: ""
+
+  # Free text: human-readable name.
+  display_name: ""
+
+  # Free text: 1-2 sentence description of what the model simulates.
+  description: ""
+
+  # Domain tags for RAG categorization. Pick any that apply (list).
+  # _choices: [land-surface, ocean, atmosphere, hydrology, biogeochemistry,
+  #            ecosystem, vegetation, soil, microbial, permafrost, hybrid-ai]
+  domain_tags: []
+
+
+# ----------------------------------------------------------------------------
+# Section A — Source code, build, and version
+# ----------------------------------------------------------------------------
+source:
+  # _choices:
+  #   public_git    [supported]      Public GitHub/GitLab repo with stable URL
+  #   private_git   [supported]      Private repo (you provide read access)
+  #   tarball       [supported/code] Static archive, no version control
+  #   none          [unsupported]    No code available
+  hosting: public_git
+
+  # Free text. Repo URL or path.
+  repo_url: ""
+
+  # Free text. Pinned commit hash, tag, or release version.
+  # This becomes the milestone in rag/milestones.json.
+  pinned_commit: ""
+
+  # _choices:
+  #   prebuilt        [supported]      Already built on the target machine
+  #   build_docs      [supported]      Build instructions provided, we run them
+  #   needs_help      [supported/code] Build is non-trivial, need EcoSIM/team support
+  build_status: prebuilt
+
+  build_system:
+    # _choices:
+    #   cime         [supported]      E3SM/CIME case-creation framework
+    #   cmake        [supported]      CMake-based build
+    #   make         [supported]      Plain Makefile
+    #   pip          [supported]      Python package via pip
+    #   conda        [supported]      Conda environment
+    #   custom_shell [supported/code] Custom build script
+    primary: cime
+
+    # Free text: language(s) the model is written in (Fortran, C++, Python, ...).
+    primary_language: ""
+
+
+# ----------------------------------------------------------------------------
+# Section B — Parameter file & output specification
+# ----------------------------------------------------------------------------
+parameters:
+  # _choices:
+  #   netcdf_cdl       [supported]      NetCDF with CDL header (FATES legacy style)
+  #   json             [supported]      JSON (FATES api-43+ style)
+  #   yaml             [supported]      YAML
+  #   fortran_namelist [supported]      Fortran &nml ... / format
+  #   text_keyvalue    [supported]      Plain "key = value" text
+  #   xml              [supported/code] XML config
+  #   custom           [supported/code] Bespoke format, parser must be written
+  format: netcdf_cdl
+
+  # Free text. Path inside the repo (relative to repo root) of the canonical
+  # default parameter file. e.g., "parameter_files/fates_params_default.json"
+  default_file_path: ""
+
+  # _choices:
+  #   single_file      [supported]      All parameters in one file
+  #   multiple_files   [supported]      Multiple files (we'll load them all)
+  layout: single_file
+
+  # _choices:
+  #   in_place_edit    [supported]      Modify the param file directly per case
+  #   cli_override     [supported/code] Pass overrides on the command line
+  #   env_vars         [supported/code] Override via environment variables
+  #   restart_file     [supported/code] Modify a restart/IC file instead
+  modification_method: in_place_edit
+
+
+outputs:
+  # _choices:
+  #   netcdf       [supported]      Standard NetCDF (most common)
+  #   csv          [supported/code] CSV time series
+  #   hdf5         [supported/code] HDF5 file
+  #   text_log     [supported/code] Plain text log files only
+  #   custom       [supported/code] Bespoke binary, needs parser
+  format: netcdf
+
+  # Free text. Path/glob pattern for output files relative to the case
+  # run directory. e.g., "*.elm.h0.*.nc"
+  pattern: ""
+
+  # _choices:
+  #   site_level   [supported]    Single point / one site per simulation
+  #   gridded      [supported]    Multi-cell gridded output
+  #   regional     [supported]    Regional domain (subset of grid)
+  spatial_layout: site_level
+
+  # _choices:
+  #   monthly_avg  [supported]    Monthly time series (default for FATES)
+  #   daily_avg    [supported]    Daily time series
+  #   subdaily     [supported]    Hourly or finer
+  #   annual       [supported]    Annual aggregates
+  #   snapshot     [supported]    End-of-run state only
+  temporal_resolution: monthly_avg
+
+
+# ----------------------------------------------------------------------------
+# Section C — Run environment
+# ----------------------------------------------------------------------------
+runtime:
+  # _choices (matches templates in models/_template/runtemplates/):
+  #   hpc_cime          [supported]    HPC + Slurm, CIME case (FATES style)
+  #   hpc_standalone    [supported]    HPC + Slurm, standalone executable
+  #   hpc_python        [supported]    HPC + Slurm, Python entry point
+  #   local_cime        [supported]    Local + CIME
+  #   local_standalone  [supported]    Local + standalone
+  #   local_python      [supported]    Local + Python
+  #   hpc_pbs           [planned]      HPC + PBS/Torque
+  #   hpc_lsf           [planned]      HPC + LSF
+  #   container         [planned]      Docker / Apptainer
+  #   cloud             [unsupported]  AWS / GCP batch
+  template: hpc_cime
+
+  # _choices:
+  #   under_1min   [supported]    Single case takes <1 minute
+  #   under_10min  [supported]    1-10 minutes
+  #   under_1hour  [supported]    10-60 minutes
+  #   under_1day   [supported]    1-24 hours
+  #   over_1day    [supported]    >24 hours (Morris ensembles get expensive)
+  single_case_walltime: under_10min
+
+  # _choices:
+  #   native_array     [supported]    Slurm/PBS job arrays (most efficient)
+  #   sequential       [supported]    One case at a time (slowest)
+  #   manual_parallel  [supported]    User-managed parallel via xargs/gnu-parallel
+  ensemble_strategy: native_array
+
+  # Free text. Path to your existing single-case run script (we adapt it).
+  reference_run_script: ""
+
+
+# ----------------------------------------------------------------------------
+# Section D — Calibration setup
+# ----------------------------------------------------------------------------
+calibration:
+  # _choices:
+  #   site_observations    [supported]    Field observations at a specific site
+  #   gridded_products     [supported]    Remote-sensed or reanalysis grids
+  #   lab_measurements     [supported]    Lab/incubation experiments
+  #   literature_values    [supported]    Published target ranges
+  validation_data_source: site_observations
+
+  # Free text. Site name, lat/lon, or domain description.
+  site: ""
+
+  # _choices:
+  #   single       [supported]    1 target variable
+  #   small        [supported]    2-3 targets
+  #   medium       [supported]    4-10 targets
+  #   large        [supported]    11-30 targets
+  #   xlarge       [supported]    >30 targets (computational cost grows)
+  num_targets: medium
+
+  # Pick one or more (list). A2MC weights them in the cost function.
+  # _choices:
+  #   rmse   [supported]    Root mean squared error
+  #   re     [supported]    Relative error
+  #   nse    [supported]    Nash-Sutcliffe efficiency
+  #   kge    [supported]    Kling-Gupta efficiency
+  #   custom [supported/code] User-defined metric
+  error_metrics: [re, rmse]
+
+  # _choices:
+  #   small        [supported]    <20 parameters
+  #   medium       [supported]    20-100
+  #   large        [supported]    100-200 (FATES Kougarok = 162)
+  #   xlarge       [supported]    >200 (sampling cost grows linearly)
+  num_parameters: medium
+
+  # _choices:
+  #   morris   [supported]    Morris elementary effects (default, cheap)
+  #   sobol    [supported]    Sobol indices (more rigorous, more sims)
+  sensitivity_method: morris
+
+
+# ----------------------------------------------------------------------------
+# Section E — Resources, urgency, and AI preferences
+# ----------------------------------------------------------------------------
+resources:
+  # _choices (HPC compute hours required for a typical Morris run):
+  #   small        [supported]    <1k node-hours
+  #   medium       [supported]    1k-10k node-hours
+  #   large        [supported]    10k-100k node-hours
+  #   xlarge       [supported]    >100k node-hours
+  hpc_budget: medium
+
+  # _choices:
+  #   half_day     [supported]    Modeler can spend ~4 hours on review
+  #   one_to_three [supported]    1-3 days (recommended for Recipe G1)
+  #   week_plus    [supported]    >1 week (luxury, rarely needed)
+  domain_expert_time: one_to_three
+
+  # _choices:
+  #   under_1month   [supported]    Tight deadline
+  #   1to3_months    [supported]    Normal pace
+  #   3to6_months    [supported]    Comfortable
+  #   flexible       [supported]    No fixed deadline
+  urgency: 1to3_months
+
+
+ai:
+  # _choices:
+  #   anthropic    [supported]    Direct Anthropic API (Claude Opus / Sonnet)
+  #   openai       [supported]    Direct OpenAI API (GPT-4o, o3-mini)
+  #   cborg        [supported]    LBNL CBorg proxy (claude-sonnet via OpenAI SDK)
+  #   no_pref      [supported]    Use A2MC default (anthropic)
+  provider: no_pref
+
+  # Free text. Override default model id for the chosen provider, or leave "".
+  model_override: ""
+
+
+# ----------------------------------------------------------------------------
+# Section F — Anything else
+# ----------------------------------------------------------------------------
+notes:
+  # Free text. Known gotchas, custom build steps, non-standard I/O,
+  # parameter-format quirks, restart-file dependencies, etc.
+  # The init_adapter.py CLI will surface these to the human reviewer.
+  free_text: |

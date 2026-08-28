@@ -1,0 +1,22 @@
+GAS_STATE_AIR_MASS_DOF <string>
+ @EXPERT
+ Sets the primary dependent variable for the air mass conservation equation for cells in a single-phase gas state (2nd dof) [AIR_PRESSURE, WATER_MOL_FRAC]. (default = AIR_PRESSURE, whihc is the most tested)
+
+ISOTHERMAL
+ Disables the energy calculation forcing constant temperature.
+
+NO_AIR
+ Disables the gas component mass conservation equation.
+
+NEWTONTRDC_HOLD_INNER_ITERATIONS
+ @EXPERT
+ If your simulation expects many state changes throughout the simulation, NEWTONTRDC_HOLD_INNER_ITERATIONS is recommended.
+
+NON_DARCY_FLOW
+ Calculates non-Darcian flow based on Liu (2014)
+
+NON_DARCY_FLOW_A
+ Parameter A for non-Darcian flow in equation 11 in Liu (2014)
+
+NON_DARCY_FLOW_B
+ Parameter B for non-Darcian flow in equation 11 in Liu (2014)

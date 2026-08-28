@@ -1,0 +1,17 @@
+{
+  "metadata_schema_version": 1,
+  "profile_name": "ecosim-2dea74d9",
+  "adapter": "ecosim",
+  "built_at": "2026-08-20T06:37:55.269245+00:00",
+  "model_commit_built": "2dea74d992bb821269d0a755e8cb3074c6cc453e",
+  "wiki_subdir": "ecosim-codebase-wiki-2dea74d9",
+  "param_file": "Offline/EcoSIM_sample_files/input/ds_input__pft_test__ex1.nc",
+  "output_cdl": "ecosim_output_info_2dea74d9.cdl",
+  "curated_yaml": "models/ecosim/curated_seed.yaml",
+  "curated_yaml_status": "v0.1-ai-draft-pending-PI-review",
+  "stats": {
+    "chunk_count": 1935,
+    "graph_nodes": 715,
+    "graph_edges": 321
+  }
+}

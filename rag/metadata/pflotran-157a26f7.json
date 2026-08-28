@@ -1,0 +1,21 @@
+{
+  "metadata_schema_version": 1,
+  "profile_name": "pflotran-157a26f7",
+  "adapter": "pflotran",
+  "built_at": "2026-08-08T01:59:05.846592+00:00",
+  "model_commit_built": "157a26f73e4c939a22ffe6eb60155fb9a3d36ff9",
+  "wiki_subdir": "pflotran-codebase-wiki-157a26f7",
+  "param_file": null,
+  "output_cdl": null,
+  "curated_yaml": "models/pflotran/curated_seed.yaml",
+  "layers_built": [
+    "vector",
+    "graph"
+  ],
+  "vector_only_reason": null,
+  "stats": {
+    "chunk_count": 1374,
+    "graph_nodes": 378,
+    "graph_edges": 181
+  }
+}

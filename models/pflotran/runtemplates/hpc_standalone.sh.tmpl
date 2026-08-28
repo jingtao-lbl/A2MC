@@ -1,0 +1,140 @@
+#!/bin/bash
+# =============================================================================
+# PFLOTRAN run template: HPC + standalone (compiled binary) on NERSC Perlmutter
+# =============================================================================
+#
+# STATUS (2026-08-07): the BINARY and the TOOLCHAIN are now proven -- a build
+# exists at 157a26f7 on Perlmutter and has run this deck end to end (4 model
+# hours, 8 ranks, 12.4 s; and serially). What is still UNPROVEN is this
+# TEMPLATE: cases are not yet created or submitted through it, because deck
+# writing is deliberately unimplemented. Treat the first ensemble submission as
+# a V0 gate, not a routine launch.
+#
+# GROUNDED FACTS (from the team's real run):
+#   - Invocation is `pflotran -pflotranin <deck>`; PFLOTRAN resolves every other
+#     input RELATIVE TO THE WORKING DIRECTORY, which is why this script cds into
+#     the case dir instead of passing absolute paths.
+#   - Reference cost: 64.5 min wall clock for the 70-day miniLEO scenario
+#     (pflotran.out: "Wall Clock Time: 6.4512E+01 [min]"). WALLTIME must leave
+#     headroom above that -- a perturbed member can be slower.
+#   - The run RESTARTS from pflotran-presteadystate_restart_1-11.h5 with
+#     RESET_TO_TIME_ZERO (pflotran.in:28-31). See the RESTART CAVEAT below; it
+#     is the single biggest correctness risk in a PFLOTRAN ensemble.
+#   - EXIT_FAILURE = 88 is the model's real failure signal
+#     (pflotran_constants.F90:63). Slurm COMPLETED is NOT sufficient.
+#
+# Per-case knobs are {{PLACEHOLDERS}} rendered by the ensemble generator.
+
+#SBATCH --job-name={{CASE_NAME}}
+#SBATCH --account={{ACCOUNT}}          # e.g. m5199
+#SBATCH --qos={{QUEUE}}                # 'regular' for a full node; 'shared' if few ranks
+#SBATCH --constraint=cpu
+#SBATCH --nodes={{NODES}}
+#SBATCH --ntasks={{MPI_RANKS}}         # PFLOTRAN is MPI-parallel via PETSc
+#SBATCH --cpus-per-task={{CPUS_PER_TASK}}
+#SBATCH --time={{WALLTIME}}            # > 65 min for the reference miniLEO run
+#SBATCH --output={{OUTPUT_DIR}}/slurm_%j.out
+#SBATCH --error={{OUTPUT_DIR}}/slurm_%j.err
+
+set -euo pipefail
+
+# ---- Perlmutter 'shared' QOS footgun -- cost a silently-dead job 2026-08-07 ----
+# On the shared QOS, a --mem request SCALES THE CPU COUNT. Asking --mem=16G for
+# a run whose real footprint is 32 MB made Slurm set SLURM_CPUS_PER_TASK=9,
+# which contradicted SLURM_TRES_PER_TASK=cpu=1, and srun aborted with
+#   "fatal: cpus-per-task set by two different environment variables"
+# The job then exited in 6 seconds and Slurm recorded State=COMPLETED
+# ExitCode=0:0 having run NOTHING. Do not add --mem here; pin the two agreeing
+# instead. This is the concrete instance of the rule below: Slurm success is
+# not model success.
+export SLURM_CPUS_PER_TASK={{CPUS_PER_TASK}}
+
+# ---- Toolchain (runtime) ----
+# PFLOTRAN links PETSc, MPI and HDF5, so the RUNTIME modules must match the ones
+# the binary was BUILT against. RESOLVED 2026-08-07: PFLOTRAN at 157a26f7
+# hard-requires PETSc >= 3.21.4 (a #error in pflotran_constants.F90:19-29), and
+# NERSC has a prebuilt 3.21.4 in the PFLOTRAN developers' shared tree at
+# /global/common/software/pflotran -- so the "does v6 source compile against
+# 3.24.3?" question never had to be answered.
+#
+# The binding constraint turned out to be the COMPILER, not PETSc: that PETSc
+# was built with gfortran 12.3 / cray-mpich 8.1.28 / cray-hdf5-parallel
+# 1.12.2.9 / cray-libsci 23.12.5, and gfortran .mod files are not readable
+# across compiler major versions. All four are CPE 23.12, so one module load
+# pins them. Perlmutter's default is CPE 25.09 (gfortran 14) and does NOT work.
+#
+# NEVER `module load PrgEnv-gnu` after cpe/23.12 -- it silently reverts the swap.
+# NEVER `module purge` on Perlmutter -- it leaves MODULEPATH broken.
+# cpe/23.12 is DEPRECATED: when NERSC removes it, PETSc must be rebuilt.
+#
+# Rendered from A2MC_PFLOTRAN_MODULES in the site config; the full derivation lives in the
+# per-build environment script beside the PFLOTRAN checkout (pflotran_env_<commit>.sh), on
+# shared NERSC project space (such as /global/cfs/cdirs/<project>/<user>/).
+{{MODULES}}
+
+export OMP_NUM_THREADS={{OMP_NUM_THREADS}}   # PFLOTRAN parallelism is MPI, not OpenMP
+
+# ---- Paths ----
+EXE={{MODEL_BINARY}}      # .../pflotran/src/pflotran/pflotran
+DECK={{RUN_CMD}}          # the case's pflotran.in
+WORK={{OUTPUT_DIR}}       # the case directory: deck + mesh + database + restart
+
+[ -x "$EXE" ]  || { echo "ERROR: PFLOTRAN binary not found/executable at $EXE" >&2; exit 1; }
+[ -f "$DECK" ] || { echo "ERROR: PFLOTRAN deck not found at $DECK" >&2; exit 1; }
+
+# ---- Pre-run hook (per-case deck rewrite, input staging) ----
+{{PRE_RUN_HOOK}}
+
+# ---- Input-completeness gate ----
+# PFLOTRAN resolves auxiliary inputs relative to the CWD, and a missing one
+# aborts partway through a run that Slurm may still report as COMPLETED. Check
+# the four the miniLEO deck names before burning an hour of wall clock.
+cd "$WORK"
+for f in savannah_river.dat rainfall_PERTH_spinup3224h.txt \
+         mesh_rotated10_0.025_ugi.h5 pflotran-presteadystate_restart_1-11.h5; do
+  [ -f "$f" ] || echo "WARN: expected input '$f' not present in $WORK"
+done
+
+# ---- RESTART CAVEAT -- READ BEFORE TRUSTING AN ENSEMBLE ----
+# This deck restarts from a PRE-STEADY-STATE checkpoint. That checkpoint was
+# produced under the BASE parameter set. Perturbing porosity, permeability, the
+# van Genuchten curve or the mineral assemblage makes the restarted state
+# INCONSISTENT with the perturbed parameters, and PFLOTRAN will not complain.
+# Each ensemble member may need its own spin-up, which changes the cost model for
+# Task 1b substantially. Settle this before the first large batch.
+
+# ---- Run ----
+echo "PFLOTRAN start: $(date)  binary=$EXE  deck=$(basename "$DECK")  (cwd=$WORK)"
+set +e
+srun -n {{MPI_RANKS}} "$EXE" -pflotranin "$(basename "$DECK")"
+RC=$?
+set -e
+echo "PFLOTRAN end:   $(date)  rc=$RC"
+
+# ---- Failure triage: Slurm success is NOT model success ----
+if [ "$RC" -eq 88 ]; then
+  echo "ERROR: PFLOTRAN exited 88 (EXIT_FAILURE) - timestep cuts exhausted or dt < dt_min." >&2
+  ls -la ./*_cut_to_failure* 2>/dev/null || true
+  exit 88
+elif [ "$RC" -ne 0 ]; then
+  echo "ERROR: PFLOTRAN exited $RC." >&2
+  exit "$RC"
+fi
+
+# A mass-balance tape is the deliverable. No tape means the run did not produce
+# calibratable output, whatever the exit code said. This is a HARD GATE, not a
+# warning: it is the only check that catches a launch that never happened (see
+# the shared-QOS footgun above, where rc was 0 and no tape existed).
+if ! compgen -G "./*-mas.dat" > /dev/null; then
+  echo "ERROR: no *-mas.dat tape produced - the run yielded no calibratable output." >&2
+  exit 88
+fi
+ls -la ./*-mas.dat
+
+# NOTE: a large lifetime cut count is NOT a failure. MAX_TS_CUTS is a
+# per-timestep consecutive budget; the reference run completed with 168 lifetime
+# FLOW cuts against a limit of 20 (pflotran.out:116670).
+grep -E "TS SNES steps|Wall Clock Time" ./pflotran.out 2>/dev/null | tail -3 || true
+
+# ---- Post-run hook (extraction, target evaluation) ----
+{{POST_RUN_HOOK}}

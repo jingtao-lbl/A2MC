@@ -1,0 +1,7 @@
+FREEZING
+ Turns on freezing. (expert-only) 
+
+ICE_MODEL
+ Specifies the ice model for freezing.  Options include [PAINTER_EXPLICIT, 
+ PAINTER_KARRA_IMPLICIT, PAINTER_KARRA_EXPLICIT, 
+ PAINTER_KARRA_EXPLICIT_NOCRYO, DALL_AMICO].

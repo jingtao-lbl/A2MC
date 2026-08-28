@@ -1,0 +1,41 @@
+#!/bin/bash
+# =============================================================================
+# A2MC run template: HPC + standalone (compiled-binary) model
+# =============================================================================
+#
+# Rendered by `scripts/init_adapter.py` Step 11. Worked example: EcoSIM
+# (`./build/bin/ecosim.f90.x <namelist>`) on Slurm.
+#
+# Use this template when your model is:
+#     - A compiled binary (Fortran/C++/etc.), not a CIME-managed case
+#     - Run on HPC with a scheduler (Slurm, PBS, LSF, SGE, jsrun)
+#     - Single-binary invocation (with optional MPI wrapping)
+#
+# For Python-implemented models, use hpc_python.sh.tmpl instead.
+
+#SBATCH --job-name={{CASE_NAME}}
+#SBATCH --account={{ACCOUNT}}
+#SBATCH --partition={{QUEUE}}
+#SBATCH --time={{WALLTIME}}
+#SBATCH --nodes={{NODES}}
+#SBATCH --ntasks-per-node={{TASKS_PER_NODE}}
+# TODO(adapter-kit): replace #SBATCH lines if not on Slurm.
+
+set -euo pipefail
+
+# ---- Module loads ----
+{{MODULES}}
+
+# Optional OpenMP threading
+export OMP_NUM_THREADS={{OMP_NUM_THREADS}}
+
+# ---- Pre-run hook ----
+{{PRE_RUN_HOOK}}
+
+# ---- Run ----
+# {{MPI_LAUNCHER}} expands to 'srun', 'mpirun', 'mpiexec', 'jsrun', or empty
+# (for serial). {{MPI_RANKS}} is the rank count (or empty for serial).
+{{MPI_LAUNCHER}} {{MPI_RANKS}} {{MODEL_BINARY}} {{RUN_CMD}}
+
+# ---- Post-run hook ----
+{{POST_RUN_HOOK}}

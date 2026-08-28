@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Environment
+.env
+*.key
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Memory data (only development logs are ignored)
+memory/logs/
+
+# Site-specific data. No case study ships on this leg, so the only memory/ folders to
+# re-include are the templates' (below).
+use_cases/*/memory/
+# The TEMPLATES' memory/ folders too. They hold only the per-folder READMEs naming which
+# skills govern each folder, and create_use_case.py seeds a new case by copytree -- so
+# ignoring them means every case scaffolded downstream starts without them. Git cannot
+# re-include a file whose parent DIRECTORY is excluded, so the directory negation is first.
+!use_cases/TEMPLATE/memory/
+!use_cases/*_template/memory/
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+use_cases/*/config/*_config.sh
+# A negation must repeat the FILE pattern. A trailing slash matches DIRECTORIES only, so
+# `!use_cases/TEMPLATE/config/` did not re-include the *_config.sh files the line above
+# excluded -- verified 2026-08-26 with `git check-ignore`: the site configs came back
+# IGNORED, which is the release's whole point.
+!use_cases/TEMPLATE/config/*_config.sh
+!use_cases/*_template/config/*_config.sh
+*.bak
+
+# Large data files
+*.nc
+*.h5
+*.tar.gz

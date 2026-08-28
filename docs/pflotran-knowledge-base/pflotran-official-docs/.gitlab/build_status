@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [ -z "${BITBUCKET_API_TOKEN:-}" ]; then
+  echo "ERROR: BITBUCKET_API_TOKEN is not set"
+  exit 1
+fi
+
+if [ -z "${BITBUCKET_AUTH_USER:-}" ]; then
+  echo "ERROR: BITBUCKET_AUTH_USER is not set"
+  exit 1
+fi
+
+if [ -z "${BITBUCKET_NAMESPACE:-}" ]; then
+  echo "ERROR: BITBUCKET_NAMESPACE is not set"
+  exit 1
+fi
+
+if [ -z "${BITBUCKET_REPOSITORY:-}" ]; then
+  echo "ERROR: BITBUCKET_REPOSITORY is not set"
+  exit 1
+fi
+
+BITBUCKET_API_ROOT="https://api.bitbucket.org/2.0"
+BITBUCKET_STATUS_API="$BITBUCKET_API_ROOT/repositories/$BITBUCKET_NAMESPACE/$BITBUCKET_REPOSITORY/commit/$CI_COMMIT_SHA/statuses/build"
+
+BITBUCKET_KEY="ci/gitlab-ci/${BUILD_KEY:-pipeline}"
+
+case "$BUILD_STATUS" in
+  running)
+    BITBUCKET_STATE="INPROGRESS"
+    BITBUCKET_DESCRIPTION="The GitLab pipeline is running."
+    ;;
+  passed)
+    BITBUCKET_STATE="SUCCESSFUL"
+    BITBUCKET_DESCRIPTION="The GitLab pipeline passed."
+    ;;
+  failed)
+    BITBUCKET_STATE="FAILED"
+    BITBUCKET_DESCRIPTION="The GitLab pipeline failed."
+    ;;
+  *)
+    echo "ERROR: invalid BUILD_STATUS: $BUILD_STATUS"
+    exit 1
+    ;;
+esac
+
+echo "Pushing GitLab pipeline status to Bitbucket..."
+echo "Bitbucket API URL: $BITBUCKET_STATUS_API"
+echo "State: $BITBUCKET_STATE"
+
+curl --request POST "$BITBUCKET_STATUS_API" \
+  --user "$BITBUCKET_AUTH_USER:$BITBUCKET_API_TOKEN" \
+  --header "Content-Type: application/json" \
+  --fail-with-body \
+  --silent \
+  --show-error \
+  --data "{
+    \"state\": \"$BITBUCKET_STATE\",
+    \"key\": \"$BITBUCKET_KEY\",
+    \"name\": \"Go to GitLab\",
+    \"description\": \"$BITBUCKET_DESCRIPTION\",
+    \"url\": \"$CI_PROJECT_URL/-/pipelines/$CI_PIPELINE_ID\",
+    \"refname\": \"$CI_COMMIT_REF_NAME\"
+  }"
+
+echo "Pushing GitLab pipeline status to Bitbucket..."
+echo "Bitbucket API URL: $BITBUCKET_STATUS_API"
+echo "State: $BITBUCKET_STATE"
+echo "Branch: $CI_COMMIT_REF_NAME"
+echo "Commit: $CI_COMMIT_SHA"

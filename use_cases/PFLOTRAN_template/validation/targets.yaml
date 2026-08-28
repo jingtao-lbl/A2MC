@@ -1,0 +1,52 @@
+# =============================================================================
+# Validation Targets — PFLOTRAN TEMPLATE
+# =============================================================================
+# Copy this file to use_cases/PFLOTRAN_<YourCase>/validation/targets.yaml and edit.
+#
+# PFLOTRAN has NO `PFT<id>_<vartype>` bare-key convention -- that resolution rule is
+# FATES-only. PFLOTRAN also has NO PFT axis at all: its grouping axis is the mesh
+# REGION (a coupler name), which fills the schema's `pft`/grouping-axis slot. This
+# file is the SINGLE SOURCE for (a) the calibration targets, (b) how each observation
+# reduces from the extracted series, and (c) the cost metric. Full design:
+# docs/24_Generic_Obs_Comparison_Plan.md.
+# =============================================================================
+
+site: MySite
+model: pflotran
+observation_source: "[Source/Citation of the observation bundle]"
+observation_period: "[e.g. 0-768 h]"
+reference_run: "[path to the reference .dat / tape used to validate the extraction path]"
+
+grouping_axis: region        # PFLOTRAN's grouping axis is the mesh region/coupler name
+
+cost_config:
+  error_method: relative_error
+  aggregation_method: rmsre
+  tolerance: 0.25
+  tolerance_type: relative
+
+# --- Targets -----------------------------------------------------------------
+# `reduce` is dispatched via models/pflotran/backend.py's `reduce_derived` seam --
+# check that module for the current, authoritative list. `window` is in HOURS, not
+# row indices (the generic index-based reducer REFUSES a PFLOTRAN target for this
+# reason -- see use_cases/PFLOTRAN_miniLEO/validation/targets.yaml's header for the
+# concrete incident this guards against).
+#
+# The common pattern below scores a CONCENTRATION RATIO (variable / denominator) at
+# the same coupler, so an unresolved area/scale normalization cancels out instead of
+# contaminating the fit -- a good default whenever the model/observation absolute
+# scale is not yet settled.
+targets:
+
+  outflow_[Species]:
+    variable: "[region] [Species] [mol/h]"
+    denominator: "[region] Water Mass [kg/h]"
+    reduce: outflow_concentration
+    region: "[region]"
+    pft: "[region]"                          # schema's grouping-axis slot
+    window: [0, 768]                         # hours
+    observed: X.XXXXe-XX
+    uncertainty: 0.3
+    units: mol/L
+    priority: high
+    description: Example outflow concentration target for one solute species.

@@ -1,0 +1,10 @@
+
+ARG IMAGE
+ARG SSH_PRIVATE_KEY
+
+FROM $IMAGE
+ENV $SSH_PRIVATE_KEY
+
+RUN echo $SSH_PRIVATE_KEY
+
+RUN /app/tools/deploy-from-gitlab.sh

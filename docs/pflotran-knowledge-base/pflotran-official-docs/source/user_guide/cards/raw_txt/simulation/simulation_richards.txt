@@ -1,0 +1,8 @@
+INLINE_SURFACE_MANNINGS_COEFF <float>
+ @EXPERT
+ Specifies the Mannings coefficient for inline flow. (expert-only)
+ 
+INLINE_SURFACE_REGION
+ @EXPERT
+ Enables inline surface flow. (expert-only)
+

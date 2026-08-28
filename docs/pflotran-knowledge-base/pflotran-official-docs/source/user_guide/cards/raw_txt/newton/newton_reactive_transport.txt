@@ -1,0 +1,7 @@
+NUMERICAL_JACOBIAN
+ Calculate reactions using numerical derivatives. Transport is still calculated analytically.
+
+ITOL_RELATIVE_UPDATE <float>
+ Declare convergence when the infinity norm of relative update is less than ITOL_RELATIVE_UPDATE :math:`\left(\|(x_n-x_{n-1})/x_{n-1}\|_{inf}<\text{ITOL_RELATIVE_UPDATE}\right)`. (default: not used). 
+
+

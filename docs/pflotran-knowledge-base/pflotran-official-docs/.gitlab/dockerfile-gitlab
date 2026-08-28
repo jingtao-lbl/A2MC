@@ -1,0 +1,22 @@
+ARG SSH_PRIVATE_KEY
+
+FROM ubuntu:jammy
+
+ENV SSH_PRIVATE_KEY=$SSH_PRIVATE_KEY
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update -q
+RUN apt-get install -y ssh
+RUN apt-get install -y make
+RUN apt-get install -y vim
+RUN apt-get install -y --no-install-recommends tzdata
+RUN apt-get install -y sphinx
+RUN apt-get install -y python3-pip
+RUN pip3 install sphinx-math-dollar
+
+COPY . /app
+WORKDIR /app
+RUN /app/tools/build-on-gitlab.sh
+#RUN echo $SSH_PRIVATE_KEY
+#RUN /app/tools/deploy-from-gitlab.sh
+

@@ -1,0 +1,11 @@
+MINIMUM_SATURATION
+ Truncates minimum liquid saturation from flow to avoid dryout in tranport. (expert-only)
+
+MULTIPLE_CONTINUUM
+ Turns on multi-continuum solute transport.
+
+TEMPERATURE_DEPENDENT_DIFFUSION
+ Turns on temperature-dependent diffusion.
+
+USE_MILLINGTON_QUIRK_TORTUOSITY
+ Turns on Millington and Quirk tortuosity model.

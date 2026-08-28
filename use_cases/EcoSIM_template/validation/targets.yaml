@@ -1,0 +1,96 @@
+# =============================================================================
+# Validation Targets — ECOSIM TEMPLATE
+# =============================================================================
+# Copy this file to use_cases/EcoSIM_<YourCase>/validation/targets.yaml and edit.
+#
+# EcoSIM has NO `PFT<id>_<vartype>` bare-key convention -- that resolution rule is
+# FATES-only (A2MC infers the FATES variable + PFT from the target NAME). Adapter
+# models set `variable`/`reduce`/`window` explicitly instead (tools/targets_loader.py:
+# "Backend-dispatched extraction specs ... Adapter models set these."). This file is
+# the SINGLE SOURCE for (a) the calibration targets, (b) how each observation reduces
+# from the extracted series, and (c) the cost metric. Full design: docs/24_Generic_
+# Obs_Comparison_Plan.md.
+# =============================================================================
+
+site: MySite
+model: ecosim
+observation_source: "[Source/Citation of the observation bundle]"
+observation_period: "[e.g. 2012-2022]"
+start_year: 2000            # record 0 = the simulation's own start_date; EcoSIM uses a REAL
+                             # leap calendar (365/366-day years) -- see models/ecosim/backend.py
+
+cost_config:
+  error_method: relative_error
+  aggregation_method: rmsre
+  tolerance: 0.2
+  tolerance_type: relative
+
+# --- Targets -----------------------------------------------------------------
+# `reduce` is dispatched in models/ecosim/backend.py::reduce_ecosystem -- check that
+# function for the current, authoritative list before assuming a mode below applies.
+# Common ones seen in real EcoSIM cases:
+#   annual                    - calendar-year sum/mean of a flux/state variable
+#   sum_pft_peak               - peak standing stock, summed across PFTs + variables
+#   growing_season_mean_abs    - May-Sep mean of an absolute-valued flux (e.g. soil Fs)
+#   depth_integral              - a soil-layer stock integrated over [depth_cm] range
+targets:
+
+  # --- Example A: an annual production target ---------------------------------
+  NPP:
+    variable: NPP_pft
+    reduce: annual
+    window_years: [2012, 2022]
+    observed: X.X
+    uncertainty: 0.3
+    units: gC/m2/yr
+    priority: high
+    description: Example annual NPP target, multi-year control mean.
+
+  # --- Example B: a multi-variable peak-standing-stock target ------------------
+  plant_C:
+    variable: [SHOOT_C_pft, Root_C_pft]
+    reduce: sum_pft_peak
+    window_years: [2012, 2022]
+    observed: X.X
+    uncertainty: 0.3
+    units: gC/m2
+    priority: high
+    description: Example total plant carbon (above+below), peak standing biomass.
+
+  # --- Example C: a growing-season flux target ---------------------------------
+  Fs:
+    variable: CO2_SEMIS_FLX_col
+    reduce: growing_season_mean_abs
+    window_years: [2012, 2022]
+    observed: X.X
+    uncertainty: 0.3
+    units: umol CO2/m2/s
+    priority: medium
+    description: Example soil surface CO2 flux (Fs), growing-season mean.
+
+# ==============================================================================
+# prescribed_initialization -- observations the run is BUILT FROM, never scored
+# ==============================================================================
+# Anything listed here is an INPUT: an observation used to prescribe the model's initial
+# state. Keep it OUT of `targets:` above. A model handed a value reproduces it, so scoring
+# it measures the prescription rather than the model -- a good "score" that means nothing.
+#
+# This block exists because the opposite mistake was made and repeated. Earlier versions of
+# this template shipped soil-carbon stocks as "Example D: a depth-integrated soil stock
+# target", and the BioCON case carried four of them under `targets:` for weeks, where they
+# were still being reasoned about as unfinished targets awaiting wiring on 2026-08-15. Every
+# EcoSIM case scaffolded from this template inherited that framing. `tools/validate_model_targets.py`
+# now hard-errors (G14) if a name appears in both blocks.
+#
+# Record the observations here anyway: they are the PROVENANCE of the initial condition, and
+# reporting how closely the initial profile matches them is a legitimate (unscored) check.
+prescribed_initialization:
+  SOC_0_10cm:
+    variable: tSOC_vr
+    depth_cm: [0, 10]
+    observed: X.X
+    units: gC/m2
+    description: >
+      Example topsoil SOC stock, 0-10 cm. Used to build the initial soil-carbon profile,
+      NOT to score the run. Replace X.X with the site observation and add the remaining
+      depths; delete the block entirely if your case prescribes nothing from observations.

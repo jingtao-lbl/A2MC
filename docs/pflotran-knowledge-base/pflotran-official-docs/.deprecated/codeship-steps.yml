@@ -1,0 +1,10 @@
+# codeship-steps.yml
+
+- name: build documentation
+  service: app
+  command: ./tools/build.sh
+
+- name: scp to server
+  tag: ^(master|maint|test)
+  service: app
+  command: ./tools/deploy.sh

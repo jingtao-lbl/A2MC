@@ -1,0 +1,123 @@
+# PFLOTRAN calibration-rounds TEMPLATE — copy to
+#   use_cases/PFLOTRAN_<Case>/config/calibration_rounds.yaml
+# MODEL-SPECIFIC, SITE-AGNOSTIC. PFLOTRAN is deck-driven, standalone (non-CIME): the
+# parameter file IS the input deck plus a thermodynamic database. NO ELM/FATES/CIME
+# concepts apply here (no ADSP/RGSP/TRANS phases, no elm_options, no E3SM checkout) —
+# see use_cases/EcoSIM_BioCON/config/calibration_rounds.yaml for what a REAL, adapter-
+# shaped round record looks like (another standalone model); this template mirrors it.
+#
+# Regenerate + validate with the ADAPTER-model generator (NOT tools/generate_calibration_rounds.py,
+# which is FATES/CIME-only):
+#   source a2mc_noncime_config.sh
+#   source use_cases/PFLOTRAN_<Case>/config/pflotran_<case>_config.sh
+#   python scripts/generate_adapter_calibration_rounds.py --round 1 --write
+#   python scripts/check_adapter_calibration_rounds.py    --round 1
+# --write MERGES: it refreshes DERIVED fields in place and never overwrites AUTHORED
+# ones (rationale, changes_from_previous, outcome, status), so it is safe to re-run on
+# a completed round. A surprise in its report means the CONFIG drifted, not the record.
+#
+# COMMENTS: the generator preserves this header block but cannot preserve inline
+# per-key comments (PyYAML cannot round-trip them). Put anything durable up here.
+# =============================================================================
+
+model: pflotran
+site: MySite            # [AUTHORED] matches $A2MC_SITE_NAME
+
+rounds:
+
+  # ---------------------------------------------------------------------------
+  # Round 1 — the first round on this lineage
+  # ---------------------------------------------------------------------------
+  1:
+    # -- [DERIVED] from the site config; regenerate rather than edit ----------
+    parameters: 17                        # $A2MC_N_PARAMS (from the param list CONTENT)
+    ensembles: 360                        # $A2MC_TOTAL_ENSEMBLE (by scheme; Morris = traj x (P+1))
+    trajectories: 20                      # $A2MC_N_TRAJECTORIES
+    sampling_scheme: morris               # $A2MC_SAMPLING_SCHEME
+    config_file: use_cases/MySite/config/pflotran_mysite_config.sh
+    paths:
+      output_root: <PATH_TO_ENSEMBLE_OUTPUT_ROOT_ON_CFS>   # $A2MC_OUTPUT_ROOT -- CFS, never ~/
+      ensemble_name: R1_<NPARA>Para_Morris<NTRAJ>
+      ensemble_output: ${A2MC_OUTPUT_ROOT}/R1_<NPARA>Para_Morris<NTRAJ>
+      case_name_pattern: <CASE>_case{N}
+      param_list: use_cases/MySite/parameters/pflotran_mysite_param_list.csv
+      salib_problem: use_cases/MySite/parameters/salib_problem_pflotran_mysite.txt
+      base_param_file: <PATH_TO_CASE_DIR>/pflotran.in    # $A2MC_BASE_PARAM_FILE
+
+    # Targets are CONCENTRATION/FLUX, not PFT biomass -- one dict per target,
+    # matching validation/targets.yaml's own schema (kept here too so the round
+    # record is self-contained without cross-referencing the targets file).
+    targets:
+    - name: outflow_[Species]
+      variable: "east [Species] [mol/h]"
+      denominator: "east Water Mass [kg/h]"
+      reduce: outflow_concentration
+      observed: X.XXXXe-XX
+      units: mol/L
+
+    validation_targets_file: use_cases/MySite/validation/targets.yaml
+
+    # No FATES-style suplphos/suplnitro/elm_options here -- a standalone binary
+    # has no CIME phases. Record what actually varies run to run instead.
+    protocol:
+      run_type: single_continuous           # or: restart_from_checkpoint, spin_up_then_run
+      final_time: <N> day                   # matches the deck's TIME/FINAL_TIME card
+      parallelism: SLURM sbatch; each case N MPI ranks via srun (see A2MC_HPC_MPI_RANKS)
+      restart_caveat: >-
+        Every ensemble member restarts from the SAME checkpoint, built under the base
+        parameter set -- a perturbed porosity/permeability/retention-curve/mineral
+        assemblage is not strictly consistent with that restart state. State here
+        whether this round accepts that approximation or gives each member its own
+        spin-up (changes the cost model substantially). See
+        models/pflotran/runtemplates/hpc_standalone.sh.tmpl's own RESTART CAVEAT.
+
+    # -- [AUTHORED] model provenance -----------------------------------------
+    # Block name is MODEL-NAMESPACED: pflotran_source | ecosim_source | ats_source.
+    # version/checkout are DERIVED (from $A2MC_MODEL_PATH / $A2MC_PFLOTRAN_VERSION);
+    # the rest is authored and never overwritten by --write.
+    pflotran_source:
+      version: <commit_short>              # [DERIVED] the pinned PFLOTRAN commit, e.g. 157a26f7
+      checkout: <PATH_TO_PFLOTRAN_CHECKOUT>  # [DERIVED] $A2MC_MODEL_PATH -- PFLOTRAN's OWN
+                                              # checkout, not an E3SM/ELM tree (this is a
+                                              # standalone model with no FATES/ELM commit)
+      branch: ""                            # [AUTHORED] experiment branch, if not the anchor
+      patches: []                           # [AUTHORED] source changes THIS round depends on
+                                             # (rare for PFLOTRAN -- model-dev is out of scope
+                                             # for a calibration case unless explicitly scoped)
+    overrides: {}                           # [AUTHORED] per-round parameter overrides
+
+    # -- [AUTHORED] narrative -------------------------------------------------
+    rationale: >
+      Why this round is designed the way it is. What question it answers, and
+      what would count as an answer.
+    changes_from_previous:
+      - First round on this lineage.      # for round N>1, list the concrete deltas
+
+    # -- [AUTHORED] written at the Phase-6 gate, by the agent ------------------
+    outcome: null                         # null until the round completes
+    status: planned                       # planned | in_progress | completed | superseded
+    # completed_date: 2026-08-02          # [AUTHORED] add when status -> completed
+
+  # ---------------------------------------------------------------------------
+  # Round 2 — what a COMPLETED round looks like (delete if not applicable)
+  # ---------------------------------------------------------------------------
+  # 2:
+  #   parameters: 20
+  #   ...derived fields as above...
+  #   changes_from_previous:
+  #     - "Parameter list 17 -> 20: added the database's log-K rows for the Ca sink"
+  #     - "Bounds re-centred on the R1 best case -- re-sourced, not just re-centred"
+  #   rationale: >
+  #     R1's worst fit was outflow_Al (sink-controlled); R2 opens the secondary-
+  #     mineral surface-area parameters R1 held fixed.
+  #   outcome: >
+  #     R2 completed 360/360 on 2026-09-14. Headline: widening the Proto-Imogolite
+  #     surface-area bound closes 60% of the Al gap without moving the other nine
+  #     targets outside their bands. Best case 8/10 targets (was 6/10).
+  #     See reports/20260914a_R2_ROUND_SUMMARY/.
+  #   status: completed
+  #   completed_date: 2026-09-14
+  #   key_cases:                          # [AUTHORED] the cases worth revisiting
+  #     best: case042
+  #   provenance:                         # [AUTHORED] where the evidence lives
+  #     key_logs: [20260914a_phase6_refinement_r02]

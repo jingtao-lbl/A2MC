@@ -1,0 +1,4371 @@
+{
+  "directed": true,
+  "multigraph": false,
+  "graph": {},
+  "nodes": [
+    {
+      "node_type": "Category",
+      "name": "mineral_kinetics",
+      "description": "Mineral kinetics (TST dissolution / precipitation)",
+      "id": "category:mineral_kinetics"
+    },
+    {
+      "node_type": "Category",
+      "name": "water_retention",
+      "description": "Characteristic curves (van Genuchten / Mualem)",
+      "id": "category:water_retention"
+    },
+    {
+      "node_type": "Category",
+      "name": "permeability",
+      "description": "Intrinsic permeability and its porosity coupling",
+      "id": "category:permeability"
+    },
+    {
+      "node_type": "Category",
+      "name": "porosity",
+      "description": "Porosity",
+      "id": "category:porosity"
+    },
+    {
+      "node_type": "Category",
+      "name": "transport",
+      "description": "Dispersivity and molecular diffusion",
+      "id": "category:transport"
+    },
+    {
+      "node_type": "Category",
+      "name": "chemistry",
+      "description": "Aqueous boundary and initial composition",
+      "id": "category:chemistry"
+    },
+    {
+      "node_type": "Category",
+      "name": "boundary",
+      "description": "Flow-condition values on the domain faces",
+      "id": "category:boundary"
+    },
+    {
+      "node_type": "Category",
+      "name": "solver",
+      "description": "Numerical-method controls (NOT calibration knobs)",
+      "id": "category:solver"
+    },
+    {
+      "node_type": "Category",
+      "name": "thermodynamic_database",
+      "description": "Thermodynamic database (CONTEXT ONLY, never sampled)",
+      "id": "category:thermodynamic_database"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "TST_Mineral_Kinetics",
+      "description": "Transition-state-theory rate law. The volumetric rate is -(reactive surface area) x (affinity factor) x (rate constant), in mol/sec per m^3 bulk [src: reaction_mineral.F90:1274-1281]. TWO DISTINCT RATE ROUTINES EXIST and the deck selects between them implicitly -- see the AFFINITY_THRESHOLD entry.\n",
+      "code_location": "reaction_mineral.F90:1201-1325 (SIMPLE), :1329+ (COMPLEX); dispatch at :1174-1180",
+      "module": null,
+      "id": "mechanism:TST_Mineral_Kinetics"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Reactive_Surface_Area_Evolution",
+      "description": "Specific surface area evolves with porosity and/or mineral volume fraction through SURFACE_AREA_FUNCTION. The porosity factor uses the SOLID fraction, ((1-phi_base)/(1-phi_0))**power [src: reaction_mineral.F90:2052-2055], so its sign of effect is opposite to the naive reading of its name.\n",
+      "code_location": "reaction_mineral.F90:2036-2062",
+      "module": null,
+      "id": "mechanism:Reactive_Surface_Area_Evolution"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Porosity_Permeability_Feedback",
+      "description": "Mineral volume change updates porosity absolutely [src: realization_subsurface.F90:2226-2227], and porosity then rescales permeability through a thresholded power law with a LOWER clamp [src: realization_subsurface.F90:2062-2070]. The source contains NO kozeny or carman string, so naming it Kozeny-Carman would be an invention.\n",
+      "code_location": "realization_subsurface.F90:2214-2233 (porosity), :2055-2076 (permeability)",
+      "module": null,
+      "id": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Van_Genuchten_WRM",
+      "description": "Capillary-pressure/saturation relation. Pc = (Se**(-1/m) - 1)**(1/n) / alpha, with n = 1/(1-m) DERIVED from m and Se = (Sl - Sr)/(1 - Sr) [src: characteristic_curves_common.F90:860-867]. At or below Sr the capillary pressure is clamped to pcmax [src: characteristic_curves_common.F90:852-854].\n",
+      "code_location": "characteristic_curves_common.F90:809-885",
+      "module": null,
+      "id": "mechanism:Van_Genuchten_WRM"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Mualem_Relative_Permeability",
+      "description": "Relative permeability of liquid and gas derived from the retention curve. The liquid and gas forms take SEPARATE parameter copies -- in this deck MUALEM_VG_LIQ and MUALEM_VG_GAS each carry their own M and LIQUID_RESIDUAL_SATURATION [deck: pflotran.in:574-583].\n",
+      "code_location": "characteristic_curves_common.F90:148-157 (liq type), :159-165 (gas type), :3366-3417 (gas rel-perm, formula at :3409); deck addresses at pflotran.in:574-583",
+      "module": null,
+      "id": "mechanism:Mualem_Relative_Permeability"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "GIRT_Reactive_Transport",
+      "description": "Global-implicit reactive transport -- chemistry and transport solved together, as opposed to operator-split OSRT. Selected in this deck [deck: pflotran.in:19].\n",
+      "code_location": "deck pflotran.in:18-24; reactive_transport.F90",
+      "module": null,
+      "id": "mechanism:GIRT_Reactive_Transport"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Advection_Dispersion_Diffusion",
+      "description": "Solute flux from Darcy advection, mechanical dispersion and molecular diffusion. With USE_MILLINGTON_QUIRK_TORTUOSITY the diffusion coefficient is scaled by saturation**(7/3) * porosity**(1/3) [src: transport.F90:113-114, :157-165]. That option additionally REQUIRES every TORTUOSITY to remain at its default of 1 [src: pm_rt.F90:469-483].\n",
+      "code_location": "transport.F90:105-170; pm_rt.F90:237-238, :469-483",
+      "module": null,
+      "id": "mechanism:Advection_Dispersion_Diffusion"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Seepage_Face_Boundary",
+      "description": "NOT EAST-ONLY: the same FLOW_CONDITION `gas_vent` (hence the same DIRICHLET_SEEPAGE type) is coupled to the east seepage face [deck: pflotran.in:535-539] AND to the top surface as `top_vent` [deck: pflotran.in:528-532]. The `#skip`/`#noskip` around the latter are plain COMMENTS, not directives -- a line beginning with `#` is discarded before the SKIP test [src: input_aux.F90:797, :811] -- so `top_vent` is live, which its 62 output columns confirm. The east face is the drainage boundary [deck: pflotran.in:473; src: condition.F90:1323-1324, pflotran_constants.F90:222 DIRICHLET_SEEPAGE_BC = 30]. The one-way clamp is armed by the BC TYPE, not by any saturation value. Of the FIVE bc_types that reach this Darcy-flux branch at all [src: general_common.F90:2653-2654 -- DIRICHLET, HYDROSTATIC, HYDROSTATIC_SEEPAGE, HYDROSTATIC_CONDUCTANCE, DIRICHLET_SEEPAGE], the three seepage/conductance types fall into the `case default` that sets `water_cannot_flow_in` when capillary pressure is positive [src: general_common.F90:2677-2684]; DIRICHLET and HYDROSTATIC do not. Other bc_types (NEUMANN_BC at [src: general_common.F90:2780]) never enter this branch -- so \"every bc_type other than ...\" would be a false universal. THE CLAMP ITSELF is a few lines further on and is explicitly gated on the type: `if (bc_type == DIRICHLET_SEEPAGE_BC) then / if (delta_pressure > 0 .and. water_cannot_flow_in) delta_pressure = 0` [src: general_common.F90:2726-2728].\n",
+      "code_location": "general_common.F90:2650-2730 (clamp at :2726-2728); condition.F90:1323-1324",
+      "module": null,
+      "id": "mechanism:Seepage_Face_Boundary"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Aqueous_Speciation",
+      "description": "Equilibrium speciation of the 16 primary components into 104 secondary species [deck: pflotran.in:93-197 -- 105 lines, of which :110 `!MgNO3+` is commented out], setting the ion activity products the rate law compares against. Constraint TYPE letters are read at [src: transport_constraint_rt.F90:306-345]; types M / G / SC additionally REQUIRE a 4th column naming the constraining phase [src: transport_constraint_rt.F90:348-358].\n",
+      "code_location": "transport_constraint_rt.F90:290-370",
+      "module": null,
+      "id": "mechanism:Aqueous_Speciation"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Timestep_Control",
+      "description": "Timestep sizing and cutting. DIAGNOSTIC, never calibration. MAX_TS_CUTS is a PER-TIMESTEP CONSECUTIVE budget -- the counter resets at the top of every timestep [src: timestepper_SNES.F90:371] and the field is documented as \"Maximum number of timestep cuts within one time step\" [src: timestepper_base.F90:32]. The `cuts` figure in an end-of-run summary is a LIFETIME total and is UNRELATED to this limit. A genuine exhaustion aborts with exit status 88 [src: timestepper_base.F90:740-746; pflotran_constants.F90:63 EXIT_FAILURE = 88] and writes a `<pmname>_cut_to_failure` snapshot [src: timestepper_base.F90:764].\n",
+      "code_location": "timestepper_base.F90:32, :158, :279-280, :740-746, :764; timestepper_SNES.F90:371",
+      "module": null,
+      "id": "mechanism:Timestep_Control"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "RATE_CONSTANT",
+      "pft": null,
+      "category": "mineral_kinetics",
+      "description": "Kinetic rate constant, one per kinetic mineral -- 10 in this deck\n[deck: pflotran.in:239, 246, 253, 260, 269, 277, 285, 293, 300, 307].\n\nIT SETS TWO INTERNAL CONSTANTS AT ONCE. The plain card writes BOTH the\ndissolution and the precipitation rate constant; PRECIPITATION_RATE_CONSTANT\nand DISSOLUTION_RATE_CONSTANT set them independently\n[src: reaction_mineral.F90:159-173, both assigned at :167-168]",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CHEMISTRY/MINERAL_KINETICS/Glass_FB/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Labradorite/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Olivine/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Diopside_78_FB/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Proto-Imogolite/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Ferrihydrite/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Birnessite-LEO/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Calcite/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Montmor-Mg/RATE_CONSTANT",
+        "CHEMISTRY/MINERAL_KINETICS/Hydroxylapatite/RATE_CONSTANT"
+      ],
+      "n_addresses": 10,
+      "id": "parameter:RATE_CONSTANT"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "surface_area",
+      "pft": null,
+      "category": "mineral_kinetics",
+      "description": "Initial specific surface area -- the THIRD column of a CONSTRAINT/MINERALS\nrow, after the mineral name and the volume fraction\n[deck: pflotran.in:434-451; src: transport_constraint_rt.F90:508-548].\nIt reaches the rate through `mnrl_area`, which is\nmax(mnrl_area0, surf_area_epsilon) * porosity_scale * volfrac_scale\n[src: reaction_mineral.F90:2068-2071], and that product multiplies the\nrate [src: re",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CONSTRAINT[initial]/MINERALS/Labradorite#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Diopside_78_FB#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Olivine#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Glass_FB#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Proto-Imogolite#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Ferrihydrite#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Birnessite-LEO#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Calcite#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Hydroxylapatite#surface_area",
+        "CONSTRAINT[initial]/MINERALS/Montmor-Mg#surface_area"
+      ],
+      "n_addresses": 10,
+      "id": "parameter:surface_area"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "vol_frac",
+      "pft": null,
+      "category": "mineral_kinetics",
+      "description": "Initial mineral volume fraction -- the SECOND column of a\nCONSTRAINT/MINERALS row [deck: pflotran.in:434-451;\nsrc: transport_constraint_rt.F90:514-530]. A constraint that DECLARES a\nMINERALS block must give a row for every kinetic mineral, present or not\n[src: transport_constraint_rt.F90:562-570] -- but a constraint may omit\nthe block entirely, and this deck's `CONSTRAINT top` does\n[deck: pflotran",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CONSTRAINT[initial]/MINERALS/Labradorite#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Diopside_78_FB#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Olivine#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Glass_FB#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Proto-Imogolite#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Ferrihydrite#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Birnessite-LEO#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Calcite#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Hydroxylapatite#vol_frac",
+        "CONSTRAINT[initial]/MINERALS/Montmor-Mg#vol_frac"
+      ],
+      "n_addresses": 10,
+      "id": "parameter:vol_frac"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "SURFACE_AREA_POROSITY_POWER",
+      "pft": null,
+      "category": "mineral_kinetics",
+      "description": "Exponent on the porosity ratio in the surface-area update. 0.667 on all\nten minerals in this deck [deck: pflotran.in:242, 249, 256, 263, 271, 279,\n287, 295, 302, 309].\n\nTRAP -- DESPITE THE NAME, THE RATIO USES THE SOLID FRACTION:\n    porosity_scale = ((1 - phi_base) / (1 - phi_0)) ** power\n[src: reaction_mineral.F90:2052-2055]. The sign of its effect is therefore\nOPPOSITE to the naive reading: as ",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CHEMISTRY/MINERAL_KINETICS/Glass_FB/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Labradorite/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Olivine/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Diopside_78_FB/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Proto-Imogolite/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Ferrihydrite/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Birnessite-LEO/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Calcite/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Montmor-Mg/SURFACE_AREA_POROSITY_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Hydroxylapatite/SURFACE_AREA_POROSITY_POWER"
+      ],
+      "n_addresses": 10,
+      "id": "parameter:SURFACE_AREA_POROSITY_POWER"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "SURFACE_AREA_VOL_FRAC_POWER",
+      "pft": null,
+      "category": "mineral_kinetics",
+      "description": "Exponent on the mineral volume-fraction ratio in the surface-area update.\nSet only on the four PRIMARY minerals, which use SURFACE_AREA_FUNCTION\nPOROSITY_VOLUME_FRACTION_RATIO [deck: pflotran.in:243, 250, 257, 264];\nthe six secondary phases use POROSITY_RATIO and have no such card\n[deck: pflotran.in:270, 278, 286, 294, 301, 308].\n\nControls how reactive area shrinks as a phase is consumed; the expo",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CHEMISTRY/MINERAL_KINETICS/Glass_FB/SURFACE_AREA_VOL_FRAC_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Labradorite/SURFACE_AREA_VOL_FRAC_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Olivine/SURFACE_AREA_VOL_FRAC_POWER",
+        "CHEMISTRY/MINERAL_KINETICS/Diopside_78_FB/SURFACE_AREA_VOL_FRAC_POWER"
+      ],
+      "n_addresses": 4,
+      "id": "parameter:SURFACE_AREA_VOL_FRAC_POWER"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "AFFINITY_THRESHOLD",
+      "pft": null,
+      "category": "mineral_kinetics",
+      "description": "A PRECIPITATION-ONLY GATE, not a general rate suppressor: the rate\nreturns early only on the precipitation branch,\n`if (precipitation .and. QK < affinity_threshold) return`\n[src: reaction_mineral.F90:1431-1434; the card's own comment at :182\nreads \"read affinity threshold for precipitation\"]. Dissolution is never\ngated. In effect a dissolution-only switch.\n\nSet to 1.d10 on the FOUR PRIMARY mineral",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CHEMISTRY/MINERAL_KINETICS/Glass_FB/AFFINITY_THRESHOLD",
+        "CHEMISTRY/MINERAL_KINETICS/Labradorite/AFFINITY_THRESHOLD",
+        "CHEMISTRY/MINERAL_KINETICS/Olivine/AFFINITY_THRESHOLD",
+        "CHEMISTRY/MINERAL_KINETICS/Diopside_78_FB/AFFINITY_THRESHOLD"
+      ],
+      "n_addresses": 4,
+      "id": "parameter:AFFINITY_THRESHOLD"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "M",
+      "pft": null,
+      "category": "water_retention",
+      "description": "van Genuchten m -- retention-curve sharpness. n = 1/(1-m) is DERIVED\n[src: characteristic_curves_common.F90:860], so m and n are one degree of\nfreedom, not two.\n\nSCOPE CORRECTION vs v0.1: there is no N card IN THIS DECK, but `case('N')`\nDOES exist in the model [src: characteristic_curves.F90:926, :1780, :1797]\n-- other curve types accept it. Scope the claim to the deck.\n\nTRAP -- THREE INDEPENDENT ",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CHARACTERISTIC_CURVES[sf1]/SATURATION_FUNCTION[VAN_GENUCHTEN]/M",
+        "CHARACTERISTIC_CURVES[sf1]/PERMEABILITY_FUNCTION[MUALEM_VG_LIQ]/M",
+        "CHARACTERISTIC_CURVES[sf1]/PERMEABILITY_FUNCTION[MUALEM_VG_GAS]/M"
+      ],
+      "n_addresses": 3,
+      "id": "parameter:M"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ALPHA",
+      "pft": null,
+      "category": "water_retention",
+      "description": "van Genuchten alpha -- the inverse air-entry pressure, setting the\ncapillary-fringe thickness and therefore drainage timing.\n0.000267 in this deck, at ONE address only\n[deck: pflotran.in:571], unlike M and Sr.\n\nUNITS ARE Pa^-1, derived from two cited lines rather than asserted (it is\nstill a two-step inference across two subsystems, but both steps are\ncited, which is the difference from v0.1's app",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CHARACTERISTIC_CURVES[sf1]/SATURATION_FUNCTION[VAN_GENUCHTEN]/ALPHA"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:ALPHA"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "LIQUID_RESIDUAL_SATURATION",
+      "pft": null,
+      "category": "water_retention",
+      "description": "Residual liquid saturation -- the lower clamp on effective saturation.\nSe = (Sl - Sr)/(1 - Sr), and below Sr the capillary pressure is pinned to\npcmax [src: characteristic_curves_common.F90:852-854, :863-864].\n\nTRAP -- THREE INDEPENDENT DECK ADDRESSES, ALL LIVE.\n[deck: pflotran.in:572 (SATURATION_FUNCTION), :576 (MUALEM_VG_LIQ),\n:580 (MUALEM_VG_GAS)], all 0.02 here.\n\nv0.1 CLAIMED one copy \"propaga",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CHARACTERISTIC_CURVES[sf1]/SATURATION_FUNCTION[VAN_GENUCHTEN]/LIQUID_RESIDUAL_SATURATION",
+        "CHARACTERISTIC_CURVES[sf1]/PERMEABILITY_FUNCTION[MUALEM_VG_LIQ]/LIQUID_RESIDUAL_SATURATION",
+        "CHARACTERISTIC_CURVES[sf1]/PERMEABILITY_FUNCTION[MUALEM_VG_GAS]/LIQUID_RESIDUAL_SATURATION"
+      ],
+      "n_addresses": 3,
+      "id": "parameter:LIQUID_RESIDUAL_SATURATION"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GAS_RESIDUAL_SATURATION",
+      "pft": null,
+      "category": "water_retention",
+      "description": "Residual gas saturation. 0.0 in this deck, at one address\n[deck: pflotran.in:581].\n\nSCOPE -- TRUE OF THE MODEL, BUT v0.1 WAS RIGHT ABOUT THIS DECK. There are\n30 `case('GAS_RESIDUAL_SATURATION')` sites in\n[src: characteristic_curves.F90], spanning BRAGFLO/KRP, Brooks-Corey,\nmodified-Corey and table types as well as permeability functions. BUT\namong the curve types THIS DECK instantiates it is accep",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CHARACTERISTIC_CURVES[sf1]/PERMEABILITY_FUNCTION[MUALEM_VG_GAS]/GAS_RESIDUAL_SATURATION"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:GAS_RESIDUAL_SATURATION"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "PERM_ISO",
+      "pft": null,
+      "category": "permeability",
+      "description": "Isotropic intrinsic permeability [m^2]. 1.188d-11 in this deck\n[deck: pflotran.in:554]. Anisotropic alternatives (PERM_X/Y/Z) exist but\nare unused here.\n\nIt is the REFERENCE permeability, not the operative one: with\nUPDATE_PERMEABILITY set [deck: pflotran.in:324] the operative value is\nPERM_ISO x scale, where scale is the thresholded porosity power law\n[src: realization_subsurface.F90:2062-2070]. ",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "MATERIAL_PROPERTY[Bolitic]/PERMEABILITY/PERM_ISO"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:PERM_ISO"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "POROSITY",
+      "pft": null,
+      "category": "porosity",
+      "description": "Bulk porosity, 0.39 in this deck [deck: pflotran.in:552].\n\nTRAP -- WITH UPDATE_POROSITY SET, THIS CARD HAS TWO DISTINCT ROLES AND IS\nNOT THE OPERATIVE POROSITY.\nThe operative (base) porosity is recomputed every reactive step as\nmax(1 - sum(kinetic mineral vol fracs), minimum_porosity)\n[src: realization_subsurface.F90:2226-2227]. What the deck card sets is\nthe INITIAL/reference porosity phi_0: the ",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "MATERIAL_PROPERTY[Bolitic]/POROSITY"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:POROSITY"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "PERMEABILITY_POWER",
+      "pft": null,
+      "category": "permeability",
+      "description": "Exponent in the porosity-permeability power law. 3.0 in this deck\n[deck: pflotran.in:559]. The relation is\nscale = ((phi_base - phi_crit) / (phi_0 - phi_crit)) ** power,\nevaluated only when BOTH porosities exceed phi_crit, and otherwise zero\n[src: realization_subsurface.F90:2061-2067].\n\nThe source contains NO kozeny or carman string -- calling this\nKozeny-Carman would be an invention.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "MATERIAL_PROPERTY[Bolitic]/PERMEABILITY_POWER"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:PERMEABILITY_POWER"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "PERMEABILITY_CRITICAL_POROSITY",
+      "pft": null,
+      "category": "permeability",
+      "description": "Threshold porosity offset in the permeability scaling. 0.09 in this deck\n[deck: pflotran.in:558].\n\nHARD EDGE: if a sampled member drives phi_base to or below this value, the\npower-law branch is skipped entirely and scale collapses to 0 before the\nminimum-scale clamp [src: realization_subsurface.F90:2061-2070] -- i.e.\npermeability drops to PERM_ISO x PERMEABILITY_MIN_SCALE_FACTOR. Keep the\nsampled ",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "MATERIAL_PROPERTY[Bolitic]/PERMEABILITY_CRITICAL_POROSITY"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:PERMEABILITY_CRITICAL_POROSITY"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "PERMEABILITY_MIN_SCALE_FACTOR",
+      "pft": null,
+      "category": "permeability",
+      "description": "TRAP -- IT IS A LOWER BOUND AND IT DEFAULTS TO 1.0.\nApplied as scale = max(permeability_min_scale_fac, scale)\n[src: realization_subsurface.F90:2069-2070], read at\n[src: material.F90:789-791], default set at [src: material.F90:195].\n\nWith the DEFAULT of 1.0, permeability can only ever INCREASE and clogging\nis invisible -- a silent, easily-missed constraint on the whole\nporosity-permeability feedbac",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "MATERIAL_PROPERTY[Bolitic]/PERMEABILITY_MIN_SCALE_FACTOR"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:PERMEABILITY_MIN_SCALE_FACTOR"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "LONGITUDINAL_DISPERSIVITY",
+      "pft": null,
+      "category": "transport",
+      "description": "Longitudinal dispersivity [m], 0.0458 in this deck\n[deck: pflotran.in:556; src: material.F90:386].\nSAME NO-CONVERSION HAZARD AS ALPHA: the reader takes a bare double with no\nunits token and no conversion [src: material.F90:387], unlike ROCK_DENSITY\nand HEAT_CAPACITY two cards above [src: material.F90:379-380, :384-385].\nA value supplied in cm runs silently.\n\nPRIOR (unverified): affects the SHAPE o",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "MATERIAL_PROPERTY[Bolitic]/LONGITUDINAL_DISPERSIVITY"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:LONGITUDINAL_DISPERSIVITY"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "DIFFUSION_COEFFICIENT",
+      "pft": null,
+      "category": "transport",
+      "description": "Molecular diffusion coefficient [m^2/s], set PER FLUID PHASE. This deck\nhas TWO FLUID_PROPERTY blocks -- PHASE LIQUID 1.d-9\n[deck: pflotran.in:45-47] and PHASE GAS 1.d-5\n[deck: pflotran.in:50-52].\n\nOPEN PARSER DEFECT -- DO NOT SAMPLE THIS KNOB YET. Both blocks are\nANONYMOUS (no name token), distinguished only by an inner PHASE card, so\nmodels/pflotran/parameter_parser.py collides them onto the sin",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "FLUID_PROPERTY/DIFFUSION_COEFFICIENT"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:DIFFUSION_COEFFICIENT"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "value",
+      "pft": null,
+      "category": "chemistry",
+      "description": "The concentration column of a CONSTRAINT/CONCENTRATIONS row -- 32 rows in\nthis deck, 16 each in the `top` (rainwater) and `initial` constraints\n[deck: pflotran.in:389-405, :413-428].\n\nITS MEANING DEPENDS ON THE TYPE LETTER IN THE NEXT COLUMN\n[src: transport_constraint_rt.F90:306-345]:\n  F/FREE   free-ion concentration      T/TOTAL   total component\n  P/PH     pH                          E/PE      ",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "CONSTRAINT[top]/CONCENTRATIONS/CO2(aq)#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/O2(aq)#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/H+#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/Al+++#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/SiO2(aq)#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/Fe++#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/Na+#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/K+#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/Mg++#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/Ca++#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/NO3-#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/SO4--#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/Cl-#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/Ti(OH)4(aq)#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/HPO4--#value",
+        "CONSTRAINT[top]/CONCENTRATIONS/Mn++#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/CO2(aq)#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/O2(aq)#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/H+#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/Al+++#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/SiO2(aq)#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/Fe++#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/Na+#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/K+#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/Mg++#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/Ca++#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/NO3-#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/SO4--#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/Cl-#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/Ti(OH)4(aq)#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/HPO4--#value",
+        "CONSTRAINT[initial]/CONCENTRATIONS/Mn++#value"
+      ],
+      "n_addresses": 32,
+      "id": "parameter:value"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "LIQUID_SATURATION",
+      "pft": null,
+      "category": "boundary",
+      "description": "Initial liquid saturation, 0.10 [deck: pflotran.in:500].\n\nCATEGORY CORRECTION vs v0.1. As a VALUE-CARRYING card it occurs ONCE\n(the name also appears as an OUTPUT variable at\n[deck: pflotran.in:606, 635], which is a different thing), inside\nFLOW_CONDITION\n`initial` [deck: pflotran.in:493-502], which is attached by an\nINITIAL_CONDITION block to REGION all [deck: pflotran.in:521-525]. It is\nan INITI",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "FLOW_CONDITION[initial]/LIQUID_SATURATION"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:LIQUID_SATURATION"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GAS_PRESSURE",
+      "pft": null,
+      "category": "boundary",
+      "description": "Gas pressure. 101325 Pa (atmospheric) at both addresses\n[deck: pflotran.in:477 (gas_vent), :499 (initial)]. Internal units are Pa\n[src: condition.F90:2296-2297].\n\nOn the vent it carries the DIRICHLET_SEEPAGE type\n[deck: pflotran.in:473], which is what arms the one-way outflow clamp\n[src: general_common.F90:2677-2684] -- see the Seepage_Face_Boundary\nmechanism. FIXED BY THE PHYSICAL SETUP; not a ca",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "FLOW_CONDITION[gas_vent]/GAS_PRESSURE",
+        "FLOW_CONDITION[initial]/GAS_PRESSURE"
+      ],
+      "n_addresses": 2,
+      "id": "parameter:GAS_PRESSURE"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GAS_SATURATION",
+      "pft": null,
+      "category": "boundary",
+      "description": "Gas saturation at the vent boundary, 1.0 [deck: pflotran.in:478].\nFixed by the setup; not a calibration knob.\n\nITS `affects` IS NOT EMPTY (v0.1 said it was), BUT NOT FOR THE REASON THE\nv0.1 FAN-OUT GAVE. The fan-out attributed the seepage clamp to it\n(general_common.F90:2676-2690). RE-CHECKING THIS SESSION DOES NOT SUPPORT\nTHAT: the clamp is armed by the BC TYPE\n[src: general_common.F90:2677-2684]",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "FLOW_CONDITION[gas_vent]/GAS_SATURATION"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:GAS_SATURATION"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "TEMPERATURE",
+      "pft": null,
+      "category": "boundary",
+      "description": "25 C at two addresses [deck: pflotran.in:479 (gas_vent),\n:501 (initial)]; internal units C [src: condition.F90:2302-2303]. The run\nis ISOTHERMAL [deck: pflotran.in:12]. Not a calibration knob for this case.\n\nSCOPE CORRECTION vs v0.1, WHICH THIS DECK ITSELF REFUTES. v0.1 claimed\nTEMPERATURE \"remains mandatory in every flow condition\". It does not: the\nblanket requirement is inside a block guarded b",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "FLOW_CONDITION[gas_vent]/TEMPERATURE",
+        "FLOW_CONDITION[initial]/TEMPERATURE"
+      ],
+      "n_addresses": 2,
+      "id": "parameter:TEMPERATURE"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GAS_FLUX",
+      "pft": null,
+      "category": "boundary",
+      "description": "Zero gas flux on the recharge face, NEUMANN\n[deck: pflotran.in:485, :489]. Internal units meter/sec\n[src: condition.F90:2320-2321]. Fixed by the setup; not a calibration\nknob.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "FLOW_CONDITION[recharge]/GAS_FLUX"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:GAS_FLUX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ENERGY_FLUX",
+      "pft": null,
+      "category": "boundary",
+      "description": "Zero energy flux on the recharge face, NEUMANN, in MW/m^2\n[deck: pflotran.in:486, :490; src: condition.F90:2322-2326 forces units].\nFixed (isothermal); not a calibration knob.\n\nIts presence is what lets the `recharge` flux condition satisfy its energy\ndegree of freedom WITHOUT a TEMPERATURE card -- see the TEMPERATURE entry.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "FLOW_CONDITION[recharge]/ENERGY_FLUX"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:ENERGY_FLUX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "MAX_TS_CUTS",
+      "pft": null,
+      "category": "solver",
+      "description": "NOT A CALIBRATION KNOB -- run control, and the single most misread number\nin a PFLOTRAN run summary.\n\nIT IS SET TWICE IN THIS DECK, once per process model:\n20 for FLOW [deck: pflotran.in:360] and 50 for TRANSPORT\n[deck: pflotran.in:376]. v0.1 presented it as one value. The default when\nabsent is 16 [src: timestepper_base.F90:158]; `MAXIMUM_CONSECUTIVE_TS_CUTS`\nis an accepted alias [src: timesteppe",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "NUMERICAL_METHODS[FLOW]/TIMESTEPPER/MAX_TS_CUTS",
+        "NUMERICAL_METHODS[TRANSPORT]/TIMESTEPPER/MAX_TS_CUTS"
+      ],
+      "n_addresses": 2,
+      "id": "parameter:MAX_TS_CUTS"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "MAXIMUM_TIMESTEP_SIZE",
+      "pft": null,
+      "category": "solver",
+      "description": "NOT A CALIBRATION KNOB. Caps dt at 0.5 h [deck: pflotran.in:352].\nLowering it lets a stiff member survive at higher cost.\n\nIT IS NOT COST-ONLY: changing the dt sequence changes the temporal\ndiscretization, so the trajectory moves within truncation error. Varying\nit across ensemble members would confound numerics with physics. HOLD IT\nFIXED ACROSS A DESIGN.\n\nIt also sets the mass-balance output cad",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "TIME/MAXIMUM_TIMESTEP_SIZE"
+      ],
+      "n_addresses": 1,
+      "id": "parameter:MAXIMUM_TIMESTEP_SIZE"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "TIMESTEP_MAXIMUM_GROWTH_FACTOR",
+      "pft": null,
+      "category": "solver",
+      "description": "NOT A CALIBRATION KNOB. Limits how fast dt may grow after a successful\nstep. Set to 1.5 TWICE, once per process model\n[deck: pflotran.in:361 (FLOW), :377 (TRANSPORT)].\n\nCORRECTION vs v0.1, which said it \"affects wall-clock, not the converged\nsolution\". It DOES change the trajectory, for the same reason as\nMAXIMUM_TIMESTEP_SIZE: a different dt sequence is a different temporal\ndiscretization, so res",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "addresses": [
+        "NUMERICAL_METHODS[FLOW]/TIMESTEPPER/TIMESTEP_MAXIMUM_GROWTH_FACTOR",
+        "NUMERICAL_METHODS[TRANSPORT]/TIMESTEPPER/TIMESTEP_MAXIMUM_GROWTH_FACTOR"
+      ],
+      "n_addresses": 2,
+      "id": "parameter:TIMESTEP_MAXIMUM_GROWTH_FACTOR"
+    },
+    {
+      "node_type": "Output",
+      "name": "Time [h]",
+      "description": "Time",
+      "units": "h",
+      "level": "scalar",
+      "id": "output:Time [h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "dt_flow [h]",
+      "description": "dt_flow",
+      "units": "h",
+      "level": "scalar",
+      "id": "output:dt_flow [h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "dt_tran [h]",
+      "description": "dt_tran",
+      "units": "h",
+      "level": "scalar",
+      "id": "output:dt_tran [h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Water Mass in Liquid Phas [kg]",
+      "description": "Water Mass in Liquid Phas",
+      "units": "kg",
+      "level": "domain",
+      "id": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Air Mass in Liquid Phase [kg]",
+      "description": "Air Mass in Liquid Phase",
+      "units": "kg",
+      "level": "domain",
+      "id": "output:Global Air Mass in Liquid Phase [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Water Mass in Gas Phase [kg]",
+      "description": "Water Mass in Gas Phase",
+      "units": "kg",
+      "level": "domain",
+      "id": "output:Global Water Mass in Gas Phase [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Air Mass in Gas Phase [kg]",
+      "description": "Air Mass in Gas Phase",
+      "units": "kg",
+      "level": "domain",
+      "id": "output:Global Air Mass in Gas Phase [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global H+ [mol]",
+      "description": "H+",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global H+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Na+ [mol]",
+      "description": "Na+",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Na+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Mg++ [mol]",
+      "description": "Mg++",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Mg++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Ca++ [mol]",
+      "description": "Ca++",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Ca++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global NO3- [mol]",
+      "description": "NO3-",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global NO3- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global SO4-- [mol]",
+      "description": "SO4--",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global SO4-- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Fe++ [mol]",
+      "description": "Fe++",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Fe++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global K+ [mol]",
+      "description": "K+",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global K+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Al+++ [mol]",
+      "description": "Al+++",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Al+++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global SiO2(aq) [mol]",
+      "description": "SiO2(aq)",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global SiO2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global O2(aq) [mol]",
+      "description": "O2(aq)",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global O2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Cl- [mol]",
+      "description": "Cl-",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Cl- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Ti(OH)4(aq) [mol]",
+      "description": "Ti(OH)4(aq)",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Ti(OH)4(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global HPO4-- [mol]",
+      "description": "HPO4--",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global HPO4-- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Mn++ [mol]",
+      "description": "Mn++",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Mn++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global CO2(aq) [mol]",
+      "description": "CO2(aq)",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global CO2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global O2(g) [mol]",
+      "description": "O2(g)",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global O2(g) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global CO2(g) [mol]",
+      "description": "CO2(g)",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global CO2(g) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Labradorite [mol]",
+      "description": "Labradorite",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Labradorite [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Diopside_78_FB [mol]",
+      "description": "Diopside_78_FB",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Diopside_78_FB [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Olivine [mol]",
+      "description": "Olivine",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Olivine [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Glass_FB [mol]",
+      "description": "Glass_FB",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Glass_FB [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Proto-Imogolite [mol]",
+      "description": "Proto-Imogolite",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Proto-Imogolite [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Montmor-Mg [mol]",
+      "description": "Montmor-Mg",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Montmor-Mg [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Ferrihydrite [mol]",
+      "description": "Ferrihydrite",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Ferrihydrite [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Birnessite-LEO [mol]",
+      "description": "Birnessite-LEO",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Birnessite-LEO [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Calcite [mol]",
+      "description": "Calcite",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Calcite [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Global Hydroxylapatite [mol]",
+      "description": "Hydroxylapatite",
+      "units": "mol",
+      "level": "domain",
+      "id": "output:Global Hydroxylapatite [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Water Mass [kg]",
+      "description": "Water Mass",
+      "units": "kg",
+      "level": "boundary",
+      "id": "output:top_vent Water Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Air Mass [kg]",
+      "description": "Air Mass",
+      "units": "kg",
+      "level": "boundary",
+      "id": "output:top_vent Air Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Water Mass [kg/h]",
+      "description": "Water Mass",
+      "units": "kg/h",
+      "level": "boundary",
+      "id": "output:top_vent Water Mass [kg/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Air Mass [kg/h]",
+      "description": "Air Mass",
+      "units": "kg/h",
+      "level": "boundary",
+      "id": "output:top_vent Air Mass [kg/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent H+ [mol]",
+      "description": "H+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent H+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Na+ [mol]",
+      "description": "Na+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Na+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Mg++ [mol]",
+      "description": "Mg++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Mg++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Ca++ [mol]",
+      "description": "Ca++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Ca++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent NO3- [mol]",
+      "description": "NO3-",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent NO3- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent SO4-- [mol]",
+      "description": "SO4--",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent SO4-- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Fe++ [mol]",
+      "description": "Fe++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Fe++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent K+ [mol]",
+      "description": "K+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent K+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Al+++ [mol]",
+      "description": "Al+++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Al+++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent SiO2(aq) [mol]",
+      "description": "SiO2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent SiO2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent O2(aq) [mol]",
+      "description": "O2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent O2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Cl- [mol]",
+      "description": "Cl-",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Cl- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Ti(OH)4(aq) [mol]",
+      "description": "Ti(OH)4(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Ti(OH)4(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent HPO4-- [mol]",
+      "description": "HPO4--",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent HPO4-- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Mn++ [mol]",
+      "description": "Mn++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Mn++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent CO2(aq) [mol]",
+      "description": "CO2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent CO2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent H+ (gas phase) [mol]",
+      "description": "H+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent H+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Na+ (gas phase) [mol]",
+      "description": "Na+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Na+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Mg++ (gas phase) [mol]",
+      "description": "Mg++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Mg++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Ca++ (gas phase) [mol]",
+      "description": "Ca++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Ca++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent NO3- (gas phase) [mol]",
+      "description": "NO3- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent NO3- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent SO4-- (gas phase) [mol]",
+      "description": "SO4-- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent SO4-- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Fe++ (gas phase) [mol]",
+      "description": "Fe++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Fe++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent K+ (gas phase) [mol]",
+      "description": "K+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent K+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Al+++ (gas phase) [mol]",
+      "description": "Al+++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Al+++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent SiO2(aq) (gas phase) [mol]",
+      "description": "SiO2(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent SiO2(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent O2(aq) (gas phase) [mol]",
+      "description": "O2(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent O2(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Cl- (gas phase) [mol]",
+      "description": "Cl- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Cl- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Ti(OH)4(aq) (gas phase) [mol]",
+      "description": "Ti(OH)4(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Ti(OH)4(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent HPO4-- (gas phase) [mol]",
+      "description": "HPO4-- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent HPO4-- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Mn++ (gas phase) [mol]",
+      "description": "Mn++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent Mn++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent CO2(aq) (gas phase) [mol]",
+      "description": "CO2(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_vent CO2(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent H+ [mol/h]",
+      "description": "H+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent H+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Na+ [mol/h]",
+      "description": "Na+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Na+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Mg++ [mol/h]",
+      "description": "Mg++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Mg++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Ca++ [mol/h]",
+      "description": "Ca++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Ca++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent NO3- [mol/h]",
+      "description": "NO3-",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent NO3- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent SO4-- [mol/h]",
+      "description": "SO4--",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent SO4-- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Fe++ [mol/h]",
+      "description": "Fe++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Fe++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent K+ [mol/h]",
+      "description": "K+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent K+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Al+++ [mol/h]",
+      "description": "Al+++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Al+++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent SiO2(aq) [mol/h]",
+      "description": "SiO2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent SiO2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent O2(aq) [mol/h]",
+      "description": "O2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent O2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Cl- [mol/h]",
+      "description": "Cl-",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Cl- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Ti(OH)4(aq) [mol/h]",
+      "description": "Ti(OH)4(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Ti(OH)4(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent HPO4-- [mol/h]",
+      "description": "HPO4--",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent HPO4-- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Mn++ [mol/h]",
+      "description": "Mn++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Mn++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent CO2(aq) [mol/h]",
+      "description": "CO2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent CO2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent H+ (gas phase) [mol/h]",
+      "description": "H+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent H+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Na+ (gas phase) [mol/h]",
+      "description": "Na+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Na+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Mg++ (gas phase) [mol/h]",
+      "description": "Mg++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Mg++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Ca++ (gas phase) [mol/h]",
+      "description": "Ca++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Ca++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent NO3- (gas phase) [mol/h]",
+      "description": "NO3- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent NO3- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent SO4-- (gas phase) [mol/h]",
+      "description": "SO4-- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent SO4-- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Fe++ (gas phase) [mol/h]",
+      "description": "Fe++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Fe++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent K+ (gas phase) [mol/h]",
+      "description": "K+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent K+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Al+++ (gas phase) [mol/h]",
+      "description": "Al+++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Al+++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent SiO2(aq) (gas phase) [mol/h]",
+      "description": "SiO2(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent SiO2(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent O2(aq) (gas phase) [mol/h]",
+      "description": "O2(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent O2(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Cl- (gas phase) [mol/h]",
+      "description": "Cl- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Cl- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Ti(OH)4(aq) (gas phase) [mol/h]",
+      "description": "Ti(OH)4(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Ti(OH)4(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent HPO4-- (gas phase) [mol/h]",
+      "description": "HPO4-- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent HPO4-- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent Mn++ (gas phase) [mol/h]",
+      "description": "Mn++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent Mn++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_vent CO2(aq) (gas phase) [mol/h]",
+      "description": "CO2(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_vent CO2(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Water Mass [kg]",
+      "description": "Water Mass",
+      "units": "kg",
+      "level": "boundary",
+      "id": "output:east Water Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Air Mass [kg]",
+      "description": "Air Mass",
+      "units": "kg",
+      "level": "boundary",
+      "id": "output:east Air Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Water Mass [kg/h]",
+      "description": "Water Mass",
+      "units": "kg/h",
+      "level": "boundary",
+      "id": "output:east Water Mass [kg/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Air Mass [kg/h]",
+      "description": "Air Mass",
+      "units": "kg/h",
+      "level": "boundary",
+      "id": "output:east Air Mass [kg/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east H+ [mol]",
+      "description": "H+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east H+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Na+ [mol]",
+      "description": "Na+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Na+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Mg++ [mol]",
+      "description": "Mg++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Mg++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Ca++ [mol]",
+      "description": "Ca++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Ca++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east NO3- [mol]",
+      "description": "NO3-",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east NO3- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east SO4-- [mol]",
+      "description": "SO4--",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east SO4-- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Fe++ [mol]",
+      "description": "Fe++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Fe++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east K+ [mol]",
+      "description": "K+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east K+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Al+++ [mol]",
+      "description": "Al+++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Al+++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east SiO2(aq) [mol]",
+      "description": "SiO2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east O2(aq) [mol]",
+      "description": "O2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east O2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Cl- [mol]",
+      "description": "Cl-",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Cl- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Ti(OH)4(aq) [mol]",
+      "description": "Ti(OH)4(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Ti(OH)4(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east HPO4-- [mol]",
+      "description": "HPO4--",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east HPO4-- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Mn++ [mol]",
+      "description": "Mn++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Mn++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east CO2(aq) [mol]",
+      "description": "CO2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east CO2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east H+ (gas phase) [mol]",
+      "description": "H+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east H+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Na+ (gas phase) [mol]",
+      "description": "Na+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Na+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Mg++ (gas phase) [mol]",
+      "description": "Mg++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Mg++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Ca++ (gas phase) [mol]",
+      "description": "Ca++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Ca++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east NO3- (gas phase) [mol]",
+      "description": "NO3- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east NO3- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east SO4-- (gas phase) [mol]",
+      "description": "SO4-- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east SO4-- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Fe++ (gas phase) [mol]",
+      "description": "Fe++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Fe++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east K+ (gas phase) [mol]",
+      "description": "K+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east K+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Al+++ (gas phase) [mol]",
+      "description": "Al+++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Al+++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east SiO2(aq) (gas phase) [mol]",
+      "description": "SiO2(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east SiO2(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east O2(aq) (gas phase) [mol]",
+      "description": "O2(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east O2(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Cl- (gas phase) [mol]",
+      "description": "Cl- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Cl- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Ti(OH)4(aq) (gas phase) [mol]",
+      "description": "Ti(OH)4(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Ti(OH)4(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east HPO4-- (gas phase) [mol]",
+      "description": "HPO4-- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east HPO4-- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Mn++ (gas phase) [mol]",
+      "description": "Mn++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east Mn++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east CO2(aq) (gas phase) [mol]",
+      "description": "CO2(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:east CO2(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east H+ [mol/h]",
+      "description": "H+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east H+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Na+ [mol/h]",
+      "description": "Na+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Na+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Mg++ [mol/h]",
+      "description": "Mg++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Mg++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Ca++ [mol/h]",
+      "description": "Ca++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Ca++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east NO3- [mol/h]",
+      "description": "NO3-",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east NO3- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east SO4-- [mol/h]",
+      "description": "SO4--",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east SO4-- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Fe++ [mol/h]",
+      "description": "Fe++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Fe++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east K+ [mol/h]",
+      "description": "K+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east K+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Al+++ [mol/h]",
+      "description": "Al+++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Al+++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east SiO2(aq) [mol/h]",
+      "description": "SiO2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east SiO2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east O2(aq) [mol/h]",
+      "description": "O2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east O2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Cl- [mol/h]",
+      "description": "Cl-",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Cl- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Ti(OH)4(aq) [mol/h]",
+      "description": "Ti(OH)4(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Ti(OH)4(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east HPO4-- [mol/h]",
+      "description": "HPO4--",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east HPO4-- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Mn++ [mol/h]",
+      "description": "Mn++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Mn++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east CO2(aq) [mol/h]",
+      "description": "CO2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east CO2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east H+ (gas phase) [mol/h]",
+      "description": "H+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east H+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Na+ (gas phase) [mol/h]",
+      "description": "Na+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Na+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Mg++ (gas phase) [mol/h]",
+      "description": "Mg++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Mg++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Ca++ (gas phase) [mol/h]",
+      "description": "Ca++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Ca++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east NO3- (gas phase) [mol/h]",
+      "description": "NO3- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east NO3- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east SO4-- (gas phase) [mol/h]",
+      "description": "SO4-- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east SO4-- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Fe++ (gas phase) [mol/h]",
+      "description": "Fe++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Fe++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east K+ (gas phase) [mol/h]",
+      "description": "K+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east K+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Al+++ (gas phase) [mol/h]",
+      "description": "Al+++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Al+++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east SiO2(aq) (gas phase) [mol/h]",
+      "description": "SiO2(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east SiO2(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east O2(aq) (gas phase) [mol/h]",
+      "description": "O2(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east O2(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Cl- (gas phase) [mol/h]",
+      "description": "Cl- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Cl- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Ti(OH)4(aq) (gas phase) [mol/h]",
+      "description": "Ti(OH)4(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Ti(OH)4(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east HPO4-- (gas phase) [mol/h]",
+      "description": "HPO4-- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east HPO4-- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east Mn++ (gas phase) [mol/h]",
+      "description": "Mn++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east Mn++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "east CO2(aq) (gas phase) [mol/h]",
+      "description": "CO2(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:east CO2(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Water Mass [kg]",
+      "description": "Water Mass",
+      "units": "kg",
+      "level": "boundary",
+      "id": "output:top_recharge Water Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Air Mass [kg]",
+      "description": "Air Mass",
+      "units": "kg",
+      "level": "boundary",
+      "id": "output:top_recharge Air Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Water Mass [kg/h]",
+      "description": "Water Mass",
+      "units": "kg/h",
+      "level": "boundary",
+      "id": "output:top_recharge Water Mass [kg/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Air Mass [kg/h]",
+      "description": "Air Mass",
+      "units": "kg/h",
+      "level": "boundary",
+      "id": "output:top_recharge Air Mass [kg/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge H+ [mol]",
+      "description": "H+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge H+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Na+ [mol]",
+      "description": "Na+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Na+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Mg++ [mol]",
+      "description": "Mg++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Mg++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Ca++ [mol]",
+      "description": "Ca++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Ca++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge NO3- [mol]",
+      "description": "NO3-",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge NO3- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge SO4-- [mol]",
+      "description": "SO4--",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge SO4-- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Fe++ [mol]",
+      "description": "Fe++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Fe++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge K+ [mol]",
+      "description": "K+",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge K+ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Al+++ [mol]",
+      "description": "Al+++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Al+++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge SiO2(aq) [mol]",
+      "description": "SiO2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge SiO2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge O2(aq) [mol]",
+      "description": "O2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge O2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Cl- [mol]",
+      "description": "Cl-",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Cl- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Ti(OH)4(aq) [mol]",
+      "description": "Ti(OH)4(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Ti(OH)4(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge HPO4-- [mol]",
+      "description": "HPO4--",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge HPO4-- [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Mn++ [mol]",
+      "description": "Mn++",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Mn++ [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge CO2(aq) [mol]",
+      "description": "CO2(aq)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge CO2(aq) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge H+ (gas phase) [mol]",
+      "description": "H+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge H+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Na+ (gas phase) [mol]",
+      "description": "Na+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Na+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Mg++ (gas phase) [mol]",
+      "description": "Mg++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Mg++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Ca++ (gas phase) [mol]",
+      "description": "Ca++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Ca++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge NO3- (gas phase) [mol]",
+      "description": "NO3- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge NO3- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge SO4-- (gas phase) [mol]",
+      "description": "SO4-- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge SO4-- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Fe++ (gas phase) [mol]",
+      "description": "Fe++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Fe++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge K+ (gas phase) [mol]",
+      "description": "K+ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge K+ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Al+++ (gas phase) [mol]",
+      "description": "Al+++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Al+++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge SiO2(aq) (gas phase [mol]",
+      "description": "SiO2(aq) (gas phase",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge SiO2(aq) (gas phase [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge O2(aq) (gas phase) [mol]",
+      "description": "O2(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge O2(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Cl- (gas phase) [mol]",
+      "description": "Cl- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Cl- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Ti(OH)4(aq) (gas ph [mol]",
+      "description": "Ti(OH)4(aq) (gas ph",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Ti(OH)4(aq) (gas ph [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge HPO4-- (gas phase) [mol]",
+      "description": "HPO4-- (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge HPO4-- (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Mn++ (gas phase) [mol]",
+      "description": "Mn++ (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge Mn++ (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge CO2(aq) (gas phase) [mol]",
+      "description": "CO2(aq) (gas phase)",
+      "units": "mol",
+      "level": "boundary",
+      "id": "output:top_recharge CO2(aq) (gas phase) [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge H+ [mol/h]",
+      "description": "H+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge H+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Na+ [mol/h]",
+      "description": "Na+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Na+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Mg++ [mol/h]",
+      "description": "Mg++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Mg++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Ca++ [mol/h]",
+      "description": "Ca++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Ca++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge NO3- [mol/h]",
+      "description": "NO3-",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge NO3- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge SO4-- [mol/h]",
+      "description": "SO4--",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge SO4-- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Fe++ [mol/h]",
+      "description": "Fe++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Fe++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge K+ [mol/h]",
+      "description": "K+",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge K+ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Al+++ [mol/h]",
+      "description": "Al+++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Al+++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge SiO2(aq) [mol/h]",
+      "description": "SiO2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge SiO2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge O2(aq) [mol/h]",
+      "description": "O2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge O2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Cl- [mol/h]",
+      "description": "Cl-",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Cl- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Ti(OH)4(aq) [mol/h]",
+      "description": "Ti(OH)4(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Ti(OH)4(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge HPO4-- [mol/h]",
+      "description": "HPO4--",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge HPO4-- [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Mn++ [mol/h]",
+      "description": "Mn++",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Mn++ [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge CO2(aq) [mol/h]",
+      "description": "CO2(aq)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge CO2(aq) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge H+ (gas phase) [mol/h]",
+      "description": "H+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge H+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Na+ (gas phase) [mol/h]",
+      "description": "Na+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Na+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Mg++ (gas phase) [mol/h]",
+      "description": "Mg++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Mg++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Ca++ (gas phase) [mol/h]",
+      "description": "Ca++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Ca++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge NO3- (gas phase) [mol/h]",
+      "description": "NO3- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge NO3- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge SO4-- (gas phase) [mol/h]",
+      "description": "SO4-- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge SO4-- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Fe++ (gas phase) [mol/h]",
+      "description": "Fe++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Fe++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge K+ (gas phase) [mol/h]",
+      "description": "K+ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge K+ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Al+++ (gas phase) [mol/h]",
+      "description": "Al+++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Al+++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge SiO2(aq) (gas phase [mol/h]",
+      "description": "SiO2(aq) (gas phase",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge SiO2(aq) (gas phase [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge O2(aq) (gas phase) [mol/h]",
+      "description": "O2(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge O2(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Cl- (gas phase) [mol/h]",
+      "description": "Cl- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Cl- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Ti(OH)4(aq) (gas ph [mol/h]",
+      "description": "Ti(OH)4(aq) (gas ph",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Ti(OH)4(aq) (gas ph [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge HPO4-- (gas phase) [mol/h]",
+      "description": "HPO4-- (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge HPO4-- (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge Mn++ (gas phase) [mol/h]",
+      "description": "Mn++ (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge Mn++ (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "top_recharge CO2(aq) (gas phase) [mol/h]",
+      "description": "CO2(aq) (gas phase)",
+      "units": "mol/h",
+      "level": "boundary",
+      "id": "output:top_recharge CO2(aq) (gas phase) [mol/h]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Water Mass [kg]",
+      "description": "Water Mass",
+      "units": "kg",
+      "level": "region",
+      "id": "output:Region all Water Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Air Mass [kg]",
+      "description": "Air Mass",
+      "units": "kg",
+      "level": "region",
+      "id": "output:Region all Air Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Total Mass [mol]",
+      "description": "Total Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Total Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all H+ Mass [mol]",
+      "description": "H+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all H+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Na+ Mass [mol]",
+      "description": "Na+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Na+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Mg++ Mass [mol]",
+      "description": "Mg++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Mg++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Ca++ Mass [mol]",
+      "description": "Ca++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Ca++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all NO3- Mass [mol]",
+      "description": "NO3- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all NO3- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all SO4-- Mass [mol]",
+      "description": "SO4-- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all SO4-- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Fe++ Mass [mol]",
+      "description": "Fe++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Fe++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all K+ Mass [mol]",
+      "description": "K+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all K+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Al+++ Mass [mol]",
+      "description": "Al+++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Al+++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all SiO2(aq) Mass [mol]",
+      "description": "SiO2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all SiO2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all O2(aq) Mass [mol]",
+      "description": "O2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all O2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Cl- Mass [mol]",
+      "description": "Cl- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Cl- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Ti(OH)4(aq) Mass [mol]",
+      "description": "Ti(OH)4(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Ti(OH)4(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all HPO4-- Mass [mol]",
+      "description": "HPO4-- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all HPO4-- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Mn++ Mass [mol]",
+      "description": "Mn++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Mn++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all CO2(aq) Mass [mol]",
+      "description": "CO2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all CO2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all O2(g) Mass [mol]",
+      "description": "O2(g) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all O2(g) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all CO2(g) Mass [mol]",
+      "description": "CO2(g) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all CO2(g) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Labradorite Total Mas [mol]",
+      "description": "Labradorite Total Mas",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Labradorite Total Mas [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Diopside_78_FB Total [mol]",
+      "description": "Diopside_78_FB Total",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Diopside_78_FB Total [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Olivine Total Mass [mol]",
+      "description": "Olivine Total Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Olivine Total Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Glass_FB Total Mass [mol]",
+      "description": "Glass_FB Total Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Glass_FB Total Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Proto-Imogolite Total [mol]",
+      "description": "Proto-Imogolite Total",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Proto-Imogolite Total [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Montmor-Mg Total Mass [mol]",
+      "description": "Montmor-Mg Total Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Montmor-Mg Total Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Ferrihydrite Total Ma [mol]",
+      "description": "Ferrihydrite Total Ma",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Ferrihydrite Total Ma [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Birnessite-LEO Total [mol]",
+      "description": "Birnessite-LEO Total",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Birnessite-LEO Total [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Calcite Total Mass [mol]",
+      "description": "Calcite Total Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Calcite Total Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region all Hydroxylapatite Total [mol]",
+      "description": "Hydroxylapatite Total",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region all Hydroxylapatite Total [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Water Mass [kg]",
+      "description": "Water Mass",
+      "units": "kg",
+      "level": "region",
+      "id": "output:Region seepage Water Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Air Mass [kg]",
+      "description": "Air Mass",
+      "units": "kg",
+      "level": "region",
+      "id": "output:Region seepage Air Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Total Mass [mol]",
+      "description": "Total Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Total Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage H+ Mass [mol]",
+      "description": "H+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage H+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Na+ Mass [mol]",
+      "description": "Na+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Na+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Mg++ Mass [mol]",
+      "description": "Mg++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Mg++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Ca++ Mass [mol]",
+      "description": "Ca++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Ca++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage NO3- Mass [mol]",
+      "description": "NO3- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage NO3- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage SO4-- Mass [mol]",
+      "description": "SO4-- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage SO4-- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Fe++ Mass [mol]",
+      "description": "Fe++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Fe++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage K+ Mass [mol]",
+      "description": "K+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage K+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Al+++ Mass [mol]",
+      "description": "Al+++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Al+++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage SiO2(aq) Mass [mol]",
+      "description": "SiO2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage SiO2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage O2(aq) Mass [mol]",
+      "description": "O2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage O2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Cl- Mass [mol]",
+      "description": "Cl- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Cl- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Ti(OH)4(aq) Mass [mol]",
+      "description": "Ti(OH)4(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Ti(OH)4(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage HPO4-- Mass [mol]",
+      "description": "HPO4-- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage HPO4-- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Mn++ Mass [mol]",
+      "description": "Mn++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Mn++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage CO2(aq) Mass [mol]",
+      "description": "CO2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage CO2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage O2(g) Mass [mol]",
+      "description": "O2(g) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage O2(g) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage CO2(g) Mass [mol]",
+      "description": "CO2(g) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage CO2(g) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Labradorite Total [mol]",
+      "description": "Labradorite Total",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Labradorite Total [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Diopside_78_FB To [mol]",
+      "description": "Diopside_78_FB To",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Diopside_78_FB To [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Olivine Total Mas [mol]",
+      "description": "Olivine Total Mas",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Olivine Total Mas [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Glass_FB Total Ma [mol]",
+      "description": "Glass_FB Total Ma",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Glass_FB Total Ma [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Proto-Imogolite T [mol]",
+      "description": "Proto-Imogolite T",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Proto-Imogolite T [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Montmor-Mg Total [mol]",
+      "description": "Montmor-Mg Total",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Montmor-Mg Total [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Ferrihydrite Tota [mol]",
+      "description": "Ferrihydrite Tota",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Ferrihydrite Tota [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Birnessite-LEO To [mol]",
+      "description": "Birnessite-LEO To",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Birnessite-LEO To [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Calcite Total Mas [mol]",
+      "description": "Calcite Total Mas",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Calcite Total Mas [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region seepage Hydroxylapatite T [mol]",
+      "description": "Hydroxylapatite T",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region seepage Hydroxylapatite T [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Water Mass [kg]",
+      "description": "Water Mass",
+      "units": "kg",
+      "level": "region",
+      "id": "output:Region surface Water Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Air Mass [kg]",
+      "description": "Air Mass",
+      "units": "kg",
+      "level": "region",
+      "id": "output:Region surface Air Mass [kg]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Total Mass [mol]",
+      "description": "Total Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Total Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface H+ Mass [mol]",
+      "description": "H+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface H+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Na+ Mass [mol]",
+      "description": "Na+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Na+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Mg++ Mass [mol]",
+      "description": "Mg++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Mg++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Ca++ Mass [mol]",
+      "description": "Ca++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Ca++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface NO3- Mass [mol]",
+      "description": "NO3- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface NO3- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface SO4-- Mass [mol]",
+      "description": "SO4-- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface SO4-- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Fe++ Mass [mol]",
+      "description": "Fe++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Fe++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface K+ Mass [mol]",
+      "description": "K+ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface K+ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Al+++ Mass [mol]",
+      "description": "Al+++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Al+++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface SiO2(aq) Mass [mol]",
+      "description": "SiO2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface SiO2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface O2(aq) Mass [mol]",
+      "description": "O2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface O2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Cl- Mass [mol]",
+      "description": "Cl- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Cl- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Ti(OH)4(aq) Mass [mol]",
+      "description": "Ti(OH)4(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Ti(OH)4(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface HPO4-- Mass [mol]",
+      "description": "HPO4-- Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface HPO4-- Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Mn++ Mass [mol]",
+      "description": "Mn++ Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Mn++ Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface CO2(aq) Mass [mol]",
+      "description": "CO2(aq) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface CO2(aq) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface O2(g) Mass [mol]",
+      "description": "O2(g) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface O2(g) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface CO2(g) Mass [mol]",
+      "description": "CO2(g) Mass",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface CO2(g) Mass [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Labradorite Total [mol]",
+      "description": "Labradorite Total",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Labradorite Total [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Diopside_78_FB To [mol]",
+      "description": "Diopside_78_FB To",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Diopside_78_FB To [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Olivine Total Mas [mol]",
+      "description": "Olivine Total Mas",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Olivine Total Mas [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Glass_FB Total Ma [mol]",
+      "description": "Glass_FB Total Ma",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Glass_FB Total Ma [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Proto-Imogolite T [mol]",
+      "description": "Proto-Imogolite T",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Proto-Imogolite T [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Montmor-Mg Total [mol]",
+      "description": "Montmor-Mg Total",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Montmor-Mg Total [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Ferrihydrite Tota [mol]",
+      "description": "Ferrihydrite Tota",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Ferrihydrite Tota [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Birnessite-LEO To [mol]",
+      "description": "Birnessite-LEO To",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Birnessite-LEO To [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Calcite Total Mas [mol]",
+      "description": "Calcite Total Mas",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Calcite Total Mas [mol]"
+    },
+    {
+      "node_type": "Output",
+      "name": "Region surface Hydroxylapatite T [mol]",
+      "description": "Hydroxylapatite T",
+      "units": "mol",
+      "level": "region",
+      "id": "output:Region surface Hydroxylapatite T [mol]"
+    }
+  ],
+  "links": [
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "parameter:RATE_CONSTANT"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "parameter:surface_area"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "parameter:vol_frac"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "parameter:SURFACE_AREA_POROSITY_POWER"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "parameter:SURFACE_AREA_VOL_FRAC_POWER"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "parameter:AFFINITY_THRESHOLD"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "mechanism:TST_Mineral_Kinetics"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "mechanism:Reactive_Surface_Area_Evolution"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "output:east Ca++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:mineral_kinetics",
+      "target": "output:Global Glass_FB [mol]"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:water_retention",
+      "target": "parameter:M"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:water_retention",
+      "target": "parameter:ALPHA"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:water_retention",
+      "target": "parameter:LIQUID_RESIDUAL_SATURATION"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:water_retention",
+      "target": "parameter:GAS_RESIDUAL_SATURATION"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:water_retention",
+      "target": "mechanism:Van_Genuchten_WRM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:water_retention",
+      "target": "mechanism:Mualem_Relative_Permeability"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:water_retention",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:water_retention",
+      "target": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:permeability",
+      "target": "parameter:PERM_ISO"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:permeability",
+      "target": "parameter:PERMEABILITY_POWER"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:permeability",
+      "target": "parameter:PERMEABILITY_CRITICAL_POROSITY"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:permeability",
+      "target": "parameter:PERMEABILITY_MIN_SCALE_FACTOR"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:permeability",
+      "target": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:permeability",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:porosity",
+      "target": "parameter:POROSITY"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:porosity",
+      "target": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:porosity",
+      "target": "mechanism:Advection_Dispersion_Diffusion"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:porosity",
+      "target": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:transport",
+      "target": "parameter:LONGITUDINAL_DISPERSIVITY"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:transport",
+      "target": "parameter:DIFFUSION_COEFFICIENT"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:transport",
+      "target": "mechanism:Advection_Dispersion_Diffusion"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:transport",
+      "target": "mechanism:GIRT_Reactive_Transport"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:transport",
+      "target": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:chemistry",
+      "target": "parameter:value"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:chemistry",
+      "target": "mechanism:Aqueous_Speciation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:chemistry",
+      "target": "output:east Ca++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:chemistry",
+      "target": "output:east HPO4-- [mol]"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "parameter:LIQUID_SATURATION"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "parameter:GAS_PRESSURE"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "parameter:GAS_SATURATION"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "parameter:TEMPERATURE"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "parameter:GAS_FLUX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "parameter:ENERGY_FLUX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "mechanism:Seepage_Face_Boundary"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:boundary",
+      "target": "output:top_recharge Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:solver",
+      "target": "parameter:MAX_TS_CUTS"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:solver",
+      "target": "parameter:MAXIMUM_TIMESTEP_SIZE"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:solver",
+      "target": "parameter:TIMESTEP_MAXIMUM_GROWTH_FACTOR"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:solver",
+      "target": "mechanism:Timestep_Control"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "mechanism:TST_Mineral_Kinetics"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:east Ca++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:east HPO4-- [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:Global Glass_FB [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:Global Ferrihydrite [mol]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "parameter:surface_area"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "parameter:vol_frac"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "parameter:AFFINITY_THRESHOLD"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:east Mg++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:east Na+ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:east Al+++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:east H+ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RATE_CONSTANT",
+      "target": "output:Global Proto-Imogolite [mol]"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "mechanism:TST_Mineral_Kinetics"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "mechanism:Reactive_Surface_Area_Evolution"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "output:east Ca++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "output:Global Glass_FB [mol]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "parameter:RATE_CONSTANT"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "parameter:vol_frac"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "parameter:SURFACE_AREA_POROSITY_POWER"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "output:east Mg++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:surface_area",
+      "target": "output:east HPO4-- [mol]"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "mechanism:TST_Mineral_Kinetics"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "mechanism:Reactive_Surface_Area_Evolution"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "output:Global Glass_FB [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "output:east Na+ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "parameter:surface_area"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "parameter:POROSITY"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "output:east Ca++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "output:east Mg++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:vol_frac",
+      "target": "output:east HPO4-- [mol]"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_POROSITY_POWER",
+      "target": "mechanism:Reactive_Surface_Area_Evolution"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_POROSITY_POWER",
+      "target": "output:Global Proto-Imogolite [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_POROSITY_POWER",
+      "target": "output:Global Ferrihydrite [mol]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_POROSITY_POWER",
+      "target": "parameter:surface_area"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_POROSITY_POWER",
+      "target": "parameter:POROSITY"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_POROSITY_POWER",
+      "target": "parameter:SURFACE_AREA_VOL_FRAC_POWER"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_VOL_FRAC_POWER",
+      "target": "mechanism:Reactive_Surface_Area_Evolution"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_VOL_FRAC_POWER",
+      "target": "output:Global Glass_FB [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_VOL_FRAC_POWER",
+      "target": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_VOL_FRAC_POWER",
+      "target": "parameter:SURFACE_AREA_POROSITY_POWER"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_VOL_FRAC_POWER",
+      "target": "parameter:vol_frac"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:SURFACE_AREA_VOL_FRAC_POWER",
+      "target": "output:east Ca++ [mol]"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:AFFINITY_THRESHOLD",
+      "target": "mechanism:TST_Mineral_Kinetics"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:AFFINITY_THRESHOLD",
+      "target": "parameter:RATE_CONSTANT"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:AFFINITY_THRESHOLD",
+      "target": "output:east Al+++ [mol]"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:M",
+      "target": "mechanism:Van_Genuchten_WRM"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:M",
+      "target": "mechanism:Mualem_Relative_Permeability"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:M",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:M",
+      "target": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:M",
+      "target": "parameter:ALPHA"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:M",
+      "target": "parameter:LIQUID_RESIDUAL_SATURATION"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:ALPHA",
+      "target": "mechanism:Van_Genuchten_WRM"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:ALPHA",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:ALPHA",
+      "target": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:ALPHA",
+      "target": "parameter:M"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:ALPHA",
+      "target": "parameter:LIQUID_RESIDUAL_SATURATION"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_RESIDUAL_SATURATION",
+      "target": "mechanism:Van_Genuchten_WRM"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_RESIDUAL_SATURATION",
+      "target": "mechanism:Mualem_Relative_Permeability"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_RESIDUAL_SATURATION",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_RESIDUAL_SATURATION",
+      "target": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_RESIDUAL_SATURATION",
+      "target": "parameter:M"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_RESIDUAL_SATURATION",
+      "target": "parameter:GAS_RESIDUAL_SATURATION"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:GAS_RESIDUAL_SATURATION",
+      "target": "mechanism:Mualem_Relative_Permeability"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:GAS_RESIDUAL_SATURATION",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:GAS_RESIDUAL_SATURATION",
+      "target": "parameter:LIQUID_RESIDUAL_SATURATION"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:PERM_ISO",
+      "target": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:PERM_ISO",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:PERM_ISO",
+      "target": "output:east Water Mass [kg]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:PERM_ISO",
+      "target": "parameter:POROSITY"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:PERM_ISO",
+      "target": "parameter:PERMEABILITY_POWER"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:POROSITY",
+      "target": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:POROSITY",
+      "target": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:POROSITY",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:POROSITY",
+      "target": "parameter:vol_frac"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:POROSITY",
+      "target": "parameter:PERMEABILITY_CRITICAL_POROSITY"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:POROSITY",
+      "target": "output:east Water Mass [kg]"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_POWER",
+      "target": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_POWER",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_POWER",
+      "target": "parameter:PERMEABILITY_CRITICAL_POROSITY"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_POWER",
+      "target": "parameter:PERMEABILITY_MIN_SCALE_FACTOR"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_CRITICAL_POROSITY",
+      "target": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_CRITICAL_POROSITY",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_CRITICAL_POROSITY",
+      "target": "parameter:PERMEABILITY_POWER"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_CRITICAL_POROSITY",
+      "target": "parameter:POROSITY"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_MIN_SCALE_FACTOR",
+      "target": "mechanism:Porosity_Permeability_Feedback"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_MIN_SCALE_FACTOR",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_MIN_SCALE_FACTOR",
+      "target": "parameter:PERMEABILITY_POWER"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:PERMEABILITY_MIN_SCALE_FACTOR",
+      "target": "parameter:PERMEABILITY_CRITICAL_POROSITY"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:LONGITUDINAL_DISPERSIVITY",
+      "target": "mechanism:Advection_Dispersion_Diffusion"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:LONGITUDINAL_DISPERSIVITY",
+      "target": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:LONGITUDINAL_DISPERSIVITY",
+      "target": "output:east Ca++ [mol]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:LONGITUDINAL_DISPERSIVITY",
+      "target": "parameter:DIFFUSION_COEFFICIENT"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:DIFFUSION_COEFFICIENT",
+      "target": "mechanism:Advection_Dispersion_Diffusion"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:DIFFUSION_COEFFICIENT",
+      "target": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:DIFFUSION_COEFFICIENT",
+      "target": "parameter:LONGITUDINAL_DISPERSIVITY"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:DIFFUSION_COEFFICIENT",
+      "target": "parameter:vol_frac"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:value",
+      "target": "mechanism:Aqueous_Speciation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:value",
+      "target": "output:east Ca++ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:value",
+      "target": "output:east SiO2(aq) [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:value",
+      "target": "output:east HPO4-- [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:value",
+      "target": "output:east H+ [mol]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_SATURATION",
+      "target": "output:Global Water Mass in Liquid Phas [kg]"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_SATURATION",
+      "target": "output:east Water Mass [kg]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_SATURATION",
+      "target": "parameter:GAS_SATURATION"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:LIQUID_SATURATION",
+      "target": "parameter:LIQUID_RESIDUAL_SATURATION"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:GAS_PRESSURE",
+      "target": "mechanism:Seepage_Face_Boundary"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:GAS_PRESSURE",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:GAS_PRESSURE",
+      "target": "parameter:GAS_SATURATION"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:GAS_SATURATION",
+      "target": "mechanism:Seepage_Face_Boundary"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:GAS_SATURATION",
+      "target": "output:east Water Mass [kg/h]"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:GAS_SATURATION",
+      "target": "parameter:GAS_PRESSURE"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:GAS_SATURATION",
+      "target": "parameter:LIQUID_SATURATION"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:TEMPERATURE",
+      "target": "parameter:ENERGY_FLUX"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:GAS_FLUX",
+      "target": "parameter:ENERGY_FLUX"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:ENERGY_FLUX",
+      "target": "parameter:GAS_FLUX"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:ENERGY_FLUX",
+      "target": "parameter:TEMPERATURE"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:MAX_TS_CUTS",
+      "target": "mechanism:Timestep_Control"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:MAX_TS_CUTS",
+      "target": "parameter:MAXIMUM_TIMESTEP_SIZE"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:MAX_TS_CUTS",
+      "target": "parameter:TIMESTEP_MAXIMUM_GROWTH_FACTOR"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:MAXIMUM_TIMESTEP_SIZE",
+      "target": "mechanism:Timestep_Control"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:MAXIMUM_TIMESTEP_SIZE",
+      "target": "parameter:MAX_TS_CUTS"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:MAXIMUM_TIMESTEP_SIZE",
+      "target": "parameter:TIMESTEP_MAXIMUM_GROWTH_FACTOR"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:TIMESTEP_MAXIMUM_GROWTH_FACTOR",
+      "target": "mechanism:Timestep_Control"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:TIMESTEP_MAXIMUM_GROWTH_FACTOR",
+      "target": "parameter:MAX_TS_CUTS"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:TIMESTEP_MAXIMUM_GROWTH_FACTOR",
+      "target": "parameter:MAXIMUM_TIMESTEP_SIZE"
+    }
+  ]
+}

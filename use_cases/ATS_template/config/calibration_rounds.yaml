@@ -1,0 +1,94 @@
+# =============================================================================
+# ATS calibration-rounds TEMPLATE — copy to
+#   use_cases/ATS_<Case>/config/calibration_rounds.yaml
+# =============================================================================
+# MODEL-SPECIFIC, CASE-AGNOSTIC. ATS is a standalone (non-CIME) C++ binary driven by an
+# XML ParameterList deck. NO ELM/FATES/CIME concepts apply here — no ADSP/RGSP/TRANS
+# phases, no elm_options, no E3SM checkout. See
+# use_cases/EcoSIM_BioCON/config/calibration_rounds.yaml for what a REAL, adapter-shaped
+# round record looks like (another standalone model); this template mirrors it.
+#
+# Regenerate + validate with the ADAPTER-model generator (NOT tools/generate_calibration_rounds.py,
+# which is FATES/CIME-only):
+#   source a2mc_noncime_config.sh
+#   source use_cases/ATS_<Case>/config/ats_<case>_config.sh
+#   python scripts/generate_adapter_calibration_rounds.py --round 1 --write
+#   python scripts/check_adapter_calibration_rounds.py    --round 1
+# --write MERGES: it refreshes DERIVED fields in place and never overwrites AUTHORED
+# ones (rationale, changes_from_previous, outcome, status), so it is safe to re-run on a
+# completed round. A surprise in its report means the CONFIG drifted, not the record.
+#
+# ★ EVERY VALUE BELOW IS A PLACEHOLDER. Structure is wired; values are NOT.
+#
+# COMMENTS: the generator preserves this header block but cannot preserve inline per-key
+# comments (PyYAML cannot round-trip them). Put anything durable up here.
+# =============================================================================
+
+model: ats
+site: MySite            # [AUTHORED] matches $A2MC_SITE_NAME
+
+rounds:
+
+  # ---------------------------------------------------------------------------
+  # Round 1 — the first round on this lineage
+  # ---------------------------------------------------------------------------
+  1:
+    # -- [DERIVED] from the site config; regenerate rather than edit ----------
+    parameters: <N_PARAMS>                # $A2MC_N_PARAMS (from the param list CONTENT)
+    ensembles: <TOTAL>                    # $A2MC_TOTAL_ENSEMBLE (by scheme; Morris = traj x (P+1))
+    trajectories: <N_TRAJ>                # $A2MC_N_TRAJECTORIES
+    sampling_scheme: morris               # $A2MC_SAMPLING_SCHEME
+    config_file: use_cases/MySite/config/ats_mysite_config.sh
+    paths:
+      output_root: <PATH_TO_ENSEMBLE_OUTPUT_ROOT_ON_CFS>   # $A2MC_OUTPUT_ROOT -- CFS, never ~/
+      ensemble_name: R1_<NPARA>Para_Morris<NTRAJ>
+      ensemble_output: ${A2MC_OUTPUT_ROOT}/R1_<NPARA>Para_Morris<NTRAJ>
+      case_name_pattern: <CASE>_case{N}
+      param_list: use_cases/MySite/parameters/ats_mysite_param_list.csv
+      salib_problem: use_cases/MySite/parameters/salib_problem_ats_mysite.txt
+      base_param_file: <PATH_TO_CASE_DIR>/<deck>.xml       # $A2MC_BASE_PARAM_FILE
+
+    # ATS targets are hydrologic FLUXES and STATES, not PFT biomass -- one dict per
+    # target, matching validation/targets.yaml's own schema (kept here too so the round
+    # record is self-contained without cross-referencing the targets file).
+    # `observed: null` is DELIBERATE until real observations are wired
+    # ([[feedback_placeholder_targets_structure_not_values]]).
+    targets:
+      - name: surface_runoff
+        variable: "surface-total_runoff"
+        region: "[outlet]"
+        observed: null
+        units: "m^3 s^-1"
+      - name: evapotranspiration
+        variable: "surface-total_evapotranspiration"
+        region: "[domain]"
+        observed: null
+        units: "m s^-1"
+
+    # -- [AUTHORED] never overwritten by --write ------------------------------
+    rationale: >-
+      <Why this round exists and what it is meant to establish.>
+    changes_from_previous: n/a (first round)
+    outcome: <not yet run>
+    status: planned
+
+    # -- Model provenance ------------------------------------------------------
+    # WHAT THIS ROUND ACTUALLY RAN, which is not the same as what it was configured
+    # against. Record the ARCHIVED binary, never the live build path
+    # ([[feedback_bind_runs_to_archived_binaries]]).
+    ats_source:
+      commit: <COMMIT>
+      branch: <BRANCH>
+      binary: <PATH_TO_ARCHIVED_BINARY>
+
+# =============================================================================
+# model_change_ledger — one entry per MODEL-SOURCE change, if this case ever evolves
+# ATS's own C++ (as opposed to tuning parameters). Empty until then; the shape is here
+# so the first entry does not have to invent one. See use_cases/EcoSIM_BioCON's ledger
+# for a worked example, and the `model-evolution` skill for the workflow.
+# =============================================================================
+model_change_ledger: []
+
+round_binaries: {}
+
+comparability: {}

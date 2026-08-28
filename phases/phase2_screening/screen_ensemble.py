@@ -1,0 +1,886 @@
+#!/usr/bin/env python3
+"""
+Screen Ensemble - A2MC Phase 2 Screening Module
+
+Loads ensemble simulation outputs, ranks against validation targets,
+and returns structured results for Phase 3 (Diagnosis).
+
+Integrates with:
+  - tools/optimize_function.py for ranking
+  - tools/cost_functions.py for error metrics
+  - tools/phase_logger.py for logging
+  - reasoning.py for AI analysis
+
+Usage:
+    # As module (from orchestrator)
+    from phases.phase2_screening.screen_ensemble import screen_ensemble
+    result = screen_ensemble(data_dir, targets, top_n=100)
+
+    # Standalone
+    python screen_ensemble.py
+
+Created: Jing Tao with Claude, January 2026
+"""
+
+import numpy as np
+from pathlib import Path
+import re
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional, Tuple, Any
+import json
+import pickle
+import hashlib
+
+# NetCDF support
+try:
+    import netCDF4 as nc
+    HAS_NETCDF = True
+except ImportError:
+    HAS_NETCDF = False
+
+# A2MC imports
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+try:
+    from tools.optimize_function import (
+        Target, OptimizationConfig, OptimizationResult,
+        optimize_ensemble, save_optimization_results
+    )
+    from tools.cost_functions import CostFunction, ObservationType, aggregate_costs
+    from tools.fates_utils import get_szpf_range, aggregate_szpf_by_pft
+    from tools.fates_output_variables import resolve_target_name, get_variable_family, VAR_FACTORS
+except ImportError as e:
+    print(f"Warning: Could not import A2MC tools: {e}")
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+@dataclass
+class ScreeningConfig:
+    """Configuration for ensemble screening"""
+    # Data location
+    data_dir: Path = None
+    case_pattern: str = ''  # Set from A2MC_CASE_NAME_PATTERN or default
+    file_pattern: str = '{case_name}_all_variables_monthly_{year_start}_{year_end}.nc'
+
+    # Time settings
+    year_start: int = 1901
+    year_end: int = 2019
+    # Snapshot time ANCHOR + averaging window — these are the FALLBACK used only for
+    # legacy targets that carry no per-target observation spec (Target.observations is
+    # None). The generic, per-target match (snapshot OR time series, with per-point
+    # windows) comes from the case target config (targets.yaml -> Target.observations);
+    # see docs/24_Generic_Obs_Comparison_Plan.md. obs_year/obs_month should be set from
+    # the case config by the caller (screening_helpers), not hardcoded for a site.
+    obs_year: int = 2016
+    obs_month: int = 7  # primary month for the fallback anchor; also part of the cache key
+    # Optional fallback averaging window (list of month numbers). None => [obs_month]
+    # (single-month comparison). Set only to average months for legacy/un-specced targets.
+    obs_months: Optional[List[int]] = None
+
+    # PFT settings (api-43 12-PFT arctic ordering: evergreen=10, decid=11, graminoid=12)
+    pfts: List[int] = field(default_factory=lambda: [10, 11, 12])
+    pft_names: Dict[int, str] = field(default_factory=lambda: {
+        10: 'Evergreen Shrub',
+        11: 'Deciduous Shrub',
+        12: 'Graminoid'
+    })
+
+    # Variables to extract
+    variables: List[str] = field(default_factory=lambda: ['FATES_LEAFC_SZPF', 'FATES_FROOTC_SZPF'])
+    var_factors: Dict[str, float] = field(default_factory=lambda: {
+        'FATES_LEAFC_SZPF': 1000,  # kg/m² to g/m²
+        'FATES_FROOTC_SZPF': 1000
+    })
+
+    # Optimization settings
+    error_method: str = 'relative_error'
+    aggregation_method: str = 'rmsre'
+    tolerance: float = 0.2
+    top_n: int = 100
+    # Optional upper bound on case number. Default None = no cap (per-round summary
+    # graphs legitimately exceed the Morris ensemble size, e.g. R3 + reruns = 4941).
+    # Set it (e.g. 4890) for CROSS-round comparison so out-of-Morris-range experiment
+    # cases sharing the extract dir (H1 #5001 etc.) don't contaminate the screening.
+    max_case_num: Optional[int] = None
+
+    def __post_init__(self):
+        """Initialize case_pattern from A2MC config if not set."""
+        if not self.case_pattern:
+            import os
+            try:
+                from tools.config import config as a2mc_config
+                self.case_pattern = a2mc_config.CASE_NAME_PATTERN
+                # Debug: show where pattern came from
+                env_val = os.environ.get('A2MC_CASE_NAME_PATTERN', '')
+                if env_val:
+                    print(f"  case_pattern from env: '{env_val}'")
+                else:
+                    print(f"  case_pattern from default (A2MC_CASE_NAME_PATTERN not set): '{self.case_pattern}'")
+                    print(f"    A2MC_ENSEMBLE_PREFIX='{os.environ.get('A2MC_ENSEMBLE_PREFIX', '')}'")
+            except ImportError:
+                prefix = os.environ.get('A2MC_ENSEMBLE_PREFIX', '')
+                self.case_pattern = os.environ.get(
+                    'A2MC_CASE_NAME_PATTERN', f"{prefix}{{N}}_{{PHASE}}")
+
+    @property
+    def obs_idx(self) -> int:
+        """Index of the primary observation timestep (0-based, obs_month)."""
+        return (self.obs_year - self.year_start) * 12 + self.obs_month - 1
+
+    @property
+    def obs_idxs(self) -> List[int]:
+        """Fallback timestep-index window (0-based) for legacy snapshot targets:
+        one index per entry in obs_months, defaulting to [obs_month] (single month)."""
+        months = self.obs_months if self.obs_months else [self.obs_month]
+        return [(self.obs_year - self.year_start) * 12 + m - 1 for m in months]
+
+
+@dataclass
+class ScreeningResult:
+    """Results from ensemble screening"""
+    # Core results
+    optimization_result: OptimizationResult
+    simulated: Dict[str, np.ndarray]
+
+    # Metadata
+    n_available_cases: int
+    n_valid_cases: int
+    case_numbers: List[int]
+
+    # Derived statistics
+    best_case_num: int = 0
+    best_cost: float = 0.0
+    max_satisfied_count: int = 0
+
+    # Analysis results (added by AI)
+    ai_analysis: Optional[Dict] = None
+
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for serialization"""
+        return {
+            'n_available_cases': self.n_available_cases,
+            'n_valid_cases': self.n_valid_cases,
+            'best_case_num': self.best_case_num,
+            'best_cost': self.best_cost,
+            'max_satisfied_count': self.max_satisfied_count,
+            'top_10_cases': self.get_top_cases(10),
+            'targets_satisfied_distribution': self.get_satisfied_distribution(),
+            'ai_analysis': self.ai_analysis
+        }
+
+    def get_top_cases(self, n: int = 10) -> List[Dict]:
+        """Get top N cases with details"""
+        result = self.optimization_result
+        cases = []
+        for i, idx in enumerate(result.ranked_indices[:n]):
+            case = {
+                'rank': i + 1,
+                'case_num': self.case_numbers[idx],
+                'cost': float(result.composite_cost[idx]),
+                'n_satisfied': int(result.n_satisfied[idx]),
+                # simulated[name][idx] is a per-point array (length 1 for a snapshot);
+                # report the scalar for snapshots, the point-mean for time series.
+                'simulated': {name: float(np.nanmean(np.asarray(self.simulated[name][idx]).ravel()))
+                             for name in self.simulated.keys()}
+            }
+            cases.append(case)
+        return cases
+
+    def get_satisfied_distribution(self) -> Dict[int, int]:
+        """Distribution of targets satisfied"""
+        dist = {}
+        n_targets = len(self.optimization_result.targets)
+        for n in range(n_targets + 1):
+            count = int(np.sum(self.optimization_result.n_satisfied == n))
+            dist[n] = count
+        return dist
+
+
+# =============================================================================
+# Data Loading Functions
+# =============================================================================
+
+
+
+def get_available_cases(data_dir: Path, config: ScreeningConfig) -> List[int]:
+    """Scan directory to find all available case numbers."""
+    cases = []
+    # Build regex from configurable case name pattern
+    marker = '___CASENUM___'
+    template = config.case_pattern.format(N=marker, PHASE='TRANS')
+    escaped = re.escape(template)
+    regex_str = escaped.replace(marker, r'(\d+)') + '_all_variables_monthly'
+    pattern = re.compile(regex_str)
+
+    nc_files = list(data_dir.glob('*_all_variables_monthly_*.nc'))
+    if not nc_files:
+        print(f"  DEBUG: No NC files matching glob '*_all_variables_monthly_*.nc' in {data_dir}")
+        print(f"  DEBUG: Directory exists: {data_dir.exists()}, is_dir: {data_dir.is_dir()}")
+        # Try listing any files to diagnose
+        any_files = list(data_dir.iterdir())[:5] if data_dir.is_dir() else []
+        print(f"  DEBUG: First 5 entries in dir: {[f.name for f in any_files]}")
+    else:
+        print(f"  DEBUG: case_pattern='{config.case_pattern}', regex='{regex_str}'")
+        print(f"  DEBUG: {len(nc_files)} NC files found, sample: {nc_files[0].name}")
+
+    skipped_oor = 0
+    for f in nc_files:
+        match = pattern.search(f.name)
+        if match:
+            cnum = int(match.group(1))
+            if config.max_case_num is not None and cnum > config.max_case_num:
+                skipped_oor += 1
+                continue
+            cases.append(cnum)
+    if skipped_oor:
+        print(f"  Excluded {skipped_oor} case(s) > max_case_num={config.max_case_num} "
+              f"(out-of-Morris-range / experiment cases)")
+
+    return sorted(cases)
+
+
+def load_nc_timeseries(case_num: int, var_name: str, config: ScreeningConfig) -> np.ndarray:
+    """Load timeseries from NetCDF file."""
+    case_name = config.case_pattern.format(N=case_num, PHASE='TRANS')
+    nc_file = config.data_dir / config.file_pattern.format(
+        case_name=case_name,
+        year_start=config.year_start,
+        year_end=config.year_end
+    )
+
+    n_months = (config.year_end - config.year_start + 1) * 12
+    # SZPF total + nlevsclass from the run's base param file (not hardcoded 156/13) for
+    # the missing-data placeholder; a present file is oriented by its own dimension.
+    from tools.fates_utils import (
+        get_szpf_dim_length, get_szpf_total_from_config, get_n_size_classes_from_config,
+    )
+    szpf_total = get_szpf_total_from_config()
+    n_sc = get_n_size_classes_from_config()
+
+    if nc_file.exists():
+        try:
+            with nc.Dataset(nc_file, 'r') as ds:
+                if var_name in ds.variables:
+                    slen = get_szpf_dim_length(ds, var_name) or szpf_total
+                    data = ds.variables[var_name][:]
+                    data = np.squeeze(data)
+                    if data.ndim == 2:
+                        if data.shape[1] == slen or (
+                            data.shape[1] % n_sc == 0
+                            and data.shape[0] % n_sc != 0
+                        ):
+                            data = data.T
+                    else:
+                        return np.full((slen, n_months), np.nan)
+                    return data
+        except Exception:
+            pass
+
+    return np.full((szpf_total, n_months), np.nan)
+
+
+def get_pft_value_at_obs(data: np.ndarray, pft_id: int, obs_idx: int, factor: float = 1000) -> float:
+    """Extract PFT-specific value at observation timestep."""
+    from tools.fates_utils import get_n_size_classes_from_config
+    n_sc = get_n_size_classes_from_config()          # nlevsclass from base param file
+    n_pft = data.shape[0] // n_sc if n_sc else None
+    szpf_start, szpf_end = get_szpf_range(
+        pft_id, fates_pft=(n_pft or pft_id), n_size_classes=n_sc
+    )
+    return np.sum(data[szpf_start:szpf_end + 1, obs_idx]) * factor
+
+
+def _get_cache_path(data_dir: Path, targets: Dict[str, Target], config: ScreeningConfig) -> Path:
+    """Generate cache file path based on data directory and config."""
+    # Create hash of target names and config to detect changes
+    target_names = sorted(targets.keys())
+    config_str = f"{config.obs_year}_{config.obs_months}_{target_names}"
+    config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
+    return data_dir / f".screening_cache_{config_hash}.pkl"
+
+
+def _is_cache_valid(cache_path: Path, data_dir: Path) -> bool:
+    """Check if cache is valid (exists, not older than data, and covers all files)."""
+    if not cache_path.exists():
+        return False
+
+    cache_mtime = cache_path.stat().st_mtime
+
+    # Check if any NC files are newer than cache
+    nc_files = list(data_dir.glob("*.nc"))
+    for nc_file in nc_files:
+        if nc_file.stat().st_mtime > cache_mtime:
+            return False  # Data changed since cache was created
+
+    # Check if cache covers all available NC files
+    if nc_files:
+        try:
+            with open(cache_path, 'rb') as f:
+                cached = pickle.load(f)
+            n_cached = len(cached.get('case_numbers', []))
+            if n_cached < len(nc_files):
+                return False  # New files added since cache was created
+        except Exception:
+            return False
+
+    return True
+
+
+def _resolve_screening_backend():
+    """Return a ``ModelBackend`` for backend-dispatched extraction, or None for FATES.
+
+    Adapter models (EcoSIM, …) drive screening through their backend + the generic
+    ``tools/model_evaluate_case`` reducer. FATES has no registered backend (default
+    ``A2MC_MODEL=fates``), so this returns None and the SZPF path below is used.
+    docs/38 additive: a NEW branch; the FATES extraction is untouched.
+    """
+    import os
+    model = os.environ.get("A2MC_MODEL", "fates")
+    if model == "fates":
+        return None
+    try:
+        import importlib
+        repo = Path(__file__).resolve().parents[2]
+        if str(repo) not in sys.path:
+            sys.path.insert(0, str(repo))
+        importlib.import_module(f"models.{model}")
+        from models import registry
+        return registry.get_model(model)
+    except Exception:
+        return None
+
+
+def _discover_backend_cases(data_dir: Path, backend) -> List[Tuple[int, Path]]:
+    """Ensemble cases for a backend model = completed run subdirs under ``data_dir``.
+
+    Returns ``[(case_id, case_dir), …]``; case_id is a trailing integer parsed from the
+    dir name (falls back to enumeration order) for stable ranking labels.
+    """
+    import re
+    out = []
+    for i, sub in enumerate(sorted(p for p in Path(data_dir).iterdir() if p.is_dir())):
+        try:
+            if backend.check_case_status(sub) != "COMPLETED":
+                continue
+        except Exception:
+            continue
+        m = re.search(r"(\d+)(?!.*\d)", sub.name)
+        out.append((int(m.group(1)) if m else i, sub))
+    return out
+
+
+def _load_ensemble_simulated_backend(data_dir, targets, config, backend,
+                                     cache_path, verbose, use_cache):
+    """Backend-dispatched ensemble extraction (EcoSIM et al.): per completed case,
+    ``backend.extract_history_variables`` + ``reduce_target`` per target → the same
+    ``{target: (n_cases, 1)}`` array structure ``optimize_ensemble`` consumes."""
+    from tools.model_evaluate_case import reduce_target
+    cases = _discover_backend_cases(data_dir, backend)
+    # Flatten list-valued specs (multi-variable ecosystem targets, e.g.
+    # plant_C = [SHOOT_C_pft, Root_C_pft]).
+    # A derived reduce's `denominator` is a second column that must be extracted too
+    # (PFLOTRAN's outflow concentrations are a RATIO). Omitting it here made every
+    # PFLOTRAN target reduce to NaN — silently, because the per-target reduce below
+    # swallows exceptions.
+    variables = sorted({
+        v for t in targets.values() if t.variable
+        for v in (list(t.variable) if isinstance(t.variable, (list, tuple)) else [t.variable])
+             + ([t.denominator] if getattr(t, "denominator", None) else [])
+    })
+    if verbose:
+        print(f"  [backend:{backend.spec.name}] {len(cases)} completed cases; vars={variables}")
+    simulated = {name: [] for name in targets}
+    case_numbers, skipped = [], []
+    # A reduce that raises becomes NaN below. Silently, a target that fails for EVERY
+    # case is indistinguishable from a screened ensemble, so the first reason per
+    # target is kept and reported rather than discarded.
+    reduce_failures: Dict[str, str] = {}
+    for case_id, case_dir in cases:
+        try:
+            extracted = backend.extract_history_variables(case_dir, variables)
+        except Exception:
+            skipped.append(case_id); continue
+        # Mask model spval (EcoSIM fill 1e+30) → NaN so peak/mean reductions aren't polluted
+        extracted = {k: np.where(np.abs(np.asarray(v, dtype=float)) >= 1e29, np.nan,
+                                 np.asarray(v, dtype=float)) for k, v in extracted.items()}
+        for name, t in targets.items():
+            # Always pass `reduce` (ecosystem reduces like sum_pft_peak/annual carry no
+            # window); window/time are optional. `depth_cm` passes through for depth targets.
+            tgt = {"name": name, "variable": t.variable, "pft": t.pft,
+                   "reduce": t.reduce or "mean"}
+            if t.window is not None:
+                tgt["window"] = list(t.window)
+            elif t.time_index is not None:
+                tgt["time"] = int(t.time_index)
+            if getattr(t, "depth_cm", None) is not None:
+                tgt["depth_cm"] = t.depth_cm
+            # The ratio's second column, for a backend-declared derived reduce.
+            if getattr(t, "denominator", None):
+                tgt["denominator"] = t.denominator
+            # The full observed series a full-series derived reduce (PFLOTRAN's
+            # outflow_flux) scores against -- dropping this here reproduces the same
+            # silent-NaN failure mode `denominator` had before it was carried through.
+            if getattr(t, "observed_series_file", None):
+                tgt["observed_series_file"] = t.observed_series_file
+            try:
+                val = reduce_target(backend, extracted, tgt)
+            except Exception as exc:
+                val = float("nan")
+                reduce_failures.setdefault(name, str(exc))
+            simulated[name].append(np.array([val], dtype=float))
+        case_numbers.append(case_id)
+    simulated = {name: np.array(v) for name, v in simulated.items()}
+    if reduce_failures:
+        # Printed unconditionally: an all-NaN target looks exactly like a screened one
+        # downstream, so the reason must not be verbose-gated.
+        print(f"  [backend:{backend.spec.name}] WARNING — {len(reduce_failures)} target(s) "
+              f"failed to reduce and are NaN:")
+        for tname, reason in reduce_failures.items():
+            print(f"      {tname}: {reason}")
+    if verbose:
+        print(f"  [backend:{backend.spec.name}] loaded {len(case_numbers)} cases; skipped {len(skipped)}")
+    if use_cache:
+        try:
+            with open(cache_path, "wb") as f:
+                pickle.dump({"simulated": simulated, "case_numbers": case_numbers}, f)
+        except Exception:
+            pass
+    return simulated, case_numbers
+
+
+def load_ensemble_simulated(
+    data_dir: Path,
+    targets: Dict[str, Target],
+    config: ScreeningConfig,
+    verbose: bool = True,
+    use_cache: bool = True
+) -> Tuple[Dict[str, np.ndarray], List[int]]:
+    """
+    Load simulated values for all cases in ensemble.
+
+    Args:
+        data_dir: Directory containing extracted NetCDF files
+        targets: Validation targets
+        config: Screening configuration
+        verbose: Print progress messages
+        use_cache: If True, use cached data if available (default: True)
+
+    Returns:
+        simulated: {target_name: array of values for each case}
+        case_numbers: List of case numbers (for mapping indices to case IDs)
+    """
+    # Check for cached data
+    cache_path = _get_cache_path(data_dir, targets, config)
+    if use_cache and _is_cache_valid(cache_path, data_dir):
+        if verbose:
+            print(f"Loading cached data from {cache_path.name}...")
+        try:
+            with open(cache_path, 'rb') as f:
+                cached = pickle.load(f)
+            n_cached = len(cached['case_numbers'])
+            if n_cached == 0:
+                if verbose:
+                    print(f"  Cache contains 0 cases (stale), reloading from files...")
+            else:
+                if verbose:
+                    print(f"  Loaded {n_cached} cases from cache")
+                return cached['simulated'], cached['case_numbers']
+        except Exception as e:
+            if verbose:
+                print(f"  Cache load failed ({e}), reloading from files...")
+
+    # Backend-dispatched extraction for adapter models (EcoSIM, …); FATES falls through
+    # to the SZPF path below (docs/38 additive — the FATES extraction is untouched).
+    _backend = _resolve_screening_backend()
+    if _backend is not None:
+        return _load_ensemble_simulated_backend(
+            data_dir, targets, config, _backend, cache_path, verbose, use_cache)
+
+    available_cases = get_available_cases(data_dir, config)
+
+    if verbose:
+        print(f"Found {len(available_cases)} cases in {data_dir.name}")
+
+    # Initialize storage
+    simulated = {name: [] for name in targets.keys()}
+    case_numbers = []
+
+    # Shared evaluation utility (same SZPF-read core as Phase 5 single-case eval).
+    from tools.evaluate_case import extract_case_series, resolve_obs_index_windows
+
+    # Resolve each target's observation-point windows ONCE (they don't vary per case).
+    # Per-target spec from targets.yaml (Target.observations) -> one window per point;
+    # legacy targets with no spec fall back to the single ScreeningConfig window.
+    windows_by_target = {}
+    for name, t in targets.items():
+        w = resolve_obs_index_windows(t, config.year_start)
+        windows_by_target[name] = w if w is not None else [config.obs_idxs]
+    n_points_by_target = {name: len(w) for name, w in windows_by_target.items()}
+
+    # Track skipped cases for diagnostics
+    skipped_missing_file = []
+    skipped_no_values = []
+
+    # Process each case
+    for i, case_num in enumerate(available_cases):
+        if verbose and (i + 1) % 100 == 0:
+            print(f"  Processing case {i+1}/{len(available_cases)}...")
+
+        # Build NC file path for this case
+        case_name = config.case_pattern.format(N=case_num, PHASE='TRANS')
+        nc_file = config.data_dir / config.file_pattern.format(
+            case_name=case_name,
+            year_start=config.year_start,
+            year_end=config.year_end
+        )
+
+        if not nc_file.exists():
+            skipped_missing_file.append(case_num)
+            continue
+
+        # Extract per-observation-point values for this case (one array per target,
+        # shape (n_points,); snapshot => length 1).
+        case_values = extract_case_series(nc_file, targets, windows_by_target)
+
+        # Skip if no values extracted (invalid/corrupt file)
+        if not case_values:
+            skipped_no_values.append(case_num)
+            continue
+
+        # Append per-target point arrays (NaN-filled to the right length if missing)
+        for name in targets:
+            arr = case_values.get(name)
+            if arr is None:
+                arr = np.full(n_points_by_target[name], np.nan)
+            simulated[name].append(np.asarray(arr, dtype=float))
+
+        case_numbers.append(case_num)
+
+    # Stack to (n_cases, n_points) per target (n_points == 1 for snapshot targets)
+    simulated = {name: np.array(values) for name, values in simulated.items()}
+
+    if verbose:
+        print(f"  Loaded {len(case_numbers)} valid cases")
+        n_skipped = len(skipped_missing_file) + len(skipped_no_values)
+        if n_skipped > 0:
+            print(f"  Skipped {n_skipped} invalid cases:")
+            if skipped_missing_file:
+                print(f"    - {len(skipped_missing_file)} missing NC file (constructed path not found): {skipped_missing_file}")
+            if skipped_no_values:
+                print(f"    - {len(skipped_no_values)} no values extracted (corrupt/incomplete data): {skipped_no_values}")
+
+    # Save to cache for future runs
+    if use_cache:
+        try:
+            cache_path = _get_cache_path(data_dir, targets, config)
+            with open(cache_path, 'wb') as f:
+                pickle.dump({'simulated': simulated, 'case_numbers': case_numbers}, f)
+            if verbose:
+                print(f"  Saved cache to {cache_path.name}")
+        except Exception as e:
+            if verbose:
+                print(f"  Warning: Could not save cache ({e})")
+
+    return simulated, case_numbers
+
+
+# =============================================================================
+# Main Screening Function
+# =============================================================================
+
+def screen_ensemble(
+    data_dir: Path,
+    targets: Dict[str, Target],
+    config: Optional[ScreeningConfig] = None,
+    top_n: int = 100,
+    verbose: bool = True,
+    max_case_num: Optional[int] = None
+) -> ScreeningResult:
+    """
+    Screen ensemble against validation targets.
+
+    This is the main entry point for Phase 2 screening.
+
+    Parameters
+    ----------
+    data_dir : Path
+        Directory containing ensemble simulation outputs
+    targets : Dict[str, Target]
+        Validation targets (from site configuration)
+    config : ScreeningConfig, optional
+        Screening configuration
+    top_n : int
+        Number of top sets to return
+    verbose : bool
+        Print progress
+
+    Returns
+    -------
+    ScreeningResult
+        Structured results including rankings, statistics, and analysis
+
+    Example
+    -------
+    >>> from phases.phase2_screening.screen_ensemble import screen_ensemble
+    >>> from tools.optimize_function import Target
+    >>>
+    >>> targets = {
+    ...     'PFT10_leaf': Target('PFT10_leaf', observed=24.6, uncertainty=0.2),
+    ...     'PFT12_fineroot': Target('PFT12_fineroot', observed=382.1, uncertainty=0.2),
+    ... }
+    >>> result = screen_ensemble(data_dir, targets, top_n=50)
+    >>> print(f"Best case: #{result.best_case_num}, cost: {result.best_cost:.4f}")
+    """
+    if not HAS_NETCDF:
+        raise ImportError("netCDF4 required for screening. Install with: pip install netCDF4")
+
+    # Setup config
+    config = config or ScreeningConfig()
+    config.data_dir = Path(data_dir)
+    config.top_n = top_n
+    if max_case_num is not None:
+        config.max_case_num = max_case_num
+
+    if verbose:
+        print("\n" + "=" * 60)
+        print("A2MC PHASE 2: ENSEMBLE SCREENING")
+        print("=" * 60)
+        print(f"Data directory: {data_dir}")
+        print(f"Targets: {len(targets)}")
+
+    # Load simulated data
+    if verbose:
+        print("\nLoading ensemble data...")
+
+    available_cases = get_available_cases(config.data_dir, config)
+    simulated, case_numbers = load_ensemble_simulated(
+        config.data_dir, targets, config, verbose=verbose
+    )
+
+    n_valid = len(case_numbers)
+
+    if n_valid == 0:
+        raise ValueError("No valid cases found!")
+
+    if verbose:
+        print(f"\nValid cases: {n_valid} / {len(available_cases)}")
+
+    # Configure optimization
+    opt_config = OptimizationConfig(
+        error_method=config.error_method,
+        aggregation_method=config.aggregation_method,
+        tolerance=config.tolerance,
+        n_top=top_n,
+        verbose=verbose
+    )
+
+    # Run optimization
+    if verbose:
+        print("\nRunning optimization...")
+
+    opt_result = optimize_ensemble(simulated, targets, opt_config)
+
+    # Attach the real case-number map so saved Set_IDs / indices are correct
+    # even on a PARTIAL ensemble (loaded cases non-contiguous -> array position
+    # != case number). Without this, optimize_function falls back to position+1,
+    # which silently mislabels case numbers when cases are missing.
+    opt_result.case_numbers = np.asarray(case_numbers)
+
+    # Get best case
+    best_idx = opt_result.best_index
+    best_case_num = case_numbers[best_idx]
+    best_cost = opt_result.best_cost
+    max_satisfied = int(np.max(opt_result.n_satisfied))
+
+    # Build result
+    result = ScreeningResult(
+        optimization_result=opt_result,
+        simulated=simulated,
+        n_available_cases=len(available_cases),
+        n_valid_cases=n_valid,
+        case_numbers=case_numbers,
+        best_case_num=best_case_num,
+        best_cost=best_cost,
+        max_satisfied_count=max_satisfied
+    )
+
+    # Print summary
+    if verbose:
+        print("\n" + "=" * 60)
+        print("SCREENING COMPLETE")
+        print("=" * 60)
+        print(f"Best case: #{best_case_num}")
+        print(f"  Composite cost (RMSRE): {best_cost:.6f}")
+        print(f"  Targets satisfied: {opt_result.n_satisfied[best_idx]}/{len(targets)}")
+        print(f"\nMax targets satisfied in ensemble: {max_satisfied}/{len(targets)}")
+
+        # Top 10
+        print("\nTop 10 cases:")
+        print(f"{'Rank':<6} {'Case':<8} {'Cost':<12} {'Satisfied'}")
+        print("-" * 40)
+        for i, idx in enumerate(opt_result.ranked_indices[:10]):
+            print(f"{i+1:<6} {case_numbers[idx]:<8} {opt_result.composite_cost[idx]:<12.6f} "
+                  f"{opt_result.n_satisfied[idx]}/{len(targets)}")
+
+    return result
+
+
+# =============================================================================
+# Kougarok-Specific Target Loading (Site Configuration)
+# =============================================================================
+
+def load_kougarok_targets() -> Dict[str, Target]:
+    """
+    Load validation targets for Kougarok site.
+
+    Observations from July 2016 field campaign.
+
+    PFT ids are api-43 (12-PFT arctic ordering): evergreen shrub = PFT10,
+    deciduous shrub = PFT11, graminoid = PFT12 (were 7/9/10 on api-31). Values
+    unchanged; the target-name PFT number drives the SZPF extraction slice.
+    This is the fallback only — the live path loads use_cases/ELM-FATES_Kougarok/validation/
+    targets.yaml via tools.targets_loader.load_case_targets().
+    """
+    return {
+        'PFT10_leaf': Target(
+            name='PFT10_leaf',
+            observed=24.55,  # 49.1 * 0.5 (dry mass to C)
+            uncertainty=0.2,
+            units='g C/m²',
+            description='Evergreen shrub leaf biomass',
+            obs_std=29.1,
+        ),
+        'PFT10_fineroot': Target(
+            name='PFT10_fineroot',
+            observed=174.25,  # 348.5 * 0.5
+            uncertainty=0.2,
+            units='g C/m²',
+            description='Evergreen shrub fine root biomass',
+            obs_std=214.0,
+        ),
+        'PFT11_leaf': Target(
+            name='PFT11_leaf',
+            observed=124.7,  # 249.4 * 0.5
+            uncertainty=0.2,
+            units='g C/m²',
+            description='Deciduous shrub leaf biomass',
+            obs_std=47.2,
+        ),
+        'PFT11_fineroot': Target(
+            name='PFT11_fineroot',
+            observed=187.35,  # 374.7 * 0.5
+            uncertainty=0.2,
+            units='g C/m²',
+            description='Deciduous shrub fine root biomass',
+            obs_std=120.4,
+        ),
+        'PFT12_leaf': Target(
+            name='PFT12_leaf',
+            observed=82.65,  # 165.3 * 0.5
+            uncertainty=0.2,
+            units='g C/m²',
+            description='Arctic graminoid leaf biomass',
+            obs_std=56.3,
+        ),
+        'PFT12_fineroot': Target(
+            name='PFT12_fineroot',
+            observed=382.05,  # 764.1 * 0.5
+            uncertainty=0.2,
+            units='g C/m²',
+            description='Arctic graminoid fine root biomass',
+            obs_std=267.1,
+        ),
+    }
+
+
+# =============================================================================
+# Main
+# =============================================================================
+
+def main():
+    """Run screening for Kougarok ensemble"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Screen ensemble against targets')
+    parser.add_argument('--data-dir', type=str, default=None,
+                        help='Directory containing simulation outputs')
+    parser.add_argument('--top-n', type=int, default=100,
+                        help='Number of top cases to report')
+    parser.add_argument('--output-dir', type=str, default=None,
+                        help='Directory for output files')
+    parser.add_argument('--max-case-num', type=int, default=None,
+                        help='Exclude case numbers above this (default: no cap). Set for '
+                             'cross-round comparison to drop out-of-Morris-range experiment '
+                             'cases (e.g. 4890); leave unset for per-round summary graphs.')
+    args = parser.parse_args()
+
+    # Get data directory
+    if args.data_dir:
+        data_dir = Path(args.data_dir)
+    else:
+        # Prefer the ACTIVE round's output dir; the hardcoded Kougarok path is the last resort.
+        # Same defect class as the target load above: a machine-specific $HOME path cannot be the
+        # default for a framework that now runs four models on two machines.
+        import os
+        data_dir = os.environ.get('A2MC_OUTPUT_DIR')
+        if data_dir:
+            data_dir = Path(data_dir)
+        else:
+            home = os.environ.get('HOME', '~')
+            data_dir = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_PlantTraitsCNPEnsemble162_Morris')
+
+    # Load targets — the CASE's own first, the Kougarok set only as a fallback.
+    #
+    # This line read `targets = load_kougarok_targets()` unconditionally until 2026-08-27, which
+    # made the CLI unusable for every non-FATES model: a PFLOTRAN run scored miniLEO's
+    # reactive-transport cases against Kougarok's SIX PFT biomass targets and returned NaN for all
+    # of them ("Targets: 6", best cost nan, 0/6 satisfied — measured on R1's first completed cases).
+    # Nothing was wrong with the machinery: `screen_ensemble()` already takes targets as a
+    # parameter, `_resolve_screening_backend` already dispatches on $A2MC_MODEL, and the
+    # `denominator` / `observed_series_file` carry-through had already been fixed FOR THIS MODEL.
+    # Only the entry point assumed FATES.
+    #
+    # `load_case_targets()` is the generic loader that already existed for exactly this purpose —
+    # `load_kougarok_targets`'s own docstring calls itself "the fallback only" and names it. It
+    # returns (None, ...) when no targets.yaml resolves, so the FATES path below is untouched and
+    # still reached whenever a case ships no yaml.
+    from tools.targets_loader import load_case_targets
+    targets, _case_cost_config, _anchor = load_case_targets()
+    if targets:
+        print(f"  targets: {len(targets)} from the case's own validation/targets.yaml")
+    else:
+        targets = load_kougarok_targets()
+        print(f"  targets: {len(targets)} from the built-in Kougarok fallback "
+              f"(no case targets.yaml resolved)")
+
+    # Run screening
+    result = screen_ensemble(data_dir, targets, top_n=args.top_n,
+                             max_case_num=args.max_case_num)
+
+    # Save results if output dir specified
+    if args.output_dir:
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        save_optimization_results(
+            result.optimization_result,
+            result.simulated,
+            output_dir,
+            prefix='screening'
+        )
+
+        # Save structured result for phase logging
+        with open(output_dir / 'screening_result.json', 'w') as f:
+            json.dump(result.to_dict(), f, indent=2)
+
+        print(f"\nResults saved to: {output_dir}")
+
+    return result
+
+
+if __name__ == '__main__':
+    main()

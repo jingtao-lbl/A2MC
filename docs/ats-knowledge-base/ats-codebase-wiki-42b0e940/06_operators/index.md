@@ -1,0 +1,45 @@
+---
+**Source pin:** ATS commit `42b0e940` (`ats-1.7-dev-22-g42b0e940`)
+**Last verified:** 2026-07-27
+---
+
+# 06 Operators — Topic Landing Page
+
+`src/operators/` contains the discrete mathematical machinery that turns physics into linear algebra. This layer sits between the Process Kernels (PKs, which own the physical problem) and the Amanzi/Trilinos linear-algebra stack (which owns solvers and preconditioners).
+
+## Role of Operators vs. Constitutive Relations vs. PKs
+
+| Layer | Responsibility | Examples |
+|---|---|---|
+| **Constitutive relations** (`src/constitutive_relations/`) | Compute scalar/tensor field values from state (WRC, EOS, conductivity). Pure math, no mesh integrals. | van Genuchten kr, water density |
+| **Operators** (`src/operators/`) | Assemble and apply discrete linear/nonlinear integral operators on the mesh. Consume constitutive-relation outputs (e.g., upwinded kr) as coefficients. | `MatrixMFD`, `AdvectionDonorUpwind`, `UpwindTotalFlux` |
+| **PKs** (`src/pks/`) | Own the physical problem: time integration, Newton iteration, boundary conditions. Instantiate and drive operators. | `Richards`, `OverlandFlow`, `Deform` |
+
+Operators do not contain physical parameters; those come in from State. Operators do not decide time step size; that is the PK's job.
+
+## Subdirectory Map
+
+| Subdirectory | Key classes | Purpose |
+|---|---|---|
+| `divgrad/` | `MatrixMFD`, `MatrixMFD_Coupled_Surf` | Mimetic finite-difference div-grad operator (elliptic core for Richards, energy, overland flow) |
+| `advection/` | `Advection`, `AdvectionDonorUpwind`, `AdvectionFactory` | Advection operators for transport and energy |
+| `upwinding/` | `Upwinding` (base), 8 concrete strategies, `UpwindFluxFactory` | Cell-to-face coefficient interpolation for nonlinear permeability/conductivity |
+| `deformation/` | `MatrixVolumetricDeformation`, `Matrix_PreconditionerDelegate` | Specialized operator for the moving-mesh ground-deformation PK |
+
+## Build status (commit 42b0e940)
+
+The `CMakeLists.txt` (`src/operators/CMakeLists.txt`) compiles all advection and upwinding files into the `ats_operators` library. The two deformation files (`MatrixVolumetricDeformation.cc`, `Matrix_PreconditionerDelegate.cc`) are **commented out** of the build, indicating the deformation operator is currently disabled at the library level and is either tested separately or linked from Amanzi directly.
+
+## Cross-references
+
+- `divgrad/MatrixMFD.cc` — upwinding feeds coefficients via `CreateMFDstiffnessMatrices`
+- `src/pks/flow/richards.cc` — primary consumer of `MatrixMFD` and upwinding classes
+- `src/pks/flow/overland_pressure_pk.cc` — primary consumer of `UpwindFluxFactory` (see also `src/pks/flow/constitutive_relations/overland_conductivity/overland_conductivity_model.hh` for the abstract conductivity interface, header-only, and `overland_conductivity_evaluator.cc` for the evaluator)
+- `src/pks/deform/` — primary consumer of `MatrixVolumetricDeformation`
+
+## Detailed pages
+
+- [divgrad.md](divgrad.md) — MFD div-grad operator (elliptic/parabolic core)
+- [advection.md](advection.md) — advection operator family
+- [upwinding.md](upwinding.md) — upwinding strategies
+- [deformation.md](deformation.md) — moving-mesh deformation operator

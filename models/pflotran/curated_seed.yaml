@@ -1,0 +1,1597 @@
+# =============================================================================
+# PFLOTRAN Curated Relationships YAML — v0.2 (GraphRAG Layer 2)
+# =============================================================================
+#
+# Model:   PFLOTRAN (bitbucket.org/pflotran/pflotran, commit 157a26f7)
+# Profile: pflotran-157a26f7
+# Case:    miniLEO basalt-weathering lysimeter (scenario1)
+#
+# STATUS: v0.2 AI-DRAFT, source-verified AND fan-out-corrected. NOT YET
+#   PI-REVIEWED.
+#   v0.1 was REJECTED on 2026-08-01: an adversarial fan-out found ~11 outright
+#   errors + ~26 misleading entries in ~50 (~20 % hard-error rate, 4x the EcoSIM
+#   precedent). Post-mortem: memory/dev_logs_adapterkitpflotran/20260801a.
+#   Rewrite contract: 20260801b. This file is that rewrite, from scratch.
+#
+#   THE SAME FAN-OUT WAS THEN RE-RUN ON THIS REWRITE, and as the contract
+#   predicted it found more: 13 hard errors and ~30 misleading items across the
+#   four scopes. ALL 13 ARE FIXED HERE. Two observations worth carrying:
+#
+#     - The DECK and SOURCE citations held up essentially perfectly (one
+#       overstatement in ~40 checked). EVERY hard error was in a number or a
+#       causal claim I had DERIVED myself -- the counterfactual behind the
+#       surface-area story, the domain mass-balance identity, the rejected-
+#       column counts, two stoichiometry-blind sink ratios. The citation
+#       discipline worked; the arithmetic and the causal reasoning on top of it
+#       is now the weak layer.
+#     - The single worst item was self-inflicted: v0.2 originally proposed a
+#       mass-balance identity as a REGRESSION TEST for extraction layers. It
+#       holds for 4 of 16 species. A correct extractor would have been told it
+#       was broken. It is retracted in the outputs header.
+#
+#   So: a clean third pass would be evidence of weak verification, not of a
+#   clean seed. Assume more remains.
+#
+#   Known-open items deliberately NOT fixed (recorded in
+#   memory/dev_logs_adapterkitpflotran/20260801c): the `affects`/`affected_by`
+#   edges are not symmetric, and `output_parser.py::is_cumulative` mislabels
+#   storage states and stocks as running integrals.
+#
+# ############################################################################
+# THE ONE RULE THIS FILE IS BUILT ON: no factual claim without a pointer.
+#
+#   [src: <file>.F90:NNN]   PFLOTRAN source at commit 157a26f7
+#   [deck: pflotran.in:NNN] the real miniLEO input deck
+#   [db: savannah_river.dat:NNN]  the case's thermodynamic database
+#   [data: ...]             a statistic MEASURED on the real pflotran-mas.dat
+#                           (3360 rows x 332 columns, the 70-day miniLEO run)
+#
+#   v0.1 failed because it carried 8 file:line citations against the wiki's
+#   2541, so nothing in it could be checked in place. The diagnosis was sharp:
+#   claims taken from the wiki's CITED knob tables survived verification;
+#   claims that were INFERENCE on top of wiki prose (units, controls/affects
+#   links, operational advice, scope qualifiers like "only"/"every"/"mandatory")
+#   did not. The split fell exactly along the citation line.
+#
+#   Where a claim cannot be pointed at, it is marked "PRIOR (unverified)" and
+#   is to be read as a hypothesis, never as knowledge.
+#
+#   Sourcing order used here: MEASURED DATA > SOURCE LINE > cited wiki row >
+#   inference. Every claim below was re-derived first-hand this session; none
+#   was carried over from v0.1 on trust, and none rests solely on the v0.1
+#   fan-out agents' reports (those were treated as leads and spot-checked).
+# ############################################################################
+#
+# WHAT THIS REWRITE CORRECTS relative to v0.1 (each verified first-hand):
+#   1.  surface_area internal units are BRANCH-DEPENDENT on the trailing token,
+#       and the mass branch multiplies by the row's own vol_frac -> the two are
+#       COUPLED, not independent, for the 7 tokenised rows.
+#   2.  The miniLEO deck MIXES the two conventions across rows of one MINERALS
+#       block, and that -- not chemistry alone -- is why 3 of the 4 primary
+#       minerals are inert. Quantified in the surface_area entry.
+#   3.  LIQUID_RESIDUAL_SATURATION lives at three independent deck addresses;
+#       the "value that propagates downstream" claim was wrong (that function is
+#       DEAD CODE, zero call sites). BOTH copies are live in different physics.
+#   4.  `case('N')` DOES exist in the model; only the DECK has no N card.
+#   5.  LOOP_INVARIANT is a deck CARD, not a build flag. (The follow-on claim
+#       that it would not catch out-of-range values anyway is ALSO wrong and is
+#       retracted in the M entry -- it does check ALPHA/M/Sr. This deck simply
+#       does not set it.) Enforce bounds at sampling time.
+#   6.  GAS_RESIDUAL_SATURATION is not MUALEM_VG_GAS-only (30 case sites).
+#   7.  TEMPERATURE is NOT mandatory in every flow condition -- the blanket
+#       requirement sits behind `if (.false.)`, and this deck's `recharge` block
+#       proves it by having none.
+#   8.  LIQUID_SATURATION is an INITIAL condition, not a boundary; and it is an
+#       ALIAS of GAS_SATURATION that is silently COMPLEMENTED (1-S) on read.
+#       (The complement is NEW here -- the v0.1 fan-out found the alias but not
+#       the 1-S transform.)
+#   9.  GAS_SATURATION's `affects` is not empty -- but NOT for the reason the
+#       fan-out gave. It selects the boundary's thermodynamic STATE. The seepage
+#       clamp is armed by the BC TYPE, not by GAS_SATURATION. (Correction to a
+#       correction: the fan-out's own claim here did not survive re-checking.)
+#  10.  "Rainfall composition is measured, treat as fixed" -- dropped.
+#  11.  "Identical name, key on units never on name" -- dropped. All 332 headers
+#       are unique; the full header IS a valid key. Only the STEM is shared.
+#  12.  `Global Labradorite [mol]` DELETED as an output (see the gate below).
+#  13.  MAX_TS_CUTS is set TWICE (FLOW 20, TRANSPORT 50).
+#  14.  TIMESTEP_MAXIMUM_GROWTH_FACTOR DOES change the trajectory.
+#
+# NEW findings this session that v0.1 AND its fan-out both missed:
+#   *  `Global Olivine [mol]` is ALSO exactly constant -- so the v0.1 claim that
+#      Mg export is "dominated by olivine and diopside dissolution" was wrong on
+#      both counts. Both those phases are inert in this run.
+#   *  `east H+ [mol]` is POSITIVE while ALL 15 other east solute columns are
+#      negative. A blanket "all coupler solute columns are negative" rule -- the
+#      form the rewrite contract proposed -- would itself have been wrong. And
+#      it is not the only positive coupler column: 8 are positive once
+#      `top_recharge` is included (Na+, NO3-, SO4--, O2(aq), Cl-, HPO4--,
+#      CO2(aq) enter with the rainwater).
+#   *  `Global <species> [mol]` is the TOTAL-DOMAIN inventory INCLUDING
+#      MINERAL-BOUND mass -- it is NOT a dissolved pool. Measured at row 0, the
+#      mineral-bound sum accounts for 99.99 %+ of every one: Ca 3121.8119 of
+#      3121.8124; Si 12781.6303 of 12781.6319; Al 4823.2354 of 4823.2354.
+#      Treating `Global Ca++ [mol]` as a dissolved-Ca target would be wrong by
+#      ~3 orders of magnitude. This is the single most dangerous misreading
+#      available on this tape.
+#   *  `top_recharge` is NOT an input-only face. It EXPORTS Ca, Mg, Si, K, Al,
+#      Fe, Mn by diffusion into the imposed rainwater composition. For SiO2 that
+#      is 18 % of the east-face export. A weathering budget that treats the top
+#      face as input-only is wrong by that much.
+#   *  LIQUID_SATURATION is complemented to gas saturation on read (see 8).
+#
+# -----------------------------------------------------------------------------
+# OUTPUT SELECTION CRITERION (new in v0.2, and it must be applied to any case)
+# -----------------------------------------------------------------------------
+#   A column that does not VARY is not a weak target, it is a NON-target: it
+#   carries zero information and will read as "perfectly fitted" to any scoring
+#   function. Gate every candidate on its distinct-value count over the full
+#   series BEFORE adopting it.
+#
+#     [data: 125 of the 332 columns have exactly 1 distinct value in 3360 rows]
+#
+#   REJECTED by this gate, with the measured reason:
+#     Global Labradorite [mol]  1 distinct value  (constant 1410.31982)
+#     Global Olivine [mol]      1 distinct value  (constant 1664.91526)
+#     60 of the 64 top_vent solute columns        (constant -0.0)
+#     84 of the 96 (gas phase) columns            (constant -0.0)
+#     + 9 others, 4 of them constant at NON-ZERO values
+#       (Region seepage Labradorite 17.6289977; Region surface Labradorite
+#        35.2579955; Region surface Birnessite-LEO 9.953418e-09)
+#   Those groups total exactly 125. NOTE the non-zero constants: a gate written
+#   as "reject if == 0" misses them. Gate on DISTINCT COUNT, not on value.
+#
+#   NOT rejected, and deliberately so: 12 gas-phase columns DO vary, including
+#   `east O2(aq) (gas phase) [mol]` (-0.0239 -> -60.442) and
+#   `east/top_recharge CO2(aq) (gas phase) [mol]`. Soil CO2 efflux is a
+#   first-order observable for a weathering column, and the gate KEEPS these.
+#   Do not reject "the gas-phase columns" as a class.
+#
+#   A distinct-COUNT alone is not sufficient. Global Diopside_78_FB passes it
+#   (100 distinct values) yet its total change over the run is -9.9e-05 mol
+#   against a 513.54 mol pool -- a RELATIVE change of 1.9e-07, which no
+#   observation could constrain. Gate on BOTH:
+#       n_distinct > 1   AND   |last-first| / |first|  above measurement noise.
+#
+# -----------------------------------------------------------------------------
+# KEYING
+# -----------------------------------------------------------------------------
+#   Entries key on the CARD/LEAF, not the full block address. A PFLOTRAN knob
+#   recurs at many addresses (RATE_CONSTANT once per mineral); the knowledge is
+#   true of every instance, so an address-keyed seed would describe one deck
+#   rather than the model. The V2 validator accepts leaf names for
+#   path-addressed models (tools/validate_curated_yaml.py).
+#   Deck citations therefore give a REPRESENTATIVE address plus its line.
+#
+# -----------------------------------------------------------------------------
+# SCOPE (PI decision, 20260731h)
+# -----------------------------------------------------------------------------
+#   miniLEO-anchored: the parameter set is exactly what the real deck sets
+#   (121 addressed knobs collapsing to the 27 card types below), not the broad
+#   91-card pool. A seed covering cards no one calibrates is unverifiable
+#   padding. Solver cards ARE included but marked non-calibratable so Phase 3
+#   can reason about run failures. The thermodynamic database is CONTEXT only.
+#
+# -----------------------------------------------------------------------------
+# TWO STANDING CAVEATS
+# -----------------------------------------------------------------------------
+#   SENSITIVITY. Every priority phrase below is labelled "PRIOR (unverified)"
+#   and is a PRE-MORRIS hypothesis to steer the first ensemble, NOT a verified
+#   ranking [[feedback_no_kb_injection_before_verified_test]]. A Phase-1 Morris
+#   run is required to confirm any ordering.
+#
+#   BOUNDS. This seed carries RELATIONSHIPS, not numeric bounds. Bounds live in
+#   a separate param-list artifact, and PFLOTRAN does NOT reliably range-check
+#   them (see the range_checking note on M). Enforce bounds at SAMPLING time.
+# =============================================================================
+
+categories:
+
+  mineral_kinetics:
+    full_name: "Mineral kinetics (TST dissolution / precipitation)"
+    description: >
+      Transition-state-theory dissolution and precipitation of the basalt
+      assemblage and its secondary phases. 10 kinetic minerals in this deck
+      [deck: pflotran.in:237-312]. Rate is the product of a reactive surface
+      area, a rate constant and an affinity term
+      [src: reaction_mineral.F90:1281 (SIMPLE), :1512-1520 (COMPLEX)].
+    mechanisms:
+      - TST_Mineral_Kinetics
+      - Reactive_Surface_Area_Evolution
+    key_outputs:
+      - "east Ca++ [mol]"
+      - "east SiO2(aq) [mol]"
+      - "Global Glass_FB [mol]"
+    calibratable: true
+    _source: "ai-draft-verified"
+
+  water_retention:
+    full_name: "Characteristic curves (van Genuchten / Mualem)"
+    description: >
+      The capillary-pressure/saturation map and the liquid and gas relative
+      permeability functions. In this deck one CHARACTERISTIC_CURVES block with
+      three sub-blocks [deck: pflotran.in:568-584]. The three sub-blocks carry
+      SEPARATE storage for M and Sr: they are three DISTINCT DERIVED TYPES,
+      each declaring its own fields -- `sat_func_vg_type`
+      [src: characteristic_curves_common.F90:35-38], `rpf_mualem_vg_liq_type`
+      [src: characteristic_curves_common.F90:148-157] and
+      `rpf_mualem_vg_gas_type`
+      [src: characteristic_curves_common.F90:159-165].
+    mechanisms:
+      - Van_Genuchten_WRM
+      - Mualem_Relative_Permeability
+    key_outputs:
+      - "east Water Mass [kg/h]"
+      - "Global Water Mass in Liquid Phas [kg]"
+    calibratable: true
+    _source: "ai-draft-verified"
+
+  permeability:
+    full_name: "Intrinsic permeability and its porosity coupling"
+    description: >
+      Isotropic intrinsic permeability and the porosity-dependent power law that
+      rescales it each step when UPDATE_PERMEABILITY is set
+      [deck: pflotran.in:324; src: realization_subsurface.F90:2062-2070].
+    mechanisms:
+      - Porosity_Permeability_Feedback
+    key_outputs:
+      - "east Water Mass [kg/h]"
+    calibratable: true
+    _source: "ai-draft-verified"
+
+  porosity:
+    full_name: "Porosity"
+    description: >
+      Bulk porosity. With UPDATE_POROSITY set [deck: pflotran.in:323] this is
+      also a DERIVED state: the operative porosity is recomputed ABSOLUTELY as
+      max(1 - sum(kinetic mineral volume fractions), minimum_porosity) every
+      reactive step [src: realization_subsurface.F90:2226-2227], so the deck's
+      POROSITY card is a reference value, not the operative one. See the
+      POROSITY entry -- this is the single most consequential coupling in the
+      deck's parameter surface.
+    mechanisms:
+      - Porosity_Permeability_Feedback
+      - Advection_Dispersion_Diffusion
+    key_outputs:
+      - "Global Water Mass in Liquid Phas [kg]"
+    calibratable: true
+    _source: "ai-draft-verified"
+
+  transport:
+    full_name: "Dispersivity and molecular diffusion"
+    description: >
+      Mechanical dispersion and molecular diffusion entering the GIRT solve,
+      with Millington-Quirk tortuosity active in this deck
+      [deck: pflotran.in:22; src: pm_rt.F90:237-238, transport.F90:157-165].
+    mechanisms:
+      - Advection_Dispersion_Diffusion
+      - GIRT_Reactive_Transport
+    key_outputs:
+      - "east SiO2(aq) [mol]"
+    calibratable: true
+    _source: "ai-draft-verified"
+
+  chemistry:
+    full_name: "Aqueous boundary and initial composition"
+    description: >
+      Component concentrations supplied through CONSTRAINT blocks -- 32 rows in
+      this deck across the `top` (rainwater) and `initial` constraints
+      [deck: pflotran.in:387-430].
+    mechanisms:
+      - Aqueous_Speciation
+    key_outputs:
+      - "east Ca++ [mol]"
+      - "east HPO4-- [mol]"
+    calibratable: true
+    _source: "ai-draft-verified"
+
+  boundary:
+    full_name: "Flow-condition values on the domain faces"
+    description: >
+      Values attached to the three FLOW_CONDITIONs (`gas_vent`, `recharge`,
+      `initial`) [deck: pflotran.in:471-502] and coupled to mesh regions by the
+      BOUNDARY_CONDITION / INITIAL_CONDITION blocks
+      [deck: pflotran.in:521-545]. NOTE that `initial` is an INITIAL condition,
+      not a boundary -- see the LIQUID_SATURATION entry.
+    mechanisms:
+      - Seepage_Face_Boundary
+    key_outputs:
+      - "east Water Mass [kg/h]"
+      - "top_recharge Water Mass [kg/h]"
+    calibratable: true
+    _source: "ai-draft-verified"
+
+  solver:
+    full_name: "Numerical-method controls (NOT calibration knobs)"
+    description: >
+      Timestepper and Newton-solver settings. Included per PI decision so that
+      Phase 3 can distinguish "this member FAILED" from "this member
+      STRUGGLED". These must never enter a sampling design. See the
+      Timestep_Control mechanism for the exit-88 chain.
+    mechanisms:
+      - Timestep_Control
+    key_outputs: []
+    calibratable: false
+    _source: "ai-draft-verified"
+
+  thermodynamic_database:
+    full_name: "Thermodynamic database (CONTEXT ONLY, never sampled)"
+    description: >
+      Mineral log-K, stoichiometry, molar volume and molar weight come from the
+      DATABASE file [deck: pflotran.in:315], here a hand-modified
+      savannah_river.dat. These are FIXED INPUT: tuning them means tuning
+      thermodynamics, which is not a calibration parameter. They ARE read by
+      the calibration layer, because the surface-area unit conversion needs
+      molar_weight/molar_volume [src: reaction_mineral.F90:1054].
+
+      A LIVE HAZARD IN THIS CASE'S DATABASE, worth carrying even though the
+      database is never sampled: Montmor-Mg is given a molar volume of exactly
+      500.0000 [db: savannah_river.dat:2841], which is PFLOTRAN's "undefined"
+      SENTINEL -- the value the guard at [src: reaction_mineral.F90:1045-1051]
+      exists to reject. The guard cannot fire, because the molar volume is
+      converted cm^3/mol -> m^3/mol before the check compares it against the
+      literal 500.d0. Montmor-Mg IS on the mass branch
+      [deck: pflotran.in:451], so that sentinel feeds straight into its
+      reactive-area conversion, and the implied density (363.44/500 = 0.73
+      g/cm^3) is roughly 3.4x too low for a smectite. Montmor-Mg is also the
+      largest Mg sink in the run. FLAG THIS TO THE MODELLING TEAM.
+    mechanisms: []
+    key_outputs: []
+    calibratable: false
+    _source: "ai-draft-verified"
+
+mechanisms:
+
+  TST_Mineral_Kinetics:
+    description: >
+      Transition-state-theory rate law. The volumetric rate is
+      -(reactive surface area) x (affinity factor) x (rate constant), in
+      mol/sec per m^3 bulk [src: reaction_mineral.F90:1274-1281].
+      TWO DISTINCT RATE ROUTINES EXIST and the deck selects between them
+      implicitly -- see the AFFINITY_THRESHOLD entry.
+    source: "reaction_mineral.F90:1201-1325 (SIMPLE), :1329+ (COMPLEX); dispatch at :1174-1180"
+    _source: "ai-draft-verified"
+
+  Reactive_Surface_Area_Evolution:
+    description: >
+      Specific surface area evolves with porosity and/or mineral volume fraction
+      through SURFACE_AREA_FUNCTION. The porosity factor uses the SOLID
+      fraction, ((1-phi_base)/(1-phi_0))**power
+      [src: reaction_mineral.F90:2052-2055], so its sign of effect is opposite
+      to the naive reading of its name.
+    source: "reaction_mineral.F90:2036-2062"
+    _source: "ai-draft-verified"
+
+  Porosity_Permeability_Feedback:
+    description: >
+      Mineral volume change updates porosity absolutely
+      [src: realization_subsurface.F90:2226-2227], and porosity then rescales
+      permeability through a thresholded power law with a LOWER clamp
+      [src: realization_subsurface.F90:2062-2070]. The source contains NO
+      kozeny or carman string, so naming it Kozeny-Carman would be an invention.
+    source: "realization_subsurface.F90:2214-2233 (porosity), :2055-2076 (permeability)"
+    _source: "ai-draft-verified"
+
+  Van_Genuchten_WRM:
+    description: >
+      Capillary-pressure/saturation relation.
+      Pc = (Se**(-1/m) - 1)**(1/n) / alpha, with n = 1/(1-m) DERIVED from m and
+      Se = (Sl - Sr)/(1 - Sr) [src: characteristic_curves_common.F90:860-867].
+      At or below Sr the capillary pressure is clamped to pcmax
+      [src: characteristic_curves_common.F90:852-854].
+    source: "characteristic_curves_common.F90:809-885"
+    _source: "ai-draft-verified"
+
+  Mualem_Relative_Permeability:
+    description: >
+      Relative permeability of liquid and gas derived from the retention curve.
+      The liquid and gas forms take SEPARATE parameter copies -- in this deck
+      MUALEM_VG_LIQ and MUALEM_VG_GAS each carry their own M and
+      LIQUID_RESIDUAL_SATURATION [deck: pflotran.in:574-583].
+    source: "characteristic_curves_common.F90:148-157 (liq type), :159-165 (gas type), :3366-3417 (gas rel-perm, formula at :3409); deck addresses at pflotran.in:574-583"
+    _source: "ai-draft-verified"
+
+  GIRT_Reactive_Transport:
+    description: >
+      Global-implicit reactive transport -- chemistry and transport solved
+      together, as opposed to operator-split OSRT. Selected in this deck
+      [deck: pflotran.in:19].
+    source: "deck pflotran.in:18-24; reactive_transport.F90"
+    _source: "ai-draft-verified"
+
+  Advection_Dispersion_Diffusion:
+    description: >
+      Solute flux from Darcy advection, mechanical dispersion and molecular
+      diffusion. With USE_MILLINGTON_QUIRK_TORTUOSITY the diffusion coefficient
+      is scaled by saturation**(7/3) * porosity**(1/3)
+      [src: transport.F90:113-114, :157-165]. That option additionally REQUIRES
+      every TORTUOSITY to remain at its default of 1
+      [src: pm_rt.F90:469-483].
+    source: "transport.F90:105-170; pm_rt.F90:237-238, :469-483"
+    _source: "ai-draft-verified"
+
+  Seepage_Face_Boundary:
+    description: >
+      NOT EAST-ONLY: the same FLOW_CONDITION `gas_vent` (hence the same
+      DIRICHLET_SEEPAGE type) is coupled to the east seepage face
+      [deck: pflotran.in:535-539] AND to the top surface as `top_vent`
+      [deck: pflotran.in:528-532]. The `#skip`/`#noskip` around the latter are
+      plain COMMENTS, not directives -- a line beginning with `#` is discarded
+      before the SKIP test [src: input_aux.F90:797, :811] -- so `top_vent` is
+      live, which its 62 output columns confirm.
+      The east face is the drainage boundary
+      [deck: pflotran.in:473; src: condition.F90:1323-1324,
+      pflotran_constants.F90:222 DIRICHLET_SEEPAGE_BC = 30]. The one-way clamp
+      is armed by the BC TYPE, not by any saturation value.
+      Of the FIVE bc_types that reach this Darcy-flux branch at all
+      [src: general_common.F90:2653-2654 -- DIRICHLET, HYDROSTATIC,
+      HYDROSTATIC_SEEPAGE, HYDROSTATIC_CONDUCTANCE, DIRICHLET_SEEPAGE], the
+      three seepage/conductance types fall into the `case default` that sets
+      `water_cannot_flow_in` when capillary pressure is positive
+      [src: general_common.F90:2677-2684]; DIRICHLET and HYDROSTATIC do not.
+      Other bc_types (NEUMANN_BC at [src: general_common.F90:2780]) never enter
+      this branch -- so "every bc_type other than ..." would be a false
+      universal.
+      THE CLAMP ITSELF is a few lines further on and is explicitly gated on the
+      type: `if (bc_type == DIRICHLET_SEEPAGE_BC) then / if (delta_pressure > 0
+      .and. water_cannot_flow_in) delta_pressure = 0`
+      [src: general_common.F90:2726-2728].
+    source: "general_common.F90:2650-2730 (clamp at :2726-2728); condition.F90:1323-1324"
+    _source: "ai-draft-verified"
+
+  Aqueous_Speciation:
+    description: >
+      Equilibrium speciation of the 16 primary components into 104 secondary
+      species [deck: pflotran.in:93-197 -- 105 lines, of which :110 `!MgNO3+`
+      is commented out], setting the ion activity products the
+      rate law compares against. Constraint TYPE letters are read at
+      [src: transport_constraint_rt.F90:306-345]; types M / G / SC additionally
+      REQUIRE a 4th column naming the constraining phase
+      [src: transport_constraint_rt.F90:348-358].
+    source: "transport_constraint_rt.F90:290-370"
+    _source: "ai-draft-verified"
+
+  Timestep_Control:
+    description: >
+      Timestep sizing and cutting. DIAGNOSTIC, never calibration.
+      MAX_TS_CUTS is a PER-TIMESTEP CONSECUTIVE budget -- the counter resets at
+      the top of every timestep [src: timestepper_SNES.F90:371] and the field is
+      documented as "Maximum number of timestep cuts within one time step"
+      [src: timestepper_base.F90:32]. The `cuts` figure in an end-of-run summary
+      is a LIFETIME total and is UNRELATED to this limit. A genuine exhaustion
+      aborts with exit status 88
+      [src: timestepper_base.F90:740-746; pflotran_constants.F90:63
+      EXIT_FAILURE = 88] and writes a `<pmname>_cut_to_failure` snapshot
+      [src: timestepper_base.F90:764].
+    source: "timestepper_base.F90:32, :158, :279-280, :740-746, :764; timestepper_SNES.F90:371"
+    _source: "ai-draft-verified"
+
+# =============================================================================
+# OUTPUTS
+#
+# SIGN CONVENTION IS A PROPERTY OF THE COLUMN FAMILY, NOT OF EACH ENTRY.
+#   The output parser already exposes this structurally as
+#   PFLOTRANOutputVariable.positive_is_into_domain, keyed on `family`
+#   (models/pflotran/output_parser.py:96-99). The seed MIRRORS that structure
+#   rather than restating prose per entry, because v0.1 put the warning on the
+#   water column only and would have let an extraction layer silently invert
+#   every solute target.
+#
+#   family == 'coupler'  (east / top_vent / top_recharge):
+#       POSITIVE = INTO the domain. Negated at write time.
+#   family == 'global' / 'region':
+#       inventories, written unnegated, carrying no direction.
+#
+#   BUT DO NOT INFER A COLUMN'S SIGN FROM ITS ROLE. Measured on the real file:
+#   ALL 15 non-H+ `east` solute columns are all-negative (mass leaving), while
+#   `east H+ [mol]` is ALL-POSITIVE. Across all couplers, 8 solute columns are
+#   positive (east H+, plus 7 `top_recharge` species entering with rainwater).
+#   Read each column's measured sign; do not apply a blanket rule.
+#
+# THE DOMAIN BUDGET DOES **NOT** CLOSE COLUMN-BY-COLUMN. DO NOT USE IT AS A
+# REGRESSION TEST -- an earlier draft of this seed proposed exactly that and was
+# wrong. Measured over all 16 primary species:
+#       d(Global X) vs (east X) + (top_recharge X)
+#   agrees to 4 significant figures for only 4 of 16 (Ca++, K+, Ti(OH)4(aq),
+#   and marginally Mn++). It FAILS for H+, Mg++, Fe++, HPO4--, SiO2(aq), Na+
+#   (2e-04 to 2e-03 relative), badly for Al+++ (7.1 %) and O2(aq) (94 %), and
+#   with the WRONG SIGN for CO2(aq), NO3-, SO4-- and Cl-.
+#   Two structural reasons, both worth knowing before writing any extractor:
+#     (a) `Global X` is a TOTAL inventory that includes MINERAL-BOUND mass, so
+#         a mineral reaction moves it with no corresponding boundary flux; and
+#     (b) species with a passive/active gas phase (O2, CO2) partition into the
+#         separate `Global O2(g)` / `Global CO2(g)` columns, so the aqueous
+#         column alone cannot balance.
+#   A budget check IS still worth running -- just as a DIAGNOSTIC with a
+#   species-dependent tolerance, never as a pass/fail gate.
+# =============================================================================
+
+outputs:
+
+  "east Water Mass [kg/h]":
+    category: water_flux
+    description: >
+      Instantaneous drainage rate through the seepage face -- the primary
+      hydrologic target, compared against the measured tipping-bucket
+      hydrograph. NOT an interval average.
+    affected_by: ["PERM_ISO", "ALPHA", "M", "LIQUID_RESIDUAL_SATURATION", "POROSITY"]
+    notes: >
+      [data: 3360 distinct values; all negative; range -11.1246 to -0.0171159
+      kg/h]. Negate before comparing with an observed hydrograph. Its cumulative
+      twin "east Water Mass [kg]" shares the variable STEM but is a DISTINCT
+      full header -- all 332 headers in this file are unique
+      [data: 332 columns, 332 unique], so the full header is a valid key.
+    _source: "ai-draft-verified"
+
+  "east Water Mass [kg]":
+    category: water_flux
+    description: >
+      Cumulative drainage -- a running integral from t=0, never reset.
+    affected_by: ["PERM_ISO", "POROSITY", "LIQUID_SATURATION"]
+    notes: >
+      [data: 3360 distinct; all negative; last value -2993.30 kg over the
+      70-day run]. Cumulative twin of the [kg/h] column; do not confuse them.
+    _source: "ai-draft-verified"
+
+  "east Ca++ [mol]":
+    category: solute
+    description: >
+      Cumulative Ca export -- a weathering-flux target. Its only measurable
+      mineral source in this run is basaltic glass, which carries 0.44 mol Ca
+      per mol [db: savannah_river.dat:2649]. Diopside (0.86 Ca/mol
+      [db: savannah_river.dat:2556]) is effectively inert here -- see the
+      surface_area entry.
+    affected_by: ["RATE_CONSTANT", "surface_area", "vol_frac", "SURFACE_AREA_VOL_FRAC_POWER"]
+    notes: >
+      [data: 3360 distinct; all negative; last -1.42694 mol].
+    _source: "ai-draft-verified"
+
+  "east Mg++ [mol]":
+    category: solute
+    description: >
+      Cumulative Mg export. Sourced from glass (0.30 Mg/mol
+      [db: savannah_river.dat:2649]) and consumed by the Montmor-Mg
+      precipitation sink. v0.1 attributed this to olivine and diopside
+      dissolution; BOTH are inert in this run, so that attribution was wrong.
+    affected_by: ["RATE_CONSTANT", "surface_area", "vol_frac"]
+    notes: >
+      [data: 3360 distinct; all negative; last -0.430199 mol. Montmor-Mg grows
+      from exactly 0 to 1.29510 mol; at 0.4950 Mg per mol
+      [db: savannah_river.dat:2841] that is a 0.641 mol Mg sink, 1.49x the
+      export -- NOT 3x. Compare moles-of-ELEMENT, never moles-of-mineral].
+    _source: "ai-draft-verified"
+
+  "east SiO2(aq) [mol]":
+    category: solute
+    description: >
+      Cumulative Si export -- the most direct silicate-weathering signal. Glass
+      carries 1.80 SiO2 per mol [db: savannah_river.dat:2649].
+    affected_by: ["RATE_CONSTANT", "surface_area", "SURFACE_AREA_VOL_FRAC_POWER", "LONGITUDINAL_DISPERSIVITY"]
+    notes: >
+      [data: 3360 distinct; all negative; last -1.29950 mol]. CAUTION: a further
+      -0.236492 mol leaves through the top_recharge face by diffusion into the
+      imposed rainwater composition -- 18 % of the east-face export. A budget
+      that treats the top face as input-only is wrong by that much.
+    _source: "ai-draft-verified"
+
+  "east Na+ [mol]":
+    category: solute
+    description: >
+      Cumulative Na export. Glass carries 0.26 Na/mol
+      [db: savannah_river.dat:2649].
+    affected_by: ["RATE_CONSTANT", "vol_frac"]
+    notes: >
+      [data: 3360 distinct; all negative; last -1.66934 mol]. Na is the
+      CHARGE-BALANCE component in both constraints (type Z)
+      [deck: pflotran.in:396, :419], so its deck value is a solver initial
+      guess, not an imposed concentration: the charge-balance branch seeds the
+      free concentration from it and comments it "just a guess"
+      [src: reaction.F90:1550-1553], then replaces that component's residual row
+      with the charge-balance sum [src: reaction.F90:1721-1732]. Do not
+      calibrate it as a composition.
+    _source: "ai-draft-verified"
+
+  "east HPO4-- [mol]":
+    category: solute
+    description: >
+      Cumulative P export -- the nutrient-release target, and the stream that
+      matters most for the eventual EcoSIM coupling. Glass carries 0.03
+      HPO4/mol [db: savannah_river.dat:2649]; Hydroxylapatite is the
+      precipitation sink.
+    affected_by: ["RATE_CONSTANT", "vol_frac", "surface_area"]
+    notes: >
+      [data: 3360 distinct; all negative; last -0.0671465 mol. Hydroxylapatite
+      grows from 1.99e-07 to 0.0146062 mol; at 3.0 HPO4 per mol
+      [db: savannah_river.dat:2704] that is a 0.0438 mol P sink, 65.3 % of the
+      export -- NOT 22 %. Compare moles-of-ELEMENT, never moles-of-mineral].
+    _source: "ai-draft-verified"
+
+  "east Al+++ [mol]":
+    category: solute
+    description: >
+      Cumulative Al export. Strongly buffered: glass releases 0.62 Al/mol
+      [db: savannah_river.dat:2649] but almost all of it is captured by
+      secondary Al phases, so the exported fraction is small and is a sensitive
+      indicator of the precipitation sinks rather than of dissolution.
+    affected_by: ["RATE_CONSTANT", "AFFINITY_THRESHOLD"]
+    notes: >
+      [data: 3360 distinct; all negative; last -0.0102078 mol -- a factor 233
+      (2.4 orders of magnitude) below the 2.3753 mol stoichiometric release
+      implied by the glass loss. The Al budget CLOSES on the two secondary
+      sinks to 4 s.f.: Proto-Imogolite 0.101056 x 2.0 + Montmor-Mg 1.29510 x
+      1.67 + 0.0102 exported = 2.375 mol].
+    _source: "ai-draft-verified"
+
+  "east H+ [mol]":
+    category: solute
+    description: >
+      Cumulative H+ component export -- the acidity/pH signal, and the ONE
+      coupler solute column in this run whose sign is positive.
+    affected_by: ["RATE_CONSTANT", "value"]
+    notes: >
+      [data: 3360 distinct; ALL POSITIVE; last +5.13701 mol]. It is not a
+      sign-convention exception -- it is the H+ BASIS. In a total-component
+      formulation the H+ component of an alkaline water is NEGATIVE (measured
+      AQUEOUS total H at row 0: -0.0352 mol), so exporting it registers as a
+      positive flux under the same positive-is-into-domain rule.
+      CAUTION: do NOT cite `Global H+` as the evidence for this. That column is
+      -35241.77 mol and is almost entirely MINERAL-BOUND H, six orders of
+      magnitude larger than the aqueous term that governs the sign.
+      Glass dissolution consumes H+ (-4.38 H+ per mol
+      [db: savannah_river.dat:2649]). This column is the counterexample that
+      makes a blanket "all solute couplers are negative" rule unsafe.
+    _source: "ai-draft-verified"
+
+  "Global Glass_FB [mol]":
+    category: mineral
+    description: >
+      Basaltic-glass inventory. THE ONLY primary phase with a measurable
+      dissolution signal in this run, and therefore the only primary-phase
+      depletion target available.
+    affected_by: ["RATE_CONSTANT", "surface_area", "vol_frac", "SURFACE_AREA_VOL_FRAC_POWER"]
+    notes: >
+      [data: 3360 distinct; 3841.8153 -> 3837.98423 mol, delta -3.83107 mol over
+      70 days = -0.0997 % of the pool]. Contrast Labradorite and Olivine, which
+      are exactly constant, and Diopside, whose relative change is 1.9e-07 --
+      see the surface_area entry for the quantified reason.
+    _source: "ai-draft-verified"
+
+  "Global Proto-Imogolite [mol]":
+    category: mineral
+    description: >
+      Secondary Al phase -- a precipitation sink controlling dissolved Al and
+      Si. Grows from a 1e-10 seed volume fraction [deck: pflotran.in:440].
+    affected_by: ["RATE_CONSTANT", "SURFACE_AREA_POROSITY_POWER"]
+    notes: >
+      [data: 3360 distinct; 3.46202e-04 -> 0.101056 mol, a 292x increase].
+      Its kinetics run on the SIMPLE rate path -- no COMPLEX-selecting card is
+      set for it [deck: pflotran.in:268-274].
+    _source: "ai-draft-verified"
+
+  "Global Ferrihydrite [mol]":
+    category: mineral
+    description: >
+      Secondary Fe phase and the largest secondary precipitation signal in the
+      run -- the most responsive precipitation-side target.
+    affected_by: ["RATE_CONSTANT", "SURFACE_AREA_POROSITY_POWER"]
+    notes: >
+      [data: 3360 distinct; 4.15234e-04 -> 1.45061 mol, a 3494x increase.
+      Its RATE_CONSTANT of -5.8636 [deck: pflotran.in:277] is the second
+      fastest in the deck].
+    _source: "ai-draft-verified"
+
+  "Global Water Mass in Liquid Phas [kg]":
+    category: water_flux
+    description: >
+      Domain water storage -- the closest model analogue to the LEO load-cell
+      weighing-lysimeter signal, and therefore a high-value target for the
+      full-hillslope case even though miniLEO is a bench column.
+    affected_by: ["POROSITY", "LIQUID_RESIDUAL_SATURATION", "LIQUID_SATURATION", "M", "ALPHA"]
+    notes: >
+      HEADERS ARE TRUNCATED TO 32 CHARACTERS, systematically -- this one reads
+      "Phas", not "Phase" (source writes the full 'Global Water Mass in Liquid Phase' at
+      [src: output_observation.F90:2464, 2467, 2476, 2496] -- one per flow
+      mode -- and the field is then truncated on write). 25 headers in this file are
+      truncated, several mid-token, e.g. "top_recharge SiO2(aq) (gas phase"
+      loses its closing paren. Match the LITERAL column text, and expect the
+      32-char rule rather than treating this as a one-off.
+      [data: 3360 distinct; 235.308 to 305.474 kg]. NOTE this is a STORAGE
+      state that oscillates, not a monotone cumulative integral -- the output
+      parser's `is_cumulative` returns True for it, which is a defect in the
+      parser, not a property of the column.
+    _source: "ai-draft-verified"
+
+  "top_recharge Water Mass [kg/h]":
+    category: water_flux
+    description: >
+      Applied rainfall flux entering the top face. THE FORCING, NOT A TARGET --
+      it is read from a file [deck: pflotran.in:488] and is not a model
+      prediction.
+    affected_by: []
+    notes: >
+      [data: only 175 distinct values in 3360 rows -- the rainfall series is
+      piecewise constant and mostly zero; range -0.0 to 33.4526 kg/h; positive,
+      confirming the into-domain convention on the same face where `east` is
+      negative]. Useful as an input-integrity check on an ensemble member: if
+      this column differs between members, the forcing was perturbed and the
+      member is not comparable.
+    _source: "ai-draft-verified"
+
+# =============================================================================
+# PARAMETERS
+# =============================================================================
+
+parameters:
+
+  # ---------------- mineral kinetics ---------------------------------------
+
+  RATE_CONSTANT:
+    category: mineral_kinetics
+    controls: ["TST_Mineral_Kinetics"]
+    affects: ["east Ca++ [mol]", "east SiO2(aq) [mol]", "east HPO4-- [mol]", "Global Glass_FB [mol]", "Global Ferrihydrite [mol]"]
+    related_to: ["surface_area", "vol_frac", "AFFINITY_THRESHOLD"]
+    calibration_notes: |
+      Kinetic rate constant, one per kinetic mineral -- 10 in this deck
+      [deck: pflotran.in:239, 246, 253, 260, 269, 277, 285, 293, 300, 307].
+
+      IT SETS TWO INTERNAL CONSTANTS AT ONCE. The plain card writes BOTH the
+      dissolution and the precipitation rate constant; PRECIPITATION_RATE_CONSTANT
+      and DISSOLUTION_RATE_CONSTANT set them independently
+      [src: reaction_mineral.F90:159-173, both assigned at :167-168]. If a
+      hypothesis needs the two directions decoupled, those sibling cards are
+      the way to do it.
+
+      CRITICAL SIGN CONVENTION. A NEGATIVE value is reinterpreted as log10(k):
+      `if (rate_constant < 0.d0) rate_constant = 10.d0**rate_constant`
+      [src: reaction_mineral.F90:562-564]. So RATE_CONSTANT -12.6349 means
+      10^-12.6349, NOT a negative rate. The transform happens BEFORE the units
+      conversion, whose internal target is mol/m^2-sec
+      [src: reaction_mineral.F90:567].
+
+      CONSEQUENCE FOR SAMPLING: sample in LOG SPACE (i.e. sample the negative
+      number the deck actually carries). Sampling a linear range that crosses
+      zero silently switches interpretation mid-ensemble.
+
+      PRIOR (unverified): likely the primary lever on weathering-solute export.
+      Requires a Phase-1 Morris run to confirm.
+    _source: "ai-draft-verified"
+
+  surface_area:
+    category: mineral_kinetics
+    controls: ["TST_Mineral_Kinetics", "Reactive_Surface_Area_Evolution"]
+    affects: ["east SiO2(aq) [mol]", "east Ca++ [mol]", "Global Glass_FB [mol]"]
+    related_to: ["RATE_CONSTANT", "vol_frac", "SURFACE_AREA_POROSITY_POWER"]
+    calibration_notes: |
+      Initial specific surface area -- the THIRD column of a CONSTRAINT/MINERALS
+      row, after the mineral name and the volume fraction
+      [deck: pflotran.in:434-451; src: transport_constraint_rt.F90:508-548].
+      It reaches the rate through `mnrl_area`, which is
+      max(mnrl_area0, surf_area_epsilon) * porosity_scale * volfrac_scale
+      [src: reaction_mineral.F90:2068-2071], and that product multiplies the
+      rate [src: reaction_mineral.F90:1278-1281]. Both scales are ~1 here (see
+      SURFACE_AREA_POROSITY_POWER), so in practice it is degenerate with
+      RATE_CONSTANT unless one is held fixed -- but it is NOT a direct
+      identity, and on a case where the scales move it would not be.
+
+      TRAP 1 -- INTERNAL UNITS ARE BRANCH-DEPENDENT ON AN OPTIONAL 4th TOKEN.
+      The units token is optional; when absent the default is 'm^2/m^3'
+      [src: transport_constraint_rt.F90:549-556]. Three branches
+      [src: reaction_mineral.F90:997-1006]:
+          ends with 'm^3_mnrl' -> m^2 mnrl / m^3 mnrl
+          ends with 'g'        -> m^2 mnrl / kg mnrl   (MASS basis)
+          ends with 'm^3'      -> m^2 mnrl / m^3 BULK  (the no-token default)
+      An unrecognised string is a hard error, not a silent fallback
+      [src: reaction_mineral.F90:1007-1011].
+
+      TRAP 2 -- ON THE MASS BRANCH, surface_area AND vol_frac ARE COUPLED.
+      The mass branch converts m^2/kg -> m^2/m^3 mnrl via molar_weight /
+      molar_volume [src: reaction_mineral.F90:1054], then multiplies by THE
+      ROW'S OWN VOLUME FRACTION to reach m^2/m^3 bulk
+      [src: reaction_mineral.F90:1058-1063]. So for any mass-token row,
+      perturbing vol_frac ALSO scales the reactive surface area. They are not
+      independent design variables. 7 of the 10 rows in this deck are on that
+      branch [deck: pflotran.in:437, 440, 443, 446, 449, 450, 451].
+
+      TRAP 3 -- THIS DECK MIXES THE TWO CONVENTIONS ACROSS ROWS OF ONE BLOCK.
+      (An earlier draft claimed this mixing is WHY three of the four primary
+      minerals are inert. That causal claim is WRONG and is retracted -- see the
+      counterfactual below. The mixing is real and matters for a writer; it is
+      not the cause of the inertness.) Labradorite, Diopside_78_FB and
+      Olivine carry a BARE NUMBER [deck: pflotran.in:434, 435, 436], so they are
+      read as m^2/m^3 BULK and used as-is. Glass_FB and all six secondary phases
+      carry `cm^2/g` and go through the mass branch. Working the arithmetic
+      through with molar volumes and weights from the database
+      [db: savannah_river.dat:2649, 2750, 2628, 2556]:
+
+          mineral          token     A [m^2/m^3 bulk]   k*A        rel. to glass
+          Glass_FB         cm^2/g       2.734e+06     6.337e-07      1
+          Labradorite      (none)         520         7.286e-14      1.15e-07
+          Olivine          (none)         307         6.432e-13      1.01e-06
+          Diopside_78_FB   (none)         600         3.062e-11      4.83e-05
+
+      Scaling the measured glass loss by those ratios PREDICTS losses of
+      4.4e-07, 3.9e-06 and 1.85e-04 mol respectively. MEASURED
+      [data: pflotran-mas.dat]: Labradorite and Olivine are EXACTLY constant
+      (1 distinct value in 3360 rows, below the file's ~1e-05 print resolution
+      on a 1410 / 1665 mol pool) and Diopside changes by -9.9e-05 mol. The
+      Diopside prediction and measurement agree to a factor of 1.9, which closes
+      the explanation.
+
+      COUNTERFACTUAL -- WHAT IF THE THREE BARE ROWS WERE READ AS cm^2/g?
+      Re-running the same arithmetic on that basis gives A = 2.014e+04, 7.73e+03
+      and 6.95e+03 m^2/m^3 bulk (gains of 38.7x, 25.2x, 11.6x), and predicted
+      losses of 1.7e-05, 9.8e-05 and 2.1e-03 mol -- relative changes of 1.2e-08,
+      5.9e-08 and 4.2e-06, still three to five orders of magnitude below this
+      seed's own adoption gate. And reading them at the deck comment's literal
+      intent (`!0.92*0.0005 m^2/g` = 4.6 cm^2/g) gives A = 178, 116, 53, which
+      is 2.9x/2.6x/11.3x SMALLER than today. EITHER WAY the three stay inert.
+
+      THE REAL CAUSE is the k*A product, and it is dominated by the rate
+      constants and the specific areas, not by the unit basis: the three are
+      4.6x, 110x and 1600x below glass in k [deck: pflotran.in:246, :253, :260
+      vs :239] and 53x-104x below it in specific area on a common basis. The
+      practical consequence for a calibrator is unchanged and is the point worth
+      keeping: SAMPLING THE THREE PRIMARY MINERALS' RATE CONSTANTS MOVES
+      NOTHING MEASURABLE in this configuration.
+
+      RUNTIME CONFIRMATION, which is stronger than either the source read or
+      the arithmetic: PFLOTRAN echoes every defaulted card into its own run log,
+      and the real run logged the surface-area units default for EXACTLY those
+      three minerals and no others
+      [log: pflotran.out:67, :69, :71 -- "Labradorite / Diopside_78_FB /
+      Olivine SPECIFIC_SURFACE_AREA UNITS set to default value"]. That is the
+      model itself reporting which rows took the bulk-volume default.
+
+      The deck's own trailing comments on those three rows read `!0.92*0.0005
+      m^2/g`, i.e. a MASS-basis intent, while the values supplied are bare
+      numbers read on the BULK-volume basis. WHETHER THAT IS DELIBERATE OR A
+      DECK BUG IS A QUESTION FOR THE MODELLING TEAM -- this seed states the
+      measured consequence, it does not adjudicate the intent. Worth showing
+      them: resolving it in the direction the comments indicate makes the three
+      MORE inert, not less.
+    _source: "ai-draft-verified"
+
+  vol_frac:
+    category: mineral_kinetics
+    controls: ["TST_Mineral_Kinetics", "Porosity_Permeability_Feedback", "Reactive_Surface_Area_Evolution"]
+    affects: ["Global Glass_FB [mol]", "east Na+ [mol]", "Global Water Mass in Liquid Phas [kg]"]
+    related_to: ["surface_area", "POROSITY"]
+    calibration_notes: |
+      Initial mineral volume fraction -- the SECOND column of a
+      CONSTRAINT/MINERALS row [deck: pflotran.in:434-451;
+      src: transport_constraint_rt.F90:514-530]. A constraint that DECLARES a
+      MINERALS block must give a row for every kinetic mineral, present or not
+      [src: transport_constraint_rt.F90:562-570] -- but a constraint may omit
+      the block entirely, and this deck's `CONSTRAINT top` does
+      [deck: pflotran.in:387-409] while `CONSTRAINT initial` carries it
+      [deck: pflotran.in:410-454]. Do not generate ten rows into every
+      constraint.
+
+      COUPLING 1 -- TO POROSITY, ABSOLUTELY. With UPDATE_POROSITY set
+      [deck: pflotran.in:323] the operative porosity is recomputed as
+      max(1 - sum(all kinetic mineral volume fractions), minimum_porosity)
+      [src: realization_subsurface.F90:2226-2227], NOT incrementally -- the
+      incremental alternative is present but commented out in source
+      [src: realization_subsurface.F90:2229-2232]. minimum_porosity defaults to
+      0 [src: reaction_aux.F90:521].
+
+      So if the volume fractions do not sum to 1 - phi_0, POROSITY JUMPS at the
+      first reactive step. In this deck they sum to
+      0.144+0.033+0.077+0.356 + 6x1e-10 = 0.610 against POROSITY 0.39
+      [deck: pflotran.in:434-451, :552], which is consistent -- the jump is
+      zero. VERIFY THIS INVARIANT FOR EVERY SAMPLED MEMBER: perturbing any
+      vol_frac breaks it unless the perturbation is renormalised or POROSITY is
+      moved with it.
+
+      COUPLING 2 -- TO surface_area, for the 7 mass-token rows. See the
+      surface_area entry, TRAP 2.
+
+      These two couplings together mean vol_frac is the LEAST independent knob
+      in the deck. Treat a vol_frac perturbation as a joint move on
+      (vol_frac, porosity, reactive area), or hold it fixed.
+    _source: "ai-draft-verified"
+
+  SURFACE_AREA_POROSITY_POWER:
+    category: mineral_kinetics
+    controls: ["Reactive_Surface_Area_Evolution"]
+    affects: ["Global Proto-Imogolite [mol]", "Global Ferrihydrite [mol]"]
+    related_to: ["surface_area", "POROSITY", "SURFACE_AREA_VOL_FRAC_POWER"]
+    calibration_notes: |
+      Exponent on the porosity ratio in the surface-area update. 0.667 on all
+      ten minerals in this deck [deck: pflotran.in:242, 249, 256, 263, 271, 279,
+      287, 295, 302, 309].
+
+      TRAP -- DESPITE THE NAME, THE RATIO USES THE SOLID FRACTION:
+          porosity_scale = ((1 - phi_base) / (1 - phi_0)) ** power
+      [src: reaction_mineral.F90:2052-2055]. The sign of its effect is therefore
+      OPPOSITE to the naive reading: as porosity INCREASES (dissolution), the
+      solid fraction falls and the scale factor falls, so the reactive area
+      SHRINKS. A calibrator who assumes "more porosity -> more area" will get
+      the sign of this knob backwards.
+
+      Active only when the mineral's SURFACE_AREA_FUNCTION includes a porosity
+      term -- POROSITY_RATIO or POROSITY_VOLUME_FRACTION_RATIO
+      [src: reaction_mineral.F90:2036-2050]. Both cases occur in this deck.
+
+      MAGNITUDE CAVEAT, and it matters more than the sign trap. In THIS
+      configuration the porosity barely moves: the mineral volume-fraction sum
+      goes 0.60999993 -> 0.61034404 over 70 days, so porosity_base goes
+      0.39000 -> 0.38966 and the ratio (1-phi_base)/(1-phi_0) is 1.000564.
+      Sweeping the exponent 0.1 -> 3.0 (a 30x change) moves porosity_scale only
+      1.000056 -> 1.001693 -- a 0.16 % swing in reactive area. It will therefore
+      read as near-zero Morris sensitivity for reasons of this deck's dynamics,
+      NOT because of the sign trap. Do not conclude "insensitive parameter"
+      from that; conclude "insensitive in this configuration".
+    _source: "ai-draft-verified"
+
+  SURFACE_AREA_VOL_FRAC_POWER:
+    category: mineral_kinetics
+    controls: ["Reactive_Surface_Area_Evolution"]
+    affects: ["Global Glass_FB [mol]", "east SiO2(aq) [mol]"]
+    related_to: ["SURFACE_AREA_POROSITY_POWER", "vol_frac"]
+    calibration_notes: |
+      Exponent on the mineral volume-fraction ratio in the surface-area update.
+      Set only on the four PRIMARY minerals, which use SURFACE_AREA_FUNCTION
+      POROSITY_VOLUME_FRACTION_RATIO [deck: pflotran.in:243, 250, 257, 264];
+      the six secondary phases use POROSITY_RATIO and have no such card
+      [deck: pflotran.in:270, 278, 286, 294, 301, 308].
+
+      Controls how reactive area shrinks as a phase is consumed; the exponent
+      is applied at [src: reaction_mineral.F90:2057-2064] and the resulting
+      scale enters the area at [src: reaction_mineral.F90:2068-2071].
+
+      SAME MAGNITUDE CAVEAT as SURFACE_AREA_POROSITY_POWER: glass's volume
+      fraction moves by a factor 0.999003 over the run, so sweeping the
+      exponent 0.1 -> 3.0 moves volfrac_scale only 0.999900 -> 0.997011, a
+      0.29 % swing. Given that Glass_FB is also the only primary phase that
+      measurably reacts here (see surface_area TRAP 3), this knob is close to
+      inert in THIS configuration.
+    _source: "ai-draft-verified"
+
+  AFFINITY_THRESHOLD:
+    category: mineral_kinetics
+    controls: ["TST_Mineral_Kinetics"]
+    affects: []          # measured: no primary ever precipitates, so it never binds
+    related_to: ["RATE_CONSTANT"]
+    calibration_notes: |
+      A PRECIPITATION-ONLY GATE, not a general rate suppressor: the rate
+      returns early only on the precipitation branch,
+      `if (precipitation .and. QK < affinity_threshold) return`
+      [src: reaction_mineral.F90:1431-1434; the card's own comment at :182
+      reads "read affinity threshold for precipitation"]. Dissolution is never
+      gated. In effect a dissolution-only switch.
+
+      Set to 1.d10 on the FOUR PRIMARY minerals
+      [deck: pflotran.in:240, 247, 254, 261]. On the six secondaries it is
+      COMMENTED OUT on three [deck: pflotran.in:272, 280, 288] and ABSENT
+      ENTIRELY on the other three -- Calcite, Montmor-Mg, Hydroxylapatite
+      [deck: pflotran.in:292-297, 299-304, 306-311]. Either way all six run
+      SIMPLE.
+
+      IT IS A BINARY SENTINEL, NOT A CONTINUOUS KNOB. Any value above the
+      achievable QK blocks precipitation identically, so 1.d10 and the
+      commented-out alternative 1.d0 are two REGIMES, not two points on a
+      range. Sampling it on a continuous interval produces a step function.
+
+      IN THIS DECK IT HAS NO NUMERICAL EFFECT AT ALL, and an earlier draft
+      wrongly gave it `affects: [east Al+++, Global Glass_FB]`. Measured: no
+      primary mineral ever increases across the 3359 steps, so the
+      precipitation branch never fires and the gate never binds. And the
+      routine flip it causes is numerically null here -- with no Temkin
+      constant, scale factor, prefactor, activation energy, rate limiter or
+      AFFINITY_POWER set, COMPLEX reduces line-for-line to SIMPLE
+      (`affinity_factor = 1-QK` at [src: reaction_mineral.F90:1419-1420]
+      equals [src: reaction_mineral.F90:1259]; arrhenius_factor = 1 because the
+      activation energy is zeroed at [src: reaction_database.F90:2525]; and
+      [src: reaction_mineral.F90:1519] equals [src: reaction_mineral.F90:1281]).
+      Its value here is STRUCTURAL -- it silently selects the rate routine --
+      not as a lever.
+
+      LOAD-BEARING SIDE EFFECT -- IT SILENTLY SELECTS THE RATE ROUTINE.
+      Setting ANY of six cards -- ACTIVATION_ENERGY, a prefactor, the Temkin
+      constant, the mineral scale factor, AFFINITY_THRESHOLD, or the rate
+      limiter -- flips the mineral from the SIMPLE to the COMPLEX TST routine
+      [src: reaction_database.F90:2519-2565, flag set at :2562 / :2564;
+      dispatch at reaction_mineral.F90:1174-1180].
+
+      In THIS deck that means the four primaries run on COMPLEX
+      (ReactionMnrlKineticRateTST) and the six secondaries on SIMPLE
+      (ReactionMnrlKineticRateTSTSimple).
+
+      RELATED TRAP, AND v0.1 GOT THIS WRONG. AFFINITY_POWER is NOT one of the
+      six selector cards, so setting AFFINITY_POWER *alone* leaves a mineral on
+      SIMPLE, whose rate expression has no exponent
+      [src: reaction_mineral.F90:1281] -- the value is then inert and would show
+      zero Morris sensitivity that looks like physics. BUT on the COMPLEX path
+      it IS applied [src: reaction_mineral.F90:1512-1520], gated on the array
+      being allocated, which happens only if some mineral actually set the card
+      [src: reaction_database.F90:2058-2074, default 1.0 at :2073].
+      So the correct statement for THIS deck is: AFFINITY_POWER would be LIVE on
+      the four primaries (already on COMPLEX) and INERT on the six secondaries.
+      v0.1's blanket "sampling AFFINITY_POWER alone yields zero sensitivity" is
+      false for the primaries.
+
+      Also note a hard incompatibility: a rate limiter cannot be combined with
+      any AFFINITY_POWER != 1 [src: reaction_database.F90:2569-2579].
+    _source: "ai-draft-verified"
+
+  # ---------------- water retention ----------------------------------------
+
+  M:
+    category: water_retention
+    controls: ["Van_Genuchten_WRM", "Mualem_Relative_Permeability"]
+    affects: ["east Water Mass [kg/h]", "Global Water Mass in Liquid Phas [kg]"]
+    related_to: ["ALPHA", "LIQUID_RESIDUAL_SATURATION"]
+    calibration_notes: |
+      van Genuchten m -- retention-curve sharpness. n = 1/(1-m) is DERIVED
+      [src: characteristic_curves_common.F90:860], so m and n are one degree of
+      freedom, not two.
+
+      SCOPE CORRECTION vs v0.1: there is no N card IN THIS DECK, but `case('N')`
+      DOES exist in the model [src: characteristic_curves.F90:926, :1780, :1797]
+      -- other curve types accept it. Scope the claim to the deck.
+
+      TRAP -- THREE INDEPENDENT DECK ADDRESSES, ONE PHYSICAL QUANTITY.
+      M is specified separately in SATURATION_FUNCTION
+      [deck: pflotran.in:570], in PERMEABILITY_FUNCTION MUALEM_VG_LIQ
+      [deck: pflotran.in:575] and in PERMEABILITY_FUNCTION MUALEM_VG_GAS
+      [deck: pflotran.in:582]. They are genuinely separate storage on separate
+      objects: three distinct derived types, each declaring its own `m` --
+      `sat_func_vg_type` [src: characteristic_curves_common.F90:35-38],
+      `rpf_mualem_vg_liq_type` [src: characteristic_curves_common.F90:148-157],
+      `rpf_mualem_vg_gas_type` [src: characteristic_curves_common.F90:159-165].
+      All three are live: Pc at [src: characteristic_curves_common.F90:867],
+      liquid smoothing polynomials at
+      [src: characteristic_curves_common.F90:3193-3200], gas rel-perm at
+      [src: characteristic_curves_common.F90:3409]. A calibration layer MUST
+      write all three together unless decoupling them is the deliberate intent,
+      and the A2MC write path must therefore treat one logical knob as three
+      addresses.
+
+      WORSE THAN JUST "NO GUARD": `RPFMualemVGGasInit`
+      [src: characteristic_curves_common.F90:3322-3335] never initialises its
+      own `m` to UNINITIALIZED_DOUBLE, and `RPFMualemVGGasVerify`
+      [src: characteristic_curves_common.F90:3339-3362] never checks it -- so a
+      deck that OMITS M from MUALEM_VG_GAS runs on uninitialised memory with no
+      diagnostic at all.
+
+      THERE IS NO GUARD ON INCONSISTENCY. The one consistency check that exists
+      composes its warning into option%io_buffer and NEVER PRINTS IT
+      [src: characteristic_curves.F90:2356-2364] -- and it compares the residual
+      saturations, not M. An inconsistent deck runs silently.
+
+      RANGE CHECKING -- THIS DECK HAS NONE, and the reason is subtler than an
+      earlier draft said.
+      LOOP_INVARIANT is a DECK CARD (representative sites
+      [src: characteristic_curves.F90:533, 609, 650, 685, 725, 765], ~30 in
+      all), NOT a build flag: there are ZERO `#ifdef LOOP_INVARIANT` sites in
+      the tree. THIS DECK DOES NOT SET IT, so the default van Genuchten path
+      runs, and that path range-checks NOTHING -- its Verify routines test only
+      for UNINITIALIZED values
+      [src: characteristic_curves_common.F90:796-803;
+      characteristic_curves_base.F90:147-151].
+
+      CORRECTION vs an earlier draft, which said the card would not help
+      anyway: it WOULD. The loop-invariant path carries an explicit range check
+      on exactly ALPHA, M and Sr
+      [src: characteristic_curves_loop_invariant.F90:476-478] and the
+      constructor acts on a failure [src: :603-606]. It is fatal rather than
+      diagnostic (it nullifies the object and then dereferences it at
+      [src: :607]), so it is a crash, not a message -- but it is not silent.
+      NONE OF WHICH CHANGES THE OPERATIONAL RULE: this deck does not set the
+      card, so ENFORCE BOUNDS AT SAMPLING TIME.
+    _source: "ai-draft-verified"
+
+  ALPHA:
+    category: water_retention
+    controls: ["Van_Genuchten_WRM"]
+    affects: ["east Water Mass [kg/h]", "Global Water Mass in Liquid Phas [kg]"]
+    related_to: ["M", "LIQUID_RESIDUAL_SATURATION"]
+    calibration_notes: |
+      van Genuchten alpha -- the inverse air-entry pressure, setting the
+      capillary-fringe thickness and therefore drainage timing.
+      0.000267 in this deck, at ONE address only
+      [deck: pflotran.in:571], unlike M and Sr.
+
+      UNITS ARE Pa^-1, derived from two cited lines rather than asserted (it is
+      still a two-step inference across two subsystems, but both steps are
+      cited, which is the difference from v0.1's appeal to a WIPP message):
+      alpha appears as a DIVISOR of a capillary pressure,
+      Pc = (Se**(-1/m) - 1)**(1/n) / alpha
+      [src: characteristic_curves_common.F90:867], and PFLOTRAN's internal
+      pressure unit is Pa [src: condition.F90:2296-2297, internal_units='Pa'].
+      (v0.1 called this "inferred" from a WIPP message; it is not, it is two
+      cited lines.)
+
+      NO UNIT CONVERSION HAPPENS ON READ: the reader takes a bare double and
+      stores it, with no units token and no conversion
+      [src: characteristic_curves.F90:529-532]. A value supplied in cm^-1 or
+      m^-1 will run silently and be wrong by orders of magnitude.
+    _source: "ai-draft-verified"
+
+  LIQUID_RESIDUAL_SATURATION:
+    category: water_retention
+    controls: ["Van_Genuchten_WRM", "Mualem_Relative_Permeability"]
+    affects: ["east Water Mass [kg/h]", "Global Water Mass in Liquid Phas [kg]"]
+    related_to: ["M", "GAS_RESIDUAL_SATURATION"]
+    calibration_notes: |
+      Residual liquid saturation -- the lower clamp on effective saturation.
+      Se = (Sl - Sr)/(1 - Sr), and below Sr the capillary pressure is pinned to
+      pcmax [src: characteristic_curves_common.F90:852-854, :863-864].
+
+      TRAP -- THREE INDEPENDENT DECK ADDRESSES, ALL LIVE.
+      [deck: pflotran.in:572 (SATURATION_FUNCTION), :576 (MUALEM_VG_LIQ),
+      :580 (MUALEM_VG_GAS)], all 0.02 here.
+
+      v0.1 CLAIMED one copy "propagates downstream" and the others do not. THAT
+      IS FALSE. The function it named, CharCurvesGetGetResidualSats, is DEAD
+      CODE -- its only occurrences in the tree are its own declaration, its
+      module export and its internal self-references
+      [src: characteristic_curves.F90:38, :2098-2216]; there are ZERO call
+      sites. Both copies are live in DIFFERENT physics: the
+      saturation-function Sr drives the Pc<->S map, the rel-perm Sr drives
+      relative permeability. WRITE ALL THREE.
+
+      The consistency check that WOULD warn when the two disagree is also dead
+      -- it sets option%io_buffer and never prints
+      [src: characteristic_curves.F90:2356-2364].
+    _source: "ai-draft-verified"
+
+  GAS_RESIDUAL_SATURATION:
+    category: water_retention
+    controls: ["Mualem_Relative_Permeability"]
+    affects: ["east Water Mass [kg/h]"]
+    related_to: ["LIQUID_RESIDUAL_SATURATION"]
+    calibration_notes: |
+      Residual gas saturation. 0.0 in this deck, at one address
+      [deck: pflotran.in:581].
+
+      SCOPE -- TRUE OF THE MODEL, BUT v0.1 WAS RIGHT ABOUT THIS DECK. There are
+      30 `case('GAS_RESIDUAL_SATURATION')` sites in
+      [src: characteristic_curves.F90], spanning BRAGFLO/KRP, Brooks-Corey,
+      modified-Corey and table types as well as permeability functions. BUT
+      among the curve types THIS DECK instantiates it is accepted only under
+      MUALEM_VG_GAS [src: characteristic_curves.F90:1277]; it is absent from
+      the `sat_func_vg_type` case list, whose `case default`
+      [src: characteristic_curves.F90:541-543] is a hard error. So v0.1's
+      "MUALEM_VG_GAS only" was correct AT DECK SCOPE, and calling it a scope
+      error was itself a scope error. State both levels.
+
+      THE CARD IS MANDATORY once MUALEM_VG_GAS is used: `RPFMualemVGGasVerify`
+      errors out if it is uninitialised
+      [src: characteristic_curves_common.F90:3356-3360]. A writer that drops it
+      gets a hard stop.
+
+      At its deck value of 0.0 it CONTRIBUTES nothing, but it is not inert
+      code: it sits in Se = (Sl - Sr)/(1 - Sr - Srg)
+      [src: characteristic_curves_common.F90:3395] and in dSe_sat
+      [src: characteristic_curves_common.F90:3414], so any sampled non-zero
+      value acts immediately.
+      PRIOR (unverified): a poor first-round candidate for that reason.
+    _source: "ai-draft-verified"
+
+  # ---------------- permeability / porosity --------------------------------
+
+  PERM_ISO:
+    category: permeability
+    # NOT Seepage_Face_Boundary: permeability changes the FLUX through that face
+    # but does not control the mechanism, whose clamp is armed by the BC type.
+    controls: ["Porosity_Permeability_Feedback"]
+    affects: ["east Water Mass [kg/h]", "east Water Mass [kg]"]
+    related_to: ["POROSITY", "PERMEABILITY_POWER"]
+    calibration_notes: |
+      Isotropic intrinsic permeability [m^2]. 1.188d-11 in this deck
+      [deck: pflotran.in:554]. Anisotropic alternatives (PERM_X/Y/Z) exist but
+      are unused here.
+
+      It is the REFERENCE permeability, not the operative one: with
+      UPDATE_PERMEABILITY set [deck: pflotran.in:324] the operative value is
+      PERM_ISO x scale, where scale is the thresholded porosity power law
+      [src: realization_subsurface.F90:2062-2070]. Sample PERM_ISO in LOG SPACE
+      -- it spans orders of magnitude and a linear range wastes most of the
+      design on hydraulically indistinguishable members.
+
+      PRIOR (unverified): likely the first-order control on drainage timing and
+      peak flow. Requires a Phase-1 Morris run to confirm.
+    _source: "ai-draft-verified"
+
+  POROSITY:
+    category: porosity
+    # Advection_Dispersion_Diffusion is deliberately ABSENT: with UPDATE_POROSITY
+    # the Millington-Quirk scaling uses the RECOMPUTED porosity, so this card
+    # stops controlling diffusion after the first reactive step (see the TRAP).
+    controls: ["Porosity_Permeability_Feedback"]
+    affects: ["Global Water Mass in Liquid Phas [kg]", "east Water Mass [kg/h]"]
+    related_to: ["vol_frac", "PERMEABILITY_CRITICAL_POROSITY"]
+    calibration_notes: |
+      Bulk porosity, 0.39 in this deck [deck: pflotran.in:552].
+
+      TRAP -- WITH UPDATE_POROSITY SET, THIS CARD HAS TWO DISTINCT ROLES AND IS
+      NOT THE OPERATIVE POROSITY.
+      The operative (base) porosity is recomputed every reactive step as
+      max(1 - sum(kinetic mineral vol fracs), minimum_porosity)
+      [src: realization_subsurface.F90:2226-2227]. What the deck card sets is
+      the INITIAL/reference porosity phi_0: the card is read at
+      [src: material.F90:469] and flows to the field vector at
+      [src: init_subsurface.F90:488] (`por0_p(local_id) =
+      material_property%porosity`) and thence to POROSITY_INITIAL at
+      [src: init_subsurface.F90:677-680]. Both denominators below read
+      `field%porosity0` directly. phi_0 persists as the DENOMINATOR
+      in two separate places:
+        (a) the permeability scaling,
+            ((phi_base - phi_crit)/(phi_0 - phi_crit))**power
+            [src: realization_subsurface.F90:2062-2067], and
+        (b) the reactive-surface-area porosity ratio,
+            ((1-phi_base)/(1-phi_0))**power
+            [src: reaction_mineral.F90:2052-2055].
+
+      So perturbing POROSITY alone does NOT change the operative porosity for
+      long -- it changes the two reference denominators, and introduces a
+      DISCONTINUITY at step 1 unless the mineral volume fractions are moved to
+      match. See the vol_frac entry. Sample the pair jointly, or fix one.
+    _source: "ai-draft-verified"
+
+  PERMEABILITY_POWER:
+    category: permeability
+    controls: ["Porosity_Permeability_Feedback"]
+    affects: ["east Water Mass [kg/h]"]
+    related_to: ["PERMEABILITY_CRITICAL_POROSITY", "PERMEABILITY_MIN_SCALE_FACTOR"]
+    calibration_notes: |
+      Exponent in the porosity-permeability power law. 3.0 in this deck
+      [deck: pflotran.in:559]. The relation is
+      scale = ((phi_base - phi_crit) / (phi_0 - phi_crit)) ** power,
+      evaluated only when BOTH porosities exceed phi_crit, and otherwise zero
+      [src: realization_subsurface.F90:2061-2067].
+
+      The source contains NO kozeny or carman string -- calling this
+      Kozeny-Carman would be an invention.
+    _source: "ai-draft-verified"
+
+  PERMEABILITY_CRITICAL_POROSITY:
+    category: permeability
+    controls: ["Porosity_Permeability_Feedback"]
+    affects: ["east Water Mass [kg/h]"]
+    related_to: ["PERMEABILITY_POWER", "POROSITY"]
+    calibration_notes: |
+      Threshold porosity offset in the permeability scaling. 0.09 in this deck
+      [deck: pflotran.in:558].
+
+      HARD EDGE: if a sampled member drives phi_base to or below this value, the
+      power-law branch is skipped entirely and scale collapses to 0 before the
+      minimum-scale clamp [src: realization_subsurface.F90:2061-2070] -- i.e.
+      permeability drops to PERM_ISO x PERMEABILITY_MIN_SCALE_FACTOR. Keep the
+      sampled range comfortably below the porosity range, or the design contains
+      a cliff.
+    _source: "ai-draft-verified"
+
+  PERMEABILITY_MIN_SCALE_FACTOR:
+    category: permeability
+    controls: ["Porosity_Permeability_Feedback"]
+    affects: ["east Water Mass [kg/h]"]
+    related_to: ["PERMEABILITY_POWER", "PERMEABILITY_CRITICAL_POROSITY"]
+    calibration_notes: |
+      TRAP -- IT IS A LOWER BOUND AND IT DEFAULTS TO 1.0.
+      Applied as scale = max(permeability_min_scale_fac, scale)
+      [src: realization_subsurface.F90:2069-2070], read at
+      [src: material.F90:789-791], default set at [src: material.F90:195].
+
+      With the DEFAULT of 1.0, permeability can only ever INCREASE and clogging
+      is invisible -- a silent, easily-missed constraint on the whole
+      porosity-permeability feedback. This deck sets 1.15d-10
+      [deck: pflotran.in:560], which puts the floor at 1.15e-10 x 1.188e-11.
+
+      Any new case that OMITS this card gets the 1.0 floor and a
+      dissolution-only permeability response. Check for its presence before
+      trusting any porosity-permeability calibration.
+      PRIOR (unverified): 1.15d-10 reads as the idiom for effectively removing
+      the floor while avoiding an exact-zero (singular-Jacobian) permeability,
+      but the deck comment is bare and the author's intent is not documented.
+    _source: "ai-draft-verified"
+
+  # ---------------- transport ----------------------------------------------
+
+  LONGITUDINAL_DISPERSIVITY:
+    category: transport
+    controls: ["Advection_Dispersion_Diffusion"]
+    affects: ["east SiO2(aq) [mol]", "east Ca++ [mol]"]
+    related_to: ["DIFFUSION_COEFFICIENT"]
+    calibration_notes: |
+      Longitudinal dispersivity [m], 0.0458 in this deck
+      [deck: pflotran.in:556; src: material.F90:386].
+      SAME NO-CONVERSION HAZARD AS ALPHA: the reader takes a bare double with no
+      units token and no conversion [src: material.F90:387], unlike ROCK_DENSITY
+      and HEAT_CAPACITY two cards above [src: material.F90:379-380, :384-385].
+      A value supplied in cm runs silently.
+
+      PRIOR (unverified): affects the SHAPE of an outflow-chemistry time series
+      (breakthrough spreading) more than its time integral, so it is a poor
+      candidate if the targets are cumulative exports and a good one if they are
+      concentration hydrographs. Requires a Phase-1 Morris run to confirm.
+    _source: "ai-draft-verified"
+
+  DIFFUSION_COEFFICIENT:
+    category: transport
+    controls: ["Advection_Dispersion_Diffusion"]
+    affects: ["east SiO2(aq) [mol]"]
+    related_to: ["LONGITUDINAL_DISPERSIVITY", "vol_frac"]
+    calibration_notes: |
+      Molecular diffusion coefficient [m^2/s], set PER FLUID PHASE. This deck
+      has TWO FLUID_PROPERTY blocks -- PHASE LIQUID 1.d-9
+      [deck: pflotran.in:45-47] and PHASE GAS 1.d-5
+      [deck: pflotran.in:50-52].
+
+      OPEN PARSER DEFECT -- DO NOT SAMPLE THIS KNOB YET. Both blocks are
+      ANONYMOUS (no name token), distinguished only by an inner PHASE card, so
+      models/pflotran/parameter_parser.py collides them onto the single address
+      `FLUID_PROPERTY/DIFFUSION_COEFFICIENT` and only the LIQUID value survives
+      [verified this session: the parser reports 121 knobs, of which exactly one
+      is a DIFFUSION_COEFFICIENT, at deck line 47]. A discriminator for
+      anonymous blocks is tracked as an outstanding parser item
+      (20260730d section 5). Resolve it before this knob enters a design, or the
+      gas value will be silently unwritable.
+
+      With Millington-Quirk active [deck: pflotran.in:22] the effective
+      coefficient is further scaled by sat**(7/3) * porosity**(1/3)
+      [src: transport.F90:113-114, :157-165]. NOTE that is the OPERATIVE
+      porosity [src: transport.F90:160-161], which under UPDATE_POROSITY is
+      1 - sum(vol_frac) rather than the POROSITY card -- so the real coupling
+      is to `vol_frac`, not to POROSITY. See the POROSITY entry.
+    _source: "ai-draft-verified"
+
+  # ---------------- boundary / constraint chemistry ------------------------
+
+  value:
+    category: chemistry
+    controls: ["Aqueous_Speciation"]
+    affects: ["east Ca++ [mol]", "east SiO2(aq) [mol]", "east HPO4-- [mol]", "east H+ [mol]"]
+    related_to: []
+    calibration_notes: |
+      The concentration column of a CONSTRAINT/CONCENTRATIONS row -- 32 rows in
+      this deck, 16 each in the `top` (rainwater) and `initial` constraints
+      [deck: pflotran.in:389-405, :413-428].
+
+      ITS MEANING DEPENDS ON THE TYPE LETTER IN THE NEXT COLUMN
+      [src: transport_constraint_rt.F90:306-345]:
+        F/FREE   free-ion concentration      T/TOTAL   total component
+        P/PH     pH                          E/PE      pe
+        L/LOG    log concentration           M/MINERAL mineral equilibrium
+        G/GAS    gas equilibrium             Z/CHARGE_BALANCE  charge balance
+        SC       supercritical CO2           TOTAL_SORB, TOTAL_AQ_PLUS_SORB
+      A type of M, G or SC REQUIRES a 4th column naming the constraining
+      mineral or gas [src: transport_constraint_rt.F90:348-358]. Type 'S' was
+      removed in 2013 and is now a hard error
+      [src: transport_constraint_rt.F90:323-326].
+
+      CONSEQUENCE FOR A WRITER: this is NOT a homogeneous numeric column. A
+      pH row (7.35, type P) and a molality row (1.04e-07, type T) are different
+      quantities on different scales, and the Na+ row is a charge-balance SOLVER
+      GUESS (type Z), not an imposed concentration
+      [deck: pflotran.in:396, :419]. Sampling them under one shared bound is
+      meaningless. Address and bound them per species, or exclude the type-P and
+      type-Z rows.
+
+      v0.1 asserted "rainfall composition is measured, treat as fixed". That is
+      DROPPED -- it was not defensible, and the rainwater constraint's 1.d-40
+      entries are numerical placeholders for "absent", not measurements.
+    _source: "ai-draft-verified"
+
+  LIQUID_SATURATION:
+    category: boundary
+    controls: []
+    affects: ["Global Water Mass in Liquid Phas [kg]", "east Water Mass [kg]"]
+    related_to: ["GAS_SATURATION", "LIQUID_RESIDUAL_SATURATION"]
+    calibration_notes: |
+      Initial liquid saturation, 0.10 [deck: pflotran.in:500].
+
+      CATEGORY CORRECTION vs v0.1. As a VALUE-CARRYING card it occurs ONCE
+      (the name also appears as an OUTPUT variable at
+      [deck: pflotran.in:606, 635], which is a different thing), inside
+      FLOW_CONDITION
+      `initial` [deck: pflotran.in:493-502], which is attached by an
+      INITIAL_CONDITION block to REGION all [deck: pflotran.in:521-525]. It is
+      an INITIAL CONDITION, not a boundary condition, and it has no
+      Seepage_Face_Boundary relationship. v0.1 linked it to the seepage face and
+      its own note contradicted the link.
+
+      TRAP 1 -- IT IS AN ALIAS OF GAS_SATURATION. Both card names resolve to the
+      SAME storage slot, general%gas_saturation
+      [src: condition.F90:484-489]. One degree of freedom, two names. Setting
+      both in one FLOW_CONDITION means the second silently overwrites the first.
+
+      TRAP 2 -- AND IT IS COMPLEMENTED ON READ. LIQUID_SATURATION is converted
+      to a gas saturation by S -> 1 - S at read time
+      [src: condition.F90:2331-2339]. So `LIQUID_SATURATION 0.1` is stored
+      internally as gas saturation 0.9. Any code that reads back the internal
+      value, or that writes one card while reasoning about the other, must apply
+      the complement. (This is NEW in v0.2 -- the v0.1 fan-out found the alias
+      but not the transform.)
+
+      It is a genuinely uncertain quantity for a freshly packed column and it
+      sets how much rainfall is absorbed before drainage begins, so it is a
+      legitimate calibration knob -- unlike the rest of this category.
+    _source: "ai-draft-verified"
+
+  GAS_PRESSURE:
+    category: boundary
+    controls: ["Seepage_Face_Boundary"]
+    affects: ["east Water Mass [kg/h]"]
+    related_to: ["GAS_SATURATION"]
+    calibration_notes: |
+      Gas pressure. 101325 Pa (atmospheric) at both addresses
+      [deck: pflotran.in:477 (gas_vent), :499 (initial)]. Internal units are Pa
+      [src: condition.F90:2296-2297].
+
+      On the vent it carries the DIRICHLET_SEEPAGE type
+      [deck: pflotran.in:473], which is what arms the one-way outflow clamp
+      [src: general_common.F90:2677-2684] -- see the Seepage_Face_Boundary
+      mechanism. FIXED BY THE PHYSICAL SETUP; not a calibration knob.
+    _source: "ai-draft-verified"
+
+  GAS_SATURATION:
+    category: boundary
+    controls: ["Seepage_Face_Boundary"]
+    affects: ["east Water Mass [kg/h]"]
+    related_to: ["GAS_PRESSURE", "LIQUID_SATURATION"]
+    calibration_notes: |
+      Gas saturation at the vent boundary, 1.0 [deck: pflotran.in:478].
+      Fixed by the setup; not a calibration knob.
+
+      ITS `affects` IS NOT EMPTY (v0.1 said it was), BUT NOT FOR THE REASON THE
+      v0.1 FAN-OUT GAVE. The fan-out attributed the seepage clamp to it
+      (general_common.F90:2676-2690). RE-CHECKING THIS SESSION DOES NOT SUPPORT
+      THAT: the clamp is armed by the BC TYPE
+      [src: general_common.F90:2677-2684], and the free-surface branch it also
+      cited requires the boundary to be in GAS_STATE
+      [src: general_common.F90:2685-2691], which this condition is not.
+
+      What it ACTUALLY does is select the boundary's THERMODYNAMIC STATE:
+      absent a liquid_pressure + mole-fraction/RH pair (which would give
+      MULTI_STATE [src: condition.F90:2402-2408]) and absent salt, gas_pressure
+      together with gas_saturation makes the condition TWO_PHASE_STATE
+      [src: condition.F90:2409-2424]. GAS_STATE requires a mole
+      fraction or relative humidity [src: condition.F90:2447-2458], neither of
+      which this deck supplies.
+
+      AND IT IS MANDATORY. Removing GAS_SATURATION from this condition is not a
+      reclassification -- it is a FATAL INPUT ERROR before any state is
+      assigned: a non-rate GENERAL condition must carry a mole fraction,
+      relative humidity, or gas/liquid saturation
+      [src: condition.F90:2390-2396], and `PrintErrMsg` stops the run
+      [src: option.F90:637-640].
+
+      This entry is a worked example of the standing caution that a verification
+      agent's finding is a LEAD, not a fact.
+    _source: "ai-draft-verified"
+
+  TEMPERATURE:
+    category: boundary
+    controls: []
+    affects: []
+    related_to: ["ENERGY_FLUX"]
+    calibration_notes: |
+      25 C at two addresses [deck: pflotran.in:479 (gas_vent),
+      :501 (initial)]; internal units C [src: condition.F90:2302-2303]. The run
+      is ISOTHERMAL [deck: pflotran.in:12]. Not a calibration knob for this case.
+
+      SCOPE CORRECTION vs v0.1, WHICH THIS DECK ITSELF REFUTES. v0.1 claimed
+      TEMPERATURE "remains mandatory in every flow condition". It does not: the
+      blanket requirement is inside a block guarded by `if (.false.)`
+      [src: condition.F90:2352, requirement at :2367-2371] and is therefore
+      dead. A non-rate GENERAL condition does require one
+      [src: condition.F90:2397-2401], but a LIQUID_FLUX + GAS_FLUX condition
+      satisfies its energy degree of freedom with EITHER an ENERGY_FLUX OR a
+      TEMPERATURE and is classified ANY_STATE
+      [src: condition.F90:2375-2380]. The miniLEO `recharge` block has NO
+      TEMPERATURE [deck: pflotran.in:482-491] and takes the ENERGY_FLUX route;
+      the run completed. NOTE the exemption is conditional -- a flux condition
+      with NEITHER card falls through to the requirement at
+      [src: condition.F90:2397-2401] and is an error.
+    _source: "ai-draft-verified"
+
+  GAS_FLUX:
+    category: boundary
+    controls: []
+    affects: []
+    related_to: ["ENERGY_FLUX"]
+    calibration_notes: |
+      Zero gas flux on the recharge face, NEUMANN
+      [deck: pflotran.in:485, :489]. Internal units meter/sec
+      [src: condition.F90:2320-2321]. Fixed by the setup; not a calibration
+      knob.
+    _source: "ai-draft-verified"
+
+  ENERGY_FLUX:
+    category: boundary
+    controls: []
+    affects: []
+    related_to: ["GAS_FLUX", "TEMPERATURE"]
+    calibration_notes: |
+      Zero energy flux on the recharge face, NEUMANN, in MW/m^2
+      [deck: pflotran.in:486, :490; src: condition.F90:2322-2326 forces units].
+      Fixed (isothermal); not a calibration knob.
+
+      Its presence is what lets the `recharge` flux condition satisfy its energy
+      degree of freedom WITHOUT a TEMPERATURE card -- see the TEMPERATURE entry.
+    _source: "ai-draft-verified"
+
+  # ---------------- solver / run control (NOT calibratable) ----------------
+  # Included per PI decision so Phase 3 can distinguish "this member FAILED"
+  # from "this member STRUGGLED". These must never enter a sampling design.
+
+  MAX_TS_CUTS:
+    category: solver
+    controls: ["Timestep_Control"]
+    affects: []
+    related_to: ["MAXIMUM_TIMESTEP_SIZE", "TIMESTEP_MAXIMUM_GROWTH_FACTOR"]
+    calibration_notes: |
+      NOT A CALIBRATION KNOB -- run control, and the single most misread number
+      in a PFLOTRAN run summary.
+
+      IT IS SET TWICE IN THIS DECK, once per process model:
+      20 for FLOW [deck: pflotran.in:360] and 50 for TRANSPORT
+      [deck: pflotran.in:376]. v0.1 presented it as one value. The default when
+      absent is 16 [src: timestepper_base.F90:158]; `MAXIMUM_CONSECUTIVE_TS_CUTS`
+      is an accepted alias [src: timestepper_base.F90:279-280].
+
+      IT IS A PER-TIMESTEP CONSECUTIVE BUDGET, NOT A LIFETIME ONE. The counter
+      resets at the top of every timestep [src: timestepper_SNES.F90:371] and
+      the field's own declaration says "Maximum number of timestep cuts within
+      one time step" [src: timestepper_base.F90:32]. The `cuts` figure in an
+      end-of-run summary is a LIFETIME total accumulated separately
+      [src: timestepper_SNES.F90:447] and is unrelated to this limit.
+
+      THE ERROR TO AVOID: the miniLEO run COMPLETED SUCCESSFULLY with 168
+      lifetime cuts against a FLOW limit of 20
+      [log: pflotran.out:116670 "FLOW TS SNES steps = 5132 newton = 15404
+      linear = 537044 cuts = 168", :116678 "TRAN TS ... cuts = 0", :116683
+      "Wall Clock Time: 6.4512E+01 [min]"]. Note the 168 is entirely the FLOW
+      timestepper's -- transport recorded zero. Reading that as a failure would
+      mis-triage a good member. The real failure signal is exit status 88
+      [src: timestepper_base.F90:740-746; pflotran_constants.F90:63], which also
+      writes a `<pmname>_cut_to_failure` snapshot
+      [src: timestepper_base.F90:764].
+
+      The test is `icut > max` [src: timestepper_base.F90:740], so a value of 20
+      permits 20 cuts and fails on the 21st. Note the same condition also fires
+      on `dt < dt_min`, so exit 88 does not by itself prove the cut budget was
+      the cause.
+
+      DIAGNOSTIC USE: rising lifetime cuts across an ensemble mark a stiff
+      parameter region, not broken members.
+    _source: "ai-draft-verified"
+
+  MAXIMUM_TIMESTEP_SIZE:
+    category: solver
+    controls: ["Timestep_Control"]
+    affects: []
+    related_to: ["MAX_TS_CUTS", "TIMESTEP_MAXIMUM_GROWTH_FACTOR"]
+    calibration_notes: |
+      NOT A CALIBRATION KNOB. Caps dt at 0.5 h [deck: pflotran.in:352].
+      Lowering it lets a stiff member survive at higher cost.
+
+      IT IS NOT COST-ONLY: changing the dt sequence changes the temporal
+      discretization, so the trajectory moves within truncation error. Varying
+      it across ensemble members would confound numerics with physics. HOLD IT
+      FIXED ACROSS A DESIGN.
+
+      It also sets the mass-balance output cadence in this deck, which uses
+      PERIODIC TIME 0.5 h [deck: pflotran.in:640] -- so changing it can change
+      the number of ROWS an extraction layer sees. [data: 3360 rows x 0.5 h =
+      1680 h = the 70-day FINAL_TIME at deck line 347, confirming the cadence].
+    _source: "ai-draft-verified"
+
+  TIMESTEP_MAXIMUM_GROWTH_FACTOR:
+    category: solver
+    controls: ["Timestep_Control"]
+    affects: []
+    related_to: ["MAX_TS_CUTS", "MAXIMUM_TIMESTEP_SIZE"]
+    calibration_notes: |
+      NOT A CALIBRATION KNOB. Limits how fast dt may grow after a successful
+      step. Set to 1.5 TWICE, once per process model
+      [deck: pflotran.in:361 (FLOW), :377 (TRANSPORT)].
+
+      CORRECTION vs v0.1, which said it "affects wall-clock, not the converged
+      solution". It DOES change the trajectory, for the same reason as
+      MAXIMUM_TIMESTEP_SIZE: a different dt sequence is a different temporal
+      discretization, so results move within truncation error. v0.1 contradicted
+      its own MAXIMUM_TIMESTEP_SIZE entry, which had it right. Hold both fixed.
+    _source: "ai-draft-verified"

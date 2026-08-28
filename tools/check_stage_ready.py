@@ -1,0 +1,337 @@
+#!/usr/bin/env python3
+"""Which SETUP STAGE is this clone in, and is that stage mechanically complete?
+
+The executable half of the `setup-discipline` skill. It answers the question that comes
+BEFORE `check_setup_ready.py`:
+
+    check_stage_ready.py : which stage am I in, and is its checkable part done?
+    check_setup_ready.py : is THIS SITE ready for Phase 0?  (requires sourced configs)
+
+That ordering is the whole point. `check_setup_ready.py` hard-exits when `A2MC_USE_CASE_DIR`
+is unset, which for a freshly cloned repo is a dead end -- it tells the user to source a site
+config that does not exist yet. This script therefore requires NO sourced config and reads only
+what is on disk, so it can run in a clone that has nothing set up at all.
+
+It checks the MECHANICAL subset of each stage's checklist and says so: items that cannot be
+verified by a machine (was the research plan approved? was the interview actually held?) are
+reported as the human-confirmed remainder, pointing at `setup-discipline`. A checklist that
+silently omits its unverifiable items would read as "stage complete" when it is not.
+
+Exit 0 = no FAIL (NA/INFO never fail); exit 1 = at least one FAIL.
+
+Usage:
+    python3 tools/check_stage_ready.py                 # auto-detect the stage
+    python3 tools/check_stage_ready.py --model ecosim  # audit one model's onboarding (stage 2)
+    python3 tools/check_stage_ready.py --case EcoSIM_BioCON
+    python3 tools/check_stage_ready.py --stage 2       # force a stage
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+PASS, FAIL, NA, INFO = "PASS", "FAIL", "NA", "INFO"
+_MARK = {PASS: "✓", FAIL: "✗", NA: "–", INFO: "ℹ"}
+
+# Entries in models/ that are package machinery, not adapted models.
+_NOT_A_MODEL = {"_template", "__pycache__", "base.py", "registry.py", "__init__.py"}
+# Entries in use_cases/ that are scaffolding, not real cases.
+_NOT_A_CASE = {"TEMPLATE", "README.md", "__pycache__"}
+
+
+def _rows_out(rows, title):
+    print(f"\n{title}\n" + "-" * len(title))
+    for status, label, detail in rows:
+        line = f"  {_MARK[status]} {label}"
+        if detail:
+            line += f" — {detail}"
+        print(line)
+    return sum(1 for s, _, _ in rows if s == FAIL)
+
+
+def onboarded_models():
+    """Models with a real adapter package, per the REGISTRY CONTRACT.
+
+    The test is `register_model()` in `models/<name>/__init__.py`, not the presence of `spec.py`.
+    Measured 2026-08-19 on this clone: `models/surrogate/` has a `spec.py` and would pass a
+    spec.py heuristic, but its own docstring says "A surrogate is NOT a model adapter" -- it is a
+    learned artifact *about* a model -- and it never registers. Counting it produced a phantom
+    "incomplete onboarding" with 3 failures for something that was never being onboarded.
+    """
+    d = ROOT / "models"
+    if not d.is_dir():
+        return []
+    out = []
+    for p in sorted(d.iterdir()):
+        if not p.is_dir() or p.name in _NOT_A_MODEL:
+            continue
+        init = p / "__init__.py"
+        if init.is_file() and "register_model(" in init.read_text(encoding="utf-8", errors="replace"):
+            out.append(p.name)
+    return out
+
+
+def real_cases():
+    """Cases that are actual work, excluding TEMPLATE and the per-model `*_template/` seeds."""
+    d = ROOT / "use_cases"
+    if not d.is_dir():
+        return []
+    return sorted(p.name for p in d.iterdir()
+                  if p.is_dir() and p.name not in _NOT_A_CASE and not p.name.endswith("_template"))
+
+
+def milestones():
+    f = ROOT / "rag" / "milestones.json"
+    if not f.is_file():
+        return {}
+    try:
+        return json.load(f.open()).get("milestones", {})
+    except (OSError, ValueError):
+        return {}
+
+
+def detect_stage():
+    """Return (stage:int, why:str). Reads disk, never the session's claims."""
+    cases = real_cases()
+    if not onboarded_models():
+        return 2, "no adapted model in models/ (none calls register_model())"
+    # NOTE the inner any(): Path.glob() returns a GENERATOR, and a generator object is always
+    # truthy, so `any(p.glob(...) for c in cases)` is True whenever `cases` is non-empty --
+    # it reported "setup complete" for every clone with a case. Caught by the routing test,
+    # not by running it here, because this clone happens to have real offline state.
+    if any(any((ROOT / "use_cases" / c / "memory").glob("workflow_state_offline_r*.json"))
+           for c in cases):
+        return 4, "a case has offline workflow state — setup is done, this is onboard-session territory"
+    if not cases:
+        return 1, "models are adapted but use_cases/ holds only templates"
+    return 3, f"{len(cases)} real case(s) exist; a new one is stage 3"
+
+
+# --------------------------------------------------------------------------- stage 1
+def stage1_rows():
+    rows = []
+    mp = os.environ.get("A2MC_MODEL_PATH", "")
+    if not mp:
+        rows.append((FAIL, "A2MC_MODEL_PATH set", "unset — a2mc-init Step 2 cannot verify the checkout"))
+    else:
+        rows.append((PASS, "A2MC_MODEL_PATH set", mp))
+        p = Path(mp)
+        rows.append((PASS if p.is_dir() else FAIL, "model checkout exists", mp))
+        if p.is_dir():
+            rows.append(_fork_guard_row(p))
+    for cfg in ("a2mc_config.sh", "a2mc_noncime_config.sh"):
+        if (ROOT / cfg).is_file():
+            rows.append((INFO, f"{cfg} present",
+                         "CIME models" if "noncime" not in cfg else "non-CIME adapter models"))
+    return rows
+
+
+def _fork_guard_row(checkout: Path):
+    """origin's PUSH url must be disabled and a `fork` remote must exist.
+
+    Checked because its absence is the one setup omission that can damage something OUTSIDE
+    A2MC (a push to the upstream model repo), and it is invisible until it happens.
+    """
+    try:
+        out = subprocess.run(["git", "remote", "-v"], cwd=str(checkout),
+                             capture_output=True, text=True, timeout=15).stdout
+    except (OSError, subprocess.SubprocessError):
+        return (NA, "fork-only push guard", "could not read git remotes")
+    if not out.strip():
+        return (NA, "fork-only push guard", "checkout is not a git repo")
+    push = [l for l in out.splitlines() if "(push)" in l]
+    origin_push = [l for l in push if l.split()[0] == "origin"]
+    has_fork = any(l.split()[0] == "fork" for l in push)
+    disabled = origin_push and "DISABLED" in origin_push[0].upper()
+    if disabled and has_fork:
+        return (PASS, "fork-only push guard", "origin push disabled, fork remote set")
+    missing = []
+    if not disabled:
+        missing.append("origin push NOT disabled")
+    if not has_fork:
+        missing.append("no `fork` remote")
+    return (FAIL, "fork-only push guard", "; ".join(missing))
+
+
+# --------------------------------------------------------------------------- stage 2
+def stage2_rows(model: str):
+    rows = []
+    md = ROOT / "models" / model
+    for f in ("spec.py", "parameter_parser.py", "output_parser.py"):
+        rows.append((PASS if (md / f).is_file() else FAIL, f"models/{model}/{f}", ""))
+
+    ms = milestones()
+    mine = {k: v for k, v in ms.items() if v.get("adapter") == model}
+    # Report EVERY row, never return early on a structural failure. An early return hides the
+    # checks below it, so you fix one item, re-run, and meet the next -- and a reader reasonably
+    # reads a short clean tail as "the rest is fine". Measured 2026-08-19: ATS's missing milestone
+    # masked its missing adaptive-memory seed entirely.
+    prof, entry = (sorted(mine.items())[0] if mine else (None, {}))
+    if prof is None:
+        rows.append((FAIL, "milestone registered",
+                     f"no rag/milestones.json entry with adapter: {model} — every future clone "
+                     f"will report this model as unsupported"))
+    else:
+        rows.append((PASS, "milestone registered", prof))
+
+    for label, key in (("knowledge base (wiki)", "knowledge_base_dir"),
+                       ("curated seed", "curated_yaml_path")):
+        if prof is None:
+            rows.append((NA, label, "no milestone to read the path from"))
+            continue
+        rel = entry.get(key)
+        if not rel:
+            rows.append((FAIL, label, f"milestone has no `{key}`"))
+        else:
+            rows.append((PASS if (ROOT / rel).exists() else FAIL, label, rel))
+
+    if prof is None:
+        rows.append((NA, "RAG index committed", "no milestone profile to locate the index"))
+        rows.append((NA, "knowledge graph", "no milestone profile"))
+    else:
+        chroma = ROOT / "rag" / "chroma_db" / prof
+        rows.append((PASS if chroma.is_dir() else FAIL, "RAG index committed",
+                     str(chroma.relative_to(ROOT)) if chroma.is_dir()
+                     else f"{chroma.relative_to(ROOT)} absent — note chroma.sqlite3 carries "
+                          f"skip-worktree, so a rebuild that was never staged looks identical to this"))
+        graph = ROOT / "rag" / "graphs" / f"{prof}.json"
+        rows.append((PASS if graph.is_file() else FAIL, "knowledge graph", f"rag/graphs/{prof}.json"))
+
+    # Not just "the directory exists": four EMPTY scaffolds is exactly the half-done state, and the
+    # consumer cannot tell you -- MemoryManager returns 0 chars for a missing store AND for an empty
+    # one, raising nothing either way. So check that discoveries.json actually carries entries; the
+    # other three stores are legitimately empty on a fresh onboarding (calibration fills them).
+    kb = ROOT / "memory" / model / "gained_knowledge"
+    disc = kb / "discoveries.json"
+    if not kb.is_dir():
+        rows.append((FAIL, "adaptive memory seeded", f"memory/{model}/gained_knowledge/ absent — "
+                     f"the reasoning loop would run with NO model knowledge and never error"))
+    elif not disc.is_file():
+        rows.append((FAIL, "adaptive memory seeded", f"{disc.relative_to(ROOT)} absent"))
+    else:
+        try:
+            n = len(json.loads(disc.read_text(encoding="utf-8")).get("discoveries", []))
+        except ValueError:
+            n = -1
+        if n > 0:
+            rows.append((PASS, "adaptive memory seeded", f"{n} discovery record(s)"))
+        elif n == 0:
+            rows.append((FAIL, "adaptive memory seeded",
+                         "discoveries.json is an EMPTY scaffold — the store exists but carries no "
+                         "knowledge, which reads identically to a missing one at every call site"))
+        else:
+            rows.append((FAIL, "adaptive memory seeded", f"{disc.relative_to(ROOT)} is not valid JSON"))
+    rt = md / "runtemplates"
+    rows.append((PASS if rt.is_dir() and any(rt.iterdir()) else FAIL, "run template", f"models/{model}/runtemplates/"))
+    return rows
+
+
+# --------------------------------------------------------------------------- stage 3
+def stage3_rows(case: str):
+    rows = []
+    cd = ROOT / "use_cases" / case
+    if not cd.is_dir():
+        return [(FAIL, f"use_cases/{case}", "no such case")]
+
+    cfgs = list((cd / "config").glob("*.sh")) if (cd / "config").is_dir() else []
+    rows.append((PASS if cfgs else FAIL, "site config",
+                 ", ".join(p.name for p in cfgs) if cfgs else "no *.sh in config/"))
+
+    tgt = cd / "validation" / "targets.yaml"
+    if not tgt.is_file():
+        rows.append((FAIL, "validation/targets.yaml", "absent"))
+    else:
+        body = [l for l in tgt.read_text(encoding="utf-8", errors="replace").splitlines()
+                if l.strip() and not l.lstrip().startswith("#")]
+        rows.append((PASS if body else FAIL, "validation/targets.yaml",
+                     f"{len(body)} non-comment line(s)" if body else "present but EMPTY"))
+
+    params = [p for p in (cd / "parameters").iterdir()
+              if p.is_file() and p.suffix in (".txt", ".csv", ".yaml", ".json")] \
+        if (cd / "parameters").is_dir() else []
+    rows.append((PASS if params else FAIL, "parameter list",
+                 ", ".join(p.name for p in params[:3]) if params else "no list in parameters/"))
+
+    rounds = cd / "config" / "calibration_rounds.yaml"
+    rows.append((PASS if rounds.is_file() else FAIL, "calibration_rounds.yaml", ""))
+
+    rows.append((INFO, "goal-conditional preflight",
+                 "run `check_setup_ready.py` AFTER sourcing the configs — it owns the "
+                 "targets-mapped-to-outputs and cost-function checks this script cannot reach"))
+    return rows
+
+
+# --------------------------------------------------------------------------- human remainder
+_HUMAN = {
+    1: ["the user was greeted and their experience gauged (Step 0)",
+        "the two no-match cases were distinguished (drift vs unsupported model)",
+        "the session was routed onward EXPLICITLY, not left trailing off"],
+    2: ["a filled questionnaire was supplied, not assumed",
+        "the codebase was characterized BEFORE scaffolding (Step 0c)",
+        "V1/V2/V3/V4/V5 verdicts were read — a Yellow is a decision, not a pass",
+        "the smoke test actually ran the reasoning phases"],
+    3: ["target granularity was established FIRST, in the MODEL's own terms",
+        "GATE 1: research_plan.md approved by the user",
+        "GATE 2: parameter list + ensemble design agreed, with bound_source per parameter",
+        "no auto-memory was written about this case"],
+    4: [],
+}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--model", help="audit this model's onboarding (stage 2)")
+    ap.add_argument("--case", help="audit this case (stage 3)")
+    ap.add_argument("--stage", type=int, choices=(1, 2, 3), help="force a stage")
+    a = ap.parse_args()
+
+    stage, why = detect_stage()
+    if a.model:
+        stage, why = 2, f"--model {a.model}"
+    elif a.case:
+        stage, why = 3, f"--case {a.case}"
+    elif a.stage:
+        stage, why = a.stage, f"--stage {a.stage}"
+
+    names = {1: "a2mc-init", 2: "onboard-model", 3: "onboard-case", 4: "onboard-session (setup done)"}
+    print(f"A2MC setup stage: {stage} — {names[stage]}\n  detected because: {why}")
+    print(f"  models adapted: {onboarded_models() or '(none)'}")
+    print(f"  real cases:     {real_cases() or '(none)'}")
+
+    fails = 0
+    if stage == 1:
+        fails += _rows_out(stage1_rows(), "Stage 1 — a2mc-init (mechanical subset)")
+    elif stage == 2:
+        targets = [a.model] if a.model else onboarded_models()
+        if not targets:
+            print("\n  No adapted model yet — this IS stage 2. Start with the `onboard-model` skill.")
+        for m in targets:
+            fails += _rows_out(stage2_rows(m), f"Stage 2 — onboard-model: {m}")
+    elif stage == 3:
+        targets = [a.case] if a.case else real_cases()
+        for c in targets:
+            fails += _rows_out(stage3_rows(c), f"Stage 3 — onboard-case: {c}")
+    else:
+        print("\n  Setup is complete and a case has workflow state — use `onboard-session`.")
+
+    human = _HUMAN.get(stage, [])
+    if human:
+        print(f"\nNot mechanically checkable ({len(human)}) — confirm by hand, `setup-discipline` Stage {stage}:")
+        for h in human:
+            print(f"  ? {h}")
+
+    print()
+    if fails:
+        print(f"✗ {fails} FAIL(s) — this stage is NOT complete.")
+        return 1
+    print("✓ no failures in the mechanical checks. The '?' items above are still yours to confirm.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

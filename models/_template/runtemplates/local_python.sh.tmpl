@@ -1,0 +1,27 @@
+#!/bin/bash
+# =============================================================================
+# A2MC run template: local + Python-implemented model
+# =============================================================================
+#
+# Rendered by `scripts/init_adapter.py` Step 11. Use this template when your
+# model is:
+#     - A Python library or script
+#     - Run interactively or non-interactively on a workstation (no scheduler)
+#
+# Compiled-binary models use local_standalone.sh.tmpl.
+# CIME-managed models use local_cime.sh.tmpl.
+
+set -euo pipefail
+
+# ---- Activate Python env ----
+{{PYTHON_ENV_ACTIVATE}}
+
+# ---- Pre-run hook ----
+{{PRE_RUN_HOOK}}
+
+# ---- Run ----
+# Multi-rank MPI Python locally (rare): wrap with mpirun -np N.
+{{MPI_LAUNCHER}} {{MPI_RANKS}} {{PYTHON_INVOKE}} {{RUN_CMD}}
+
+# ---- Post-run hook ----
+{{POST_RUN_HOOK}}

@@ -1,0 +1,34 @@
+# Per-PFT EcoSIM targets FIXTURE for the screening-mechanism tests
+# (test_ecosim_calibration.py). Decoupled from the real EcoSIM_BioCON targets.yaml
+# (which is ecosystem-level, control-only) so the mechanism tests don't churn when the
+# real calibration objective evolves.
+site: EcoSIM_BioCON_test
+pfts:
+  1: {name: c4_grass}
+  2: {name: c3_grass}
+  3: {name: c3_legume}
+targets:
+  c4_shoot_C:
+    variable: SHOOT_C_pft
+    pft: 1
+    window: [150, 240]
+    reduce: max
+    observed: 120.0
+    uncertainty: 0.3
+    units: gC/m2
+  c3_shoot_C:
+    variable: SHOOT_C_pft
+    pft: 2
+    window: [150, 240]
+    reduce: max
+    observed: 100.0
+    uncertainty: 0.3
+    units: gC/m2
+  c3_root_C:
+    variable: Root_C_pft
+    pft: 2
+    window: [150, 240]
+    reduce: max
+    observed: 160.0
+    uncertainty: 0.3
+    units: gC/m2

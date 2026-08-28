@@ -1,0 +1,4 @@
+# A number of tolerances in newton_tolerances.txt are supported by TH
+# mode, but are advertised. Further testing is needed before these can be
+# included.
+

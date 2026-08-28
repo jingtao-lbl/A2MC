@@ -1,0 +1,33 @@
+ANALYTICAL_JACOBIAN
+ @UNSUPPORTED_MODES WIPP_FLOW
+ Calculate derivatives in Jacobian analytically.
+
+NUMERICAL_JACOBIAN
+ @UNSUPPORTED_MODES WIPP_FLOW
+ Calculate derivatives in Jacobian numerically.
+
+USE_INFINITY_NORM_CONVERGENCE
+ @SUPPORTED_MODES RICHARDS TH 
+ @EXPERT
+ Newton iteration will converge on infinity norm convergence criteria for both the solution update and the residual.
+
+PRESSURE_DAMPENING_FACTOR <float>
+ @SUPPORTED_MODES TH RICHARDS
+ @EXPERT
+ Factor by which the pressure solution update is dampened.
+
+PRESSURE_CHANGE_LIMIT <float>
+ @SUPPORTED_MODES TH
+ @EXPERT
+ The change in pressure is truncated to within this limit.
+
+SATURATION_CHANGE_LIMIT <float>
+ @SUPPORTED_MODES RICHARDS TH 
+ @EXPERT
+ The change in saturation is truncated to within this limit.
+
+TEMPERATURE_CHANGE_LIMIT <float>
+ @SUPPORTED_MODES TH 
+ @EXPERT
+ The change in temperature is truncated to within this limit.
+

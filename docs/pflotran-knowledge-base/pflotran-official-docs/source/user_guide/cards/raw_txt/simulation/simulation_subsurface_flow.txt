@@ -1,0 +1,32 @@
+COUNT_UPWIND_DIRECTION_FLIP
+ @SUPPORTED_MODES GENERAL HYDRATE WIPP_FLOW
+ @EXPERT
+ Turns on and increments a counter whenever the upwind direction changes. This is only useful for non-parallel execution.
+
+FIX_UPWIND_DIRECTION
+ @SUPPORTED_MODES GENERAL HYDRATE WIPP_FLOW
+ @EXPERT
+ Limits the update of the upwind direction (based on pressure gradients) to UPWIND_DIR_UPDATE_FREQUENCY Newton iterations.
+
+LOGGING_VERBOSITY <integer>
+ Prints additional convergence logging to the screen when the integer is greater than 0 (for process models that have logging verbosity implemented).
+
+MULTIPLE_CONTINUUM
+ @SUPPORTED_MODES TH MPHASE RT
+ Turns on multi-continuum energy for the MPHASE or TH flow modes.
+
+REPLACE_INIT_PARAMS_ON_RESTART
+ Forces the overwrite of base (0) porosity and permeabilities off which solution dependent parameters may be calculated.
+
+REVERT_PARAMETERS_ON_RESTART
+ Reverts permeability and porosity back to the values specified in the input file instead of the checkpointed values.
+
+UNFIX_UPWIND_DIRECTION
+ @SUPPORTED_MODES GENERAL HYDRATE WIPP_FLOW
+ @EXPERT
+ Turns off fixing of upwind direction.
+
+UPWIND_DIR_UPDATE_FREQUENCY
+ @SUPPORTED_MODES GENERAL HYDRATE WIPP_FLOW
+ @EXPERT
+ Frequency at which the upwind direction is updated if FIX_UPWIND_DIRECTION is included.

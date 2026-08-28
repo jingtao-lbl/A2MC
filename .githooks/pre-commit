@@ -1,0 +1,578 @@
+#!/usr/bin/env bash
+# A2MC pre-commit hook — enforce skill-registry + phase script-doc + memory-bucket parity,
+# agent-surface leak/shape validation, and version-number consistency.
+#
+# (1) tools/check_skill_registry.py (disk <-> README table <-> catalog <-> AGENTS.md
+# table, name/dir, ## Changelog, + the CONTRACT check that every path/skill a SKILL.md
+# cites exists) when skill-system files OR tools/ OR scripts/ are staged. The tools//scripts/
+# breadth is deliberate: skills cite paths under those dirs, so a rename there can orphan a
+# citation — firing the (fast, static) check on those commits catches it at the rename commit
+# instead of waiting for the next skill-file edit. Unrelated commits are not gated.
+#
+# (2) tools/check_phase_script_docs.py (each phases/phaseN_*/CLAUDE.md "Scripts in This
+# Folder" table <-> the *.py actually on disk) when anything under phases/ is staged. Catches
+# the drift class where a script is renamed/added/extracted but its phase CLAUDE.md table is
+# not updated. Scripts are truth; the table is the stale side.
+#
+# Activate (once per clone; git does not auto-run hooks from clones):
+#     git config core.hooksPath .githooks
+#
+# Bypass in an emergency:  git commit --no-verify
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+# Pick a python that can import the checks' deps (check_skill_registry.py needs pyyaml).
+# Prefer $A2MC_PYTHON, then the repo's documented a2mc_env, then bare python3 — so a clone
+# whose system python3 lacks pyyaml (e.g. a PEP-668 Homebrew python) still gets a working
+# check instead of a hard ModuleNotFoundError. Falls back to bare python3 if none has yaml.
+pick_py() {
+    local p
+    for p in "${A2MC_PYTHON:-}" "$HOME/a2mc_env/bin/python3" python3; do
+        [[ -n "$p" ]] && command -v "$p" >/dev/null 2>&1 \
+            && "$p" -c 'import yaml' >/dev/null 2>&1 && { echo "$p"; return; }
+    done
+    command -v python3 2>/dev/null || true
+}
+
+# Staged paths that touch the skill system.
+if git diff --cached --name-only --diff-filter=ACMRD \
+     | grep -qE '^\.claude/skills/|^docs/a2mc_reference/skills_catalog\.md$|^AGENTS\.md$|^tools/|^scripts/|^CLAUDE\.md$|^README\.md$'; then
+    PY="$(pick_py)"
+    if [[ -z "$PY" ]]; then
+        echo "pre-commit: python3 not found; skipping skill-registry check" >&2
+        exit 0
+    fi
+    if ! "$PY" "$ROOT/tools/check_skill_registry.py"; then
+        echo "" >&2
+        echo "pre-commit: skill-registry drift — fix the above (register in all THREE: the" >&2
+        echo "  README 'Current skills' table, docs/a2mc_reference/skills_catalog.md, AND the" >&2
+        echo "  AGENTS.md 'At a glance' table), or use the add-skill skill. Bypass with" >&2
+        echo "  --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+
+# Staged paths under phases/ (a *.py add/rename/delete or a phase CLAUDE.md edit).
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^phases/'; then
+    PY="$(pick_py)"
+    if [[ -z "$PY" ]]; then
+        echo "pre-commit: python3 not found; skipping phase script-doc check" >&2
+        exit 0
+    fi
+    if ! "$PY" "$ROOT/tools/check_phase_script_docs.py"; then
+        echo "" >&2
+        echo "pre-commit: phase script-doc drift — scripts are truth. Update the phase" >&2
+        echo "  CLAUDE.md 'Scripts in This Folder' table to match the *.py on disk (do NOT" >&2
+        echo "  change scripts to match the doc). Bypass with --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+
+# (3) tools/check_memory_bucket.py (every .claude_memory/*.md has valid machine/visibility/
+# scope/type frontmatter; a visibility: public memory carries no personal host path) when
+# .claude_memory/ is staged. No-ops if .claude_memory/ is absent (public clone).
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude_memory/'; then
+    PY="$(pick_py)"
+    if [[ -z "$PY" ]]; then
+        echo "pre-commit: python3 not found; skipping memory-bucket check" >&2
+        exit 0
+    fi
+    if ! "$PY" "$ROOT/tools/check_memory_bucket.py"; then
+        echo "" >&2
+        echo "pre-commit: memory-bucket frontmatter invalid — every .claude_memory/*.md needs a" >&2
+        echo "  valid machine/visibility/scope/type (schema: docs/29). Bypass with --no-verify" >&2
+        echo "  only if you know why." >&2
+        exit 1
+    fi
+fi
+# (4) tools/validate_agent_surface.py (leak scan for private host paths / usernames / private
+# branch names across AGENTS.md + .claude/skills/, plus modes-block shape and broken relative
+# links) when the agent surface is staged. Gated HERE and not only at sync time: on 2026-07-31
+# an allocation ID and a private branch name were written into a PUBLICLY-SYNCED skill and were
+# caught only because the validator happened to be run by hand.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(\.claude/skills/|AGENTS\.md$)'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/validate_agent_surface.py"; then
+        echo "" >&2
+        echo "pre-commit: agent-surface validation failed — a private path/username/branch token," >&2
+        echo "  a malformed modes: block, or a broken relative link. The leak scan matters most:" >&2
+        echo "  .claude/skills/ and AGENTS.md SHIP PUBLICLY. Bypass with --no-verify only if sure." >&2
+        exit 1
+    fi
+fi
+
+# (5) tools/check_version_consistency.py (the CLAUDE.md version header has exactly one changelog
+# entry; no LIVE duplicate) when either file is staged. Catches the 2026-07-30 failure where two
+# branches independently claimed v2.209 — each internally consistent, and because both wrote the
+# identical header string `git merge-tree` reported the merge CLEAN.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(CLAUDE\.md|memory/a2mc_development_history\.md)$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_version_consistency.py"; then
+        echo "" >&2
+        echo "pre-commit: version inconsistent — the CLAUDE.md header version must have exactly" >&2
+        echo "  one changelog entry in memory/a2mc_development_history.md. Two entries on the" >&2
+        echo "  SAME version is the cross-branch collision signature; renumber the later one." >&2
+        exit 1
+    fi
+fi
+
+# (5b) tools/check_dev_log_for_version.py — the version in CLAUDE.md is CLAIMED by a dev log.
+# Check (5) pairs the version with the CHANGELOG; nothing paired it with a log FILE, so "bumped the
+# version, wrote no dev log" passed silently. Measured 2026-08-21: three framework changes shipped
+# that way in one session, two of them AFTER the gap was diagnosed in writing — because the
+# diagnosis lived in a `## Next` section rather than here, at the moment of commit. The decoy is a
+# long changelog row whose `Details:` points at an older log: everything looks documented, and the
+# missing file is invisible. Account: memory/dev_logs_adapterkit/reflection/20260821i_*.
+# Fires only when CLAUDE.md is staged, i.e. exactly when a version is being claimed.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^CLAUDE\.md$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_dev_log_for_version.py" --quiet; then
+        echo "" >&2
+        echo "pre-commit: this version has NO dev log claiming it." >&2
+        echo "  Run: python tools/check_dev_log_for_version.py" >&2
+        echo "  Write the log FIRST, then bump — the bump is what feels like completion." >&2
+        echo "  A log covering several versions adds a '**Also covers:** vX.YZ' header line." >&2
+        exit 1
+    fi
+fi
+
+# (5c) tools/check_capability_change_logged.py — a CAPABILITY change carries a bump or a log.
+# Check (5b) is the mirror image and cannot catch this: it fires when CLAUDE.md IS staged, i.e. when
+# a version is being CLAIMED. A commit that adds a capability and never bumps at all passes every
+# gate by claiming nothing. Measured: faea9be7 added a fourth sampling method (sobol_seq), deleted
+# an 8,704-row design matrix, wrote two replacements and re-cut a whole round across ten files, with
+# no bump and no log -- its rationale lived only in the commit message, and it was found because the
+# PI asked. Keys on PUBLIC-SURFACE signals (new top-level def/class, new CLI flag, changed choices
+# list, new file in a capability dir), never on "a file was touched", because a check that fires on
+# every typo gets muted. ADVISORY (never blocks): a feature branch bumps at merge time and a mid-arc
+# commit's log legitimately lands next, so erroring here would train people to bypass it.
+CAP_PY="$(pick_py)"
+if [[ -n "$CAP_PY" ]] && ! "$CAP_PY" "$ROOT/tools/check_capability_change_logged.py" --quiet; then
+    echo "" >&2
+    echo "pre-commit: ADVISORY -- capability change with no version bump and no dev log (above)." >&2
+    echo "  Not blocking. Legitimate if this is a feature branch that bumps at merge time, or a" >&2
+    echo "  mid-arc commit whose log lands next. Audit an arc with --range, not --commit." >&2
+fi
+
+# (6) tools/check_log_conformance.py (a staged dev/ana log matches the `log` skill contract:
+# filename, header order, required sections, and the "Skills and memory invoked" section) when
+# a log is staged. STAGED-ONLY on purpose: it gates what you are writing NOW and never blocks a
+# commit because of pre-existing drift in logs you did not touch (use --dir for a sweep).
+# Added after 2026-08-01, when one session produced four conformance failures in a row -- most
+# instructively, the `log` skill CHANGED MID-SESSION via a merge and the next two logs were
+# written from memory of its earlier shape. A checklist item saying "re-read the skill" is the
+# step an author who already skipped the skill will skip again, so this is mechanical.
+# Needs no third-party deps, so it runs even where pick_py falls back to a bare python3.
+# EXIT CODES ARE 0 clean / 1 WARN / 2 ERROR, and only >=2 may block. Until 2026-08-07 this
+# used `! "$PY" ...`, which is true for ANY non-zero and so blocked on warnings too --
+# silently defeating the checker's own deliberate warn-vs-error split ("SAME-DAY IS A WARNING,
+# NOT AN ERROR", check_log_conformance.py:67). A tier that cannot be advisory is not a tier,
+# and it makes phased rollout of any new check impossible: L7 shipped warn-first precisely so
+# the outstanding backfill would not block unrelated commits.
+# CORRECTED 2026-08-15: the 2026-08-07 fix's own `CMD; _rc=$?` shape was STILL wrong under this
+# script's `set -euo pipefail` (line 21) -- a bare failing simple command trips -e and aborts the
+# whole hook before the next line (`_rc=$?`) ever runs, so a warn-only (exit 1) result silently
+# killed the commit exactly as before, just with no error message. Verified with a 2-line bash
+# repro. The safe idiom is `CMD || _rc=$?` (failure inside an `||` list is exempt from -e).
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^memory/(dev_logs|ana_logs)'; then
+    PY="$(pick_py)"
+    _clc_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_log_conformance.py" --staged || _clc_rc=$?
+    fi
+    if [[ $_clc_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: log does not match the \`log\` skill contract -- see above. RE-READ" >&2
+        echo "  .claude/skills/log/SKILL.md rather than recalling it; it changes (a merge added" >&2
+        echo "  the 'Skills and memory invoked' section mid-session on 2026-08-01). 'None' is a" >&2
+        echo "  valid answer for that section. Bypass with --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+
+# (7) tools/check_calibration_log_conformance.py (a staged CALIBRATION log matches the
+# `calibration-log` skill contract) when one is staged. A SEPARATE gate from (6) because the two
+# streams have genuinely different contracts: a calibration log has no Version/Branch header and
+# no Summary/Files Changed/Verification, while a PHASE log must carry that phase's own sections
+# from PhaseLogger._EXPECTED_SECTIONS. Measured 2026-08-14: running check (6) over the 38
+# free-form calibration logs would have failed every one of them for sections they are not
+# supposed to have -- hence two tools, each of which now refuses the other's stream outright
+# rather than mis-checking it.
+# STAGED-ONLY, and that restraint matters more here: the corpus is 127 files with 4 known
+# pre-existing errors, and a whole-corpus gate would block unrelated work -- including another
+# session's -- until someone else's log is fixed.
+# EXIT CODES ARE 0 clean / 1 WARN / 2 ERROR (same convention as check (6)), and only >=2 may
+# block. Fixed 2026-08-15 during the A2MC-adapter-kit-PFLOTRAN merge: this block used the naive
+# `! "$PY" ...` pattern, true for ANY non-zero exit, so it blocked on warn-only results too --
+# the same bug class check (6) had. Uses the `CMD || _rc=$?` idiom (see check (6)'s comment)
+# so a warn-only exit does not trip this script's own `set -e` before the >=2 test runs.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^use_cases/.+/memory/logs/.+\.md$'; then
+    PY="$(pick_py)"
+    _ccl_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_calibration_log_conformance.py" --staged || _ccl_rc=$?
+    fi
+    if [[ $_ccl_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: calibration log does not match the \`calibration-log\` skill contract --" >&2
+        echo "  see above. RE-READ .claude/skills/calibration-log/SKILL.md rather than recalling" >&2
+        echo "  it. For a PHASE log the required sections are that phase's own (they come from" >&2
+        echo "  PhaseLogger._EXPECTED_SECTIONS); 'None' is a valid answer for 'Skills and memory" >&2
+        echo "  invoked'. Bypass with --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+
+# (16) tools/check_report_conformance.py (a staged REPORT matches the `write-report` skill
+# contract) when one is staged. The THIRD member of the conformance family and deliberately a
+# separate tool from (6) dev/ana logs and (7) calibration logs, for the same reason those two are
+# separate from each other: the contracts genuinely differ. A report has Status/Date/Author, an
+# Outline, an author line that is exactly "Jing Tao with A2MC", and no Version/Branch; running a
+# log checker over it would fail every report for sections it is not supposed to have.
+# DATE-SCOPED: the rules added 2026-08-24 (no Reader's key, no em dash in prose, a required
+# "Skills and memory invoked" section, and the ROUND-report table/sensitivity/plan warnings) apply
+# only to reports dated on or after that day. Retro-failing the ~30 existing reports would block
+# unrelated work and teach people to reach for --no-verify, which is how a gate stops being a gate.
+# STAGED-ONLY and EXIT 0 clean / 1 WARN / 2 ERROR, same convention and same `CMD || _rc=$?` idiom
+# as (6) and (7) so a warn-only exit does not trip this script's own `set -e`.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^use_cases/[^/]+/reports/.+\.md$'; then
+    PY="$(pick_py)"
+    _crc_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_report_conformance.py" --staged || _crc_rc=$?
+    fi
+    if [[ $_crc_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: a staged report does not match the \`write-report\` skill contract --" >&2
+        echo "  see above. RE-READ .claude/skills/write-report/SKILL.md rather than recalling it." >&2
+        echo "  Reports carry '**Author:** Jing Tao with A2MC', define terms INLINE (no Reader's" >&2
+        echo "  key block), use no em dash in prose, and carry a 'Skills and memory invoked'" >&2
+        echo "  section where 'None' is a valid answer. Bypass with --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+
+# (17) tools/check_bound_source.py (a staged PARAMETER LIST's `bound_source` column matches the
+# canonical five-prefix vocabulary) when one is staged. FOURTH member of the conformance family and
+# a separate tool for the same reason as (16): the contract differs. A bound with no recorded
+# provenance is a range nobody can re-judge a round later -- one round shipped 15 of 28 rows
+# carrying an unread "refine after Phase-1 mu*" deferral in free text, and four of the six
+# parameters whose lethal ranges killed 81% of that ensemble were among them.
+# MODEL-AGNOSTIC BY CONSTRUCTION: it reads the CSV directly rather than through
+# `load_param_spec`, which coerces the grouping axis to an int and therefore RAISES on PFLOTRAN's
+# mineral-named axis and on every parameter_list_template.csv. A loader-bound checker would have
+# skipped exactly the models the adapter kit exists for, and passed.
+# GRANDFATHERING is an IN-FILE marker (`# a2mc: bound-source-grandfathered`), so it survives a
+# rename, is greppable, and the count prints on every run. A missing column is a WARN, never an
+# ERROR: the column is documented OPTIONAL and three live lists predate it.
+# STAGED-ONLY and EXIT 0 clean / 1 WARN / 2 ERROR, same `CMD || _rc=$?` idiom as (6), (7) and (16).
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '^(use_cases/[^/]+/parameters|models/[^/]+/reference_bounds)/.+\.csv$'; then
+    PY="$(pick_py)"
+    _bs_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_bound_source.py" --staged || _bs_rc=$?
+    fi
+    if [[ $_bs_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: a staged parameter list has a non-conforming \`bound_source\` -- see above." >&2
+        echo "  Every entry starts with one of: measured: / literature: / database: /" >&2
+        echo "  prior_round: / provisional:  -- and NEVER blank (a blank reads as 'not recorded'," >&2
+        echo "  which the next reader cannot tell from a published range)." >&2
+        echo "  Vocabulary: use_cases/TEMPLATE/parameters/parameter_list_template.csv" >&2
+        echo "  A pre-contract list may carry '# a2mc: bound-source-grandfathered' with a reason." >&2
+        echo "  Bypass with --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+
+# (14) tools/check_log_placeholders.py -- a staged log must not render a PLACEHOLDER where a
+# finding belongs.
+#
+# WHY. On 2026-08-22 the R3 cycle-3 diagnosis log rendered "Best case (targets): #N/A" three times
+# while the diagnosis had supplied two fully specified base cases: PhaseLogger read only the legacy
+# scalar keys and dropped `selected_base_cases`, the contract orchestrator.py has treated as primary
+# since v2.80. The PI caught it by READING the file. Nothing mechanical did -- check (11) exited 0,
+# every section heading was present, and this gate was clean. The same audit then found 20 phase-4
+# hypothesis logs across R1/R2/R3 that had lost the NAME and both VALUES of every parameter they
+# proposed, keeping only the rationale.
+#
+# An empty section is honest and visible. A section rendering "#N/A" converts a MISSING finding into
+# an ANSWERED one, which is the same defect shape as check (12)'s false skill claim, one level up.
+#
+# BLOCKS, unlike (13): this is not a judgement call. A machine-emitted stub means data the caller
+# passed did not reach the log, and committing it makes the loss permanent -- the source dict is
+# gone and the log is the only record. That is exactly what happened to the 20.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '(/memory/logs/|^memory/(dev_logs|model_logs|ana_logs))'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        PLH_OUT="$("$PY" "$ROOT/tools/check_log_placeholders.py" --staged 2>&1)"
+        PLH_RC=$?
+        set -e
+        if [[ $PLH_RC -ne 0 ]]; then
+            echo "$PLH_OUT" | sed 's/^/  /' >&2
+            echo "pre-commit: a staged log renders a placeholder where a finding belongs" >&2
+            exit 1
+        fi
+    fi
+fi
+
+# (15) tools/check_case_script_tier.py -- a script reused across phases belongs in the case's
+# TEMPLATE tier, not copied between phase_results/{stem}/ folders.
+#
+# WHY. Measured 2026-08-22 before the rule existed: one site's phase_results/ held 7 script names
+# duplicated across stem folders, ALL 7 byte-identical, every one a Phase-5 script copied verbatim
+# into its Phase-6 folder. Nothing was wrong with any single copy; there was nowhere for a reusable
+# script to live. Two copies drift the moment one is edited, and the evidence gate checks a script
+# EXISTS, never that it is the same script.
+#
+# WARN, not block: whether two same-named scripts are the same tool is a judgement, and gating a
+# commit on a judgement is how gates get bypassed wholesale. This removes silent duplication only.
+# Resolve the interpreter IN THIS BLOCK. Every other check calls pick_py inside its own scope, and
+# reusing a $PY set by an earlier block only works when that block ran -- under `set -u` an unset PY
+# aborts the whole hook, which is what this check did on its first real commit.
+PY="$(pick_py)"
+if [[ -n "${PY:-}" ]]; then
+    set +e
+    TIER_OUT="$("$PY" "$ROOT/tools/check_case_script_tier.py" 2>&1)"
+    TIER_RC=$?
+    set -e
+    if [[ $TIER_RC -ne 0 ]]; then
+        echo "$TIER_OUT" | sed 's/^/  /' >&2
+    fi
+fi
+
+# (13) tools/check_deferred_work_queued.py -- a staged log that DEFERS work must route it into
+# TODO.md, the queue that is actually read.
+#
+# WHY. On 2026-08-22 the PI asked why a known gap had not been fixed. It HAD been documented: the
+# log introducing check_skill_claims.py carried a section headed "What this does NOT fix" naming
+# precisely the hole the PI then had to point out. Identified, written down, and stopped --
+# documentation treated as discharge.
+#
+# That is structural. A dev log is APPEND-ONLY and nobody re-reads it; TODO.md is the checklist the
+# root CLAUDE.md says to read at session start and update at every step transition. Nothing routed
+# between them: measured that day, TODO.md was 318 lines with ZERO references to any log from
+# 2026-08-21 or 2026-08-22, the two days that produced the most deferred items.
+#
+# WARN, never block: whether a deferred item is worth queueing is a judgement, and gating a commit
+# on a judgement is how gates get bypassed wholesale. What it removes is the ability to defer
+# SILENTLY.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^memory/(dev_logs|model_logs)'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        DFR_OUT="$("$PY" "$ROOT/tools/check_deferred_work_queued.py" --staged 2>&1)"
+        DFR_RC=$?
+        set -e
+        [[ $DFR_RC -ne 0 ]] && echo "$DFR_OUT" | sed 's/^/  /' >&2
+    fi
+fi
+
+# (12) tools/check_skill_claims.py -- a staged log's "Skills and memory invoked" list must
+# match what was ACTUALLY invoked, verified against the coding-agent transcript.
+#
+# WHY. On 2026-08-22 the R3 phase logs listed their phaseN skill under "**Skills:**" without the
+# skill having been invoked: the phases were worked from recollection and the claim written as
+# though the source of truth had been consulted. The PI caught it; nothing mechanical did.
+# Invoking phase3-diagnosis afterwards immediately surfaced a requirement it would have enforced
+# (a sim-vs-obs time series per scored target, missing from two phases), so the false claim had a
+# real cost. That section exists to expose work done without checking the source of truth -- an
+# untrue entry there converts a missing check into a PASSED one, which is strictly worse than
+# leaving it blank.
+#
+# This is the one claim in a log that can be mechanically verified, because the transcript records
+# each Skill invocation. BLOCKS on a claimed-but-never-invoked skill; the fix is to invoke the
+# skill and redo the step it governs, or to drop the name.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^(use_cases/.+/memory/logs/|memory/(dev_logs|model_logs|ana_logs))'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        SKC_OUT="$("$PY" "$ROOT/tools/check_skill_claims.py" --staged 2>&1)"
+        SKC_RC=$?
+        set -e
+        if [[ $SKC_RC -ge 2 ]]; then
+            echo "" >&2
+            echo "$SKC_OUT" | sed 's/^/  /' >&2
+            echo "pre-commit: a staged log claims a skill it never invoked -- see above." >&2
+            exit 1
+        elif [[ $SKC_RC -eq 1 ]]; then
+            # "cannot verify" is NOT a pass, but it must not block either: a different harness
+            # legitimately has no transcript. Say so out loud rather than printing nothing.
+            echo "$SKC_OUT" | sed 's/^/  /' >&2
+        fi
+    fi
+fi
+
+# (11) tools/check_offline_log_evidence.py on a staged OFFLINE PHASE log — the presentation
+# gate, added 2026-08-22 at the PI's direction alongside the two `calibration-log` rules it
+# enforces.
+#
+# TWO SEVERITIES, and only one blocks:
+#   ERROR  a cited `phase_results/<stem>/` does not exist -- a dead artifact pointer. BLOCKS.
+#          It reads as a citation, so a reader chases it instead of disbelieving it. The usual
+#          cause is ordering: PhaseLogger bakes the reasoning chain in at WRITE time, so a stem
+#          renamed after the log was written stays frozen in it. State first, log second.
+#   WARN   the paired folder holds a figure the log does not EMBED. Prints, never blocks --
+#          the log/folder split is a judgement about presentation and gating a commit on it is
+#          how gates get bypassed wholesale. Grandfathered before the rule's effective date.
+#
+# STAGED-ONLY, for the same reason as check (7): the corpus is 82 offline logs and a
+# whole-corpus gate would block unrelated work, including another session's, on someone else's
+# log. Uses the `|| _rc=$?` idiom so a warn-only exit does not trip this script's own `set -e`.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^use_cases/.+/memory/logs/[0-9]{8}[a-z]+_phase[0-9]+_.+\.md$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        for f in $(git diff --cached --name-only --diff-filter=ACMR \
+                     | grep -E '^use_cases/.+/memory/logs/[0-9]{8}[a-z]+_phase[0-9]+_.+\.md$'); do
+            _ole_rc=0
+            _ole_out="$("$PY" "$ROOT/tools/check_offline_log_evidence.py" "$ROOT/$f" 2>&1)" || _ole_rc=$?
+            if [[ $_ole_rc -ne 0 ]]; then
+                echo "" >&2
+                echo "$_ole_out" | sed 's/^/  /' >&2
+                echo "pre-commit: offline phase log has a DEAD artifact pointer -- see above." >&2
+                echo "  If a stem was renamed, REGENERATE the log after repointing the state:" >&2
+                echo "  PhaseLogger bakes the reasoning chain in at write time, so editing the" >&2
+                echo "  state afterwards does not reach the file. Bypass with --no-verify only" >&2
+                echo "  if you know why." >&2
+                exit 1
+            fi
+            # surface the WARN lines without blocking
+            echo "$_ole_out" | grep -E '^\s*\[warn\]' | sed 's/^/  /' >&2 || true
+        done
+    fi
+fi
+
+# (10) tools/config_graph.py -- when a commit INTRODUCES a new A2MC_* variable, show its
+# name-cluster so a duplicate of an existing variable is visible before it acquires readers.
+# Prints; never blocks.
+#
+# WHY HERE. The failure this addresses is answering a question about a variable without tracing its
+# consumers -- three consecutive wrong diagnoses on A2MC_N_SAMPLES (v2.269). That failure is
+# CONVERSATIONAL and has no commit-time moment, so it cannot be hooked. What CAN be hooked is the
+# moment the underlying class is created: a NEW variable entering the repo. If it duplicates one
+# that exists, --like shows the cluster right here, while it still has zero readers.
+#
+# Deliberately narrow: only ADDED lines naming an A2MC_* identifier absent from HEAD. A commit that
+# merely uses existing variables is silent -- a hook that speaks on every config edit gets scrolled
+# past, which is how it stops being read.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -vE '^tests/' | grep -qE '\.(sh|py)$'; then
+    PY="$(pick_py)"
+    # tests/ is EXCLUDED: fixtures invent A2MC_* names on purpose, and on this check's first
+    # real commit seven of them fired at once -- the "becomes routine noise" failure the log
+    # warned about, arriving immediately. A check that cries wolf on its own test suite is a
+    # check that gets scrolled past.
+    NEWVARS="$(git diff --cached -U0 -- '*.sh' '*.py' ':(exclude)tests/*' 2>/dev/null \
+               | grep -E '^\+' | grep -oE '\bA2MC_[A-Z0-9_]+\b' | sort -u || true)"
+    for v in $NEWVARS; do
+        # Scope the "does it already exist" test to CODE. Searching all of HEAD means merely
+        # NAMING a variable in a dev log marks it as pre-existing forever after -- measured:
+        # this very check went blind to A2MC_MORRIS_N_SAMPLES because its own dev log used it
+        # as an example. Docs describe variables; they do not define them.
+        git grep -q "$v" HEAD -- '*.sh' '*.py' 2>/dev/null && continue
+        # The useful --like key is the TAIL of the name, not the whole thing: a whole-name query
+        # matches only itself and can never surface a sibling. A2MC_SOBOL_N_SAMPLES -> N_SAMPLES,
+        # which is exactly the query that would have shown the duplication on 2026-08-22.
+        STEM="$(echo "${v#A2MC_}" | awk -F_ '{ if (NF>=2) print $(NF-1)"_"$NF; else print $NF }')"
+        # Capture rather than redirect: a bare `2>/dev/null >&2` sends stdout to /dev/null too
+        # (fd2 is already /dev/null by then), so the tool speaks into nothing and a broken check
+        # is indistinguishable from a clean one. Found by testing this very block, 2026-08-22.
+        set +e
+        CG_OUT="$("$PY" "$ROOT/tools/config_graph.py" --like "$STEM" 2>&1)"
+        CG_RC=$?
+        set -e
+        echo "" >&2
+        echo "pre-commit: NEW config variable $v" >&2
+        if [[ "$CG_OUT" == *"no variable name contains"* ]]; then
+            # A legitimate empty result: the name shares no tail with anything existing.
+            # config_graph exits 1 for this AND for a crash, so distinguish on the message,
+            # not the status -- conflating them reported "could not consult" for a clean answer.
+            echo "  no existing variable shares its name-tail — nothing to merge." >&2
+        elif [[ $CG_RC -ne 0 || -z "$CG_OUT" ]]; then
+            echo "  (could not consult the config graph -- rc=$CG_RC)" >&2
+            [[ -n "$CG_OUT" ]] && echo "$CG_OUT" | sed 's/^/  /' >&2
+        else
+            echo "$CG_OUT" | sed 's/^/  /' >&2
+            echo "  ^ if one of these is the SAME quantity under another name, merge them NOW." >&2
+            echo "    Two names for one quantity cost three wrong diagnoses on A2MC_N_SAMPLES;" >&2
+            echo "    it is cheap to fix before the second name has readers." >&2
+        fi
+        echo "" >&2
+    done
+fi
+
+# (9) tools/check_workflow_state_offline.py — the offline state is valid, and its FINDINGS are
+# current. There was no state check in this hook at all: a corrupt state could be committed, and a
+# state used only as a program counter (position updated, findings never recorded) drew no attention
+# whatsoever. Measured 2026-08-21: a full day of R3 work established eight substantive findings and
+# the state held TWO decisions, both from that morning; PhaseLogger rebuilds its "Reasoning chain"
+# from those decisions, so the next phase would have been blind to what it stands on.
+#
+# THE TRIGGER IS CASE WORK, NOT THE STATE FILE. Firing when a state file is staged would fire
+# exactly when someone is already updating it -- i.e. when they are NOT making this mistake. Firing
+# when anything under use_cases/<site>/ is staged catches the real case: committing a day of case
+# work with nothing recorded.
+#
+# ERRORS block (a corrupt state misdrives the whole loop). WARNINGS are PRINTED but do not block:
+# the stale-findings signal is a habit nudge, and a gate on a bookkeeping artifact is how gates get
+# bypassed. That split falls out of the checker's own exit codes (0 with warnings, non-zero on error)
+# -- the hook only has to make the warnings visible instead of swallowing them.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^use_cases/[^/]+/'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        # `set -euo pipefail` is in force (line 21), so a bare command substitution that exits
+        # non-zero ABORTS the hook right here -- blocking the commit with no diagnostic at all,
+        # which is indistinguishable from a hook crash. Disable errexit across the capture only.
+        set +e
+        STATE_OUT="$("$PY" "$ROOT/tools/check_workflow_state_offline.py" 2>&1)"
+        STATE_RC=$?
+        set -e
+        if [[ $STATE_RC -ne 0 ]]; then
+            echo "$STATE_OUT" >&2
+            echo "" >&2
+            echo "pre-commit: offline workflow state is INVALID — fix before committing case work." >&2
+            exit 1
+        fi
+        if grep -q "commit(s) touching this case\|no decisions recorded" <<< "$STATE_OUT"; then
+            echo "" >&2
+            grep -E "commit\(s\) touching this case|no decisions recorded" <<< "$STATE_OUT" >&2
+            echo "  ^ not blocking. But findings belong in the state as they are ESTABLISHED," >&2
+            echo "    not only at Phase 6: PhaseLogger rebuilds the reasoning chain from them," >&2
+            echo "    and next_action is the program counter, not the record." >&2
+            echo "    Record with: st.add_decision(finding, rationale=why)" >&2
+            echo "" >&2
+        fi
+    fi
+fi
+
+# (8) tools/check_rag_index_committed.py — the COMMITTED RAG index must match the COMMITTED
+# expected_counts. Runs only when something under rag/ is staged, which is the moment the
+# mismatch is CREATED: a rebuild arms expected_counts in rag/milestones.json (plain JSON,
+# commits fine) while chroma.sqlite3 carries --skip-worktree and is silently NOT staged.
+# That is how the PFLOTRAN index shipped 1374-expected/1314-actual for a week with every
+# gate green. --staged, not HEAD: at pre-commit time HEAD lacks the change being made, so
+# checking HEAD would validate the PREVIOUS commit and pass exactly when it must not.
+# Same `CMD || _rc=$?` idiom as checks (6)/(7) -- required so a non-zero (warn) exit does not
+# trip this script's own `set -e` before the >=2 test runs.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^rag/'; then
+    PY="$(pick_py)"
+    _rag_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_rag_index_committed.py" --staged || _rag_rc=$?
+    fi
+    if [[ $_rag_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: a committed RAG index does not match its expected_counts -- see above." >&2
+        echo "  A rebuild almost certainly did not reach the repo. See the \`rebuild-rag\` skill," >&2
+        echo "  Step 4 (chroma.sqlite3 carries --skip-worktree; \`git add\` stages it silently)." >&2
+        exit 1
+    fi
+fi
+
+exit 0

@@ -1,0 +1,151 @@
+# RAG golden queries — realistic retrieval/content assertions run AFTER a (re)build.
+#
+# Complements rag/canary_queries.yaml: that one is metadata-only (a kb_source/wiki file was
+# dropped -> count 0). THIS one runs the embedding model and the graph, querying the index
+# the way the reasoning agent does, and asserts the CONTENT is correct — the class of bug
+# the coverage check cannot see (a wrong SZPF ordering formula, a mislabeled PFT identity;
+# see dev_logs 20260710r/t). Run via tools/check_rag_queries.py after build_rag_index.py.
+#
+# Assertion keys per query (all optional, combined with AND):
+#   must_contain:     every listed substring MUST appear in the retrieved context
+#   must_not_contain: none of the listed substrings may appear (catches stale/wrong content)
+#   must_contain_any: at least one listed substring must appear
+# pft_identity: {pft_id: substring} — each graph PFT node's name MUST contain the substring
+#   (authoritative check that the graph carries the right fates_pftname per api version).
+collection: fates_knowledge
+
+profiles:
+  api-43-1:
+    queries:
+      - name: szpf_levscpf_ordering
+        query: "How is the FATES levscpf SZPF dimension flattened and indexed by size class and PFT?"
+        must_contain: ["(pft - 1) * nlevsclass + size_class"]
+        must_not_contain: ["(size_class - 1) * numpft"]   # the wiki error corrected in v2.183
+
+      - name: leafc_szpf_output_dimension
+        query: "What is the FATES_LEAFC_SZPF output variable and which dimension does it use?"
+        must_contain_any: ["SZPF", "size", "levscpf"]
+
+      - name: cnp_allocation_pid
+        query: "How does the FATES CNP PARTEH allocation / PID controller respond to nutrient stress?"
+        must_contain_any: ["allocation", "PID", "stoichiometry", "nutrient"]
+
+      - name: fine_root_carbon
+        query: "Fine-root carbon biomass in FATES and the parameters that control it"
+        must_contain_any: ["FROOT", "fine", "root"]
+
+    # Graph PFT identities must match api-43 fates_pftname (arctic shrubs/grass at 10/11/12),
+    # NOT the api-31 identities (7/9/10). Catches the v2.186 mislabel.
+    pft_identity:
+      10: "evergreen_arctic_shrub"
+      11: "colddecid_arctic_shrub"
+      12: "arctic_c3_grass"
+
+  api-31-0:
+    # Frozen Kougarok-manuscript profile. Its INDEX predates the SZPF wiki fix (not rebuilt
+    # on purpose), so do NOT assert the corrected formula here. Keep to identity + presence.
+    queries:
+      - name: leafc_szpf_output_dimension
+        query: "What is the FATES_LEAFC_SZPF output variable and which dimension does it use?"
+        must_contain_any: ["SZPF", "size", "levscpf"]
+    pft_identity:
+      7: "evergreen"
+      9: "colddecid"
+      10: "grass"
+
+  # EcoSIM adapter-kit dogfood. Collection 'ecosim_knowledge'.
+  #
+  # LESSON (adapter kit): must_not_contain substring traps DO NOT WORK against a
+  # source-grounded, contrastive KB. The EcoSIM wiki deliberately NAMES the
+  # mainstream alternatives it differs from ("EcoSIM is Campbell, not van
+  # Genuchten"; "not a CENTURY-style cascade"; "no Ball-Berry/Medlyn citations"),
+  # so the forbidden term appears in correct prose. Negative-term policing only
+  # works for an unambiguous wrong string (e.g. the FATES SZPF formula bug). Here
+  # we assert the POSITIVE signal — EcoSIM's own mechanism is retrievable — which
+  # is what a wrong/mis-indexed KB would actually fail. (Distilled during T6;
+  # the must_not_contain probe also surfaced a Farquhar overstatement in the v0.1
+  # curated seed, since fixed.)
+  ecosim-2dea74d9:
+    collection: ecosim_knowledge
+    queries:
+      - name: campbell_hydraulics
+        query: "How does EcoSIM represent soil water retention and hydraulic conductivity?"
+        must_contain_any: ["Campbell", "retention", "conductivity", "macropore"]
+      - name: rubisco_photosynthesis
+        query: "What controls C3 photosynthetic capacity in EcoSIM (rubisco carboxylation)?"
+        must_contain_any: ["VCMX", "rubisco", "carboxylase", "Grant"]
+      - name: stomatal_conductance
+        query: "How is stomatal conductance determined in EcoSIM under water stress?"
+        must_contain_any: ["turgor", "cuticular", "RSMX", "osmotic", "diffusion"]
+      - name: decomposition_temperature
+        query: "What temperature function governs microbial decomposition in EcoSIM?"
+        must_contain_any: ["Johnson-Lewin-Eyring", "microbial", "Arrhenius", "inactivation"]
+      - name: p_sorption
+        query: "How does EcoSIM represent phosphorus sorption in soil?"
+        must_contain_any: ["Langmuir", "phosph", "sorption"]
+      - name: allocation
+        query: "How does EcoSIM allocate carbon among plant organs?"
+        must_contain_any: ["stage", "prescribed", "partition", "allocation"]
+      - name: p_uptake_calibration
+        query: "Which EcoSIM parameters control plant phosphorus uptake for calibration?"
+        must_contain_any: ["UPMXPO", "UPKMPO", "H2PO4", "uptake"]
+    # EcoSIM PFT identities come from the site definition (no fates_pftname), so we
+    # assert plant-axis presence via the graph-node count in the checker, not names.
+    pft_identity: {}
+
+  # ---------------------------------------------------------------------------
+  # PFLOTRAN @ 157a26f7 (miniLEO). Added 2026-08-07 after the profile was found
+  # to have NO entries at all -- check_rag_queries.py reported "not in
+  # golden_queries.yaml, nothing to test", which is honest but means the index
+  # had no content assertions while FATES and EcoSIM did.
+  #
+  # These are chosen from a REAL failure, not invented: on 2026-08-07 a live
+  # reasoning/diagnose() call against miniLEO produced fluent geochemistry that
+  # had not read this deck (dev log 20260807k). Each query below asserts a fact
+  # the curated seed supplies and that call missed or contradicted, so a
+  # regression re-fails here instead of resurfacing as a wrong diagnosis.
+  # ---------------------------------------------------------------------------
+  pflotran-157a26f7:
+    collection: pflotran_knowledge
+    queries:
+      # THE finding diagnose() missed: Birnessite-LEO carries a rate constant of
+      # 10^-91.5, so Mn has effectively NO SINK in this deck -- the model
+      # recommended tuning it anyway.
+      # CORRECTED 2026-08-27: this comment used to add "and is NOT reachable by
+      # the parameter list". That inference is REFUTED -- probe case
+      # miniLEO_p1_permhi raised PERM_ISO alone and Mn moved 0.607 -> 1.007,
+      # essentially onto target, because permeability sets residence time. The
+      # sink finding stands; the unreachability conclusion drawn from it does
+      # not. The query below is unchanged: Birnessite IS still what should be
+      # retrieved for "what controls the Mn sink".
+      - name: mn_has_no_sink
+        query: "Why is manganese under-predicted in the miniLEO outflow? What controls the Mn sink?"
+        must_contain_any: ["Birnessite", "Mn", "manganese"]
+      # Trap list: A2MC would mis-triage a healthy run as failed without this.
+      - name: max_ts_cuts_is_not_a_failure
+        query: "Is a run with many timestep cuts a failure? What is MAX_TS_CUTS?"
+        must_contain_any: ["consecutive", "88", "MAX_TS_CUTS", "per-timestep"]
+      # Would otherwise show zero Morris sensitivity that looks like physics.
+      - name: affinity_power_inert_on_simple_path
+        query: "When does AFFINITY_POWER affect the mineral dissolution rate?"
+        must_contain_any: ["AFFINITY", "SIMPLE", "COMPLEX", "affinity_factor"]
+      # A rewriting parser that ignores this silently corrupts every realization.
+      - name: dbase_value_is_not_writable
+        query: "What is DBASE_VALUE in a PFLOTRAN input deck and can a parser overwrite it?"
+        must_contain_any: ["DBASE_VALUE", "database", "runtime"]
+      # The two knob families the parameter list actually samples.
+      - name: rate_constant_and_surface_area
+        query: "How do RATE_CONSTANT and reactive surface area control mineral dissolution?"
+        must_contain_any: ["RATE_CONSTANT", "surface area", "SURFACE_AREA", "kinetic"]
+      - name: van_genuchten_retention
+        query: "How is the van Genuchten retention curve specified in the deck?"
+        must_contain_any: ["van Genuchten", "SATURATION_FUNCTION", "ALPHA", "residual"]
+      # HALLUCINATION GUARD. diagnose() blamed anorthite for Ca and gibbsite for
+      # Al retention on 2026-08-07; neither mineral is in this deck (Ca is
+      # glass-sourced; Al's sinks are Proto-Imogolite and Montmor-Mg). Asserting
+      # their ABSENCE from retrieved context is the cheap half of that defect.
+      - name: no_minerals_absent_from_this_deck
+        query: "Which minerals supply calcium and retain aluminium in the miniLEO deck?"
+        must_not_contain: ["Gibbsite", "gibbsite", "Anorthite", "anorthite"]
+    # PFLOTRAN has no PFT axis; its grouping axis is the mesh region.
+    pft_identity: {}

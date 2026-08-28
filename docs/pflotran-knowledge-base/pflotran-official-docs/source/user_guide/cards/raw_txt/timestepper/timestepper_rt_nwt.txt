@@ -1,0 +1,7 @@
+CFL_GOVERNOR <float>
+ Specifies a maximum CFL (Courant–Friedrichs–Lewy) number that governs time step size. Subsequent time steps are calculated as a function of the maximum flow velocity and grid discretization such that the CFL is not exceeded.
+
+VOLUME_FRACTION_CHANGE_GOVERNOR <float>
+ Limits the time step based on the maximum desired change in mineral volume 
+ fraction. (default = 1.d0)
+

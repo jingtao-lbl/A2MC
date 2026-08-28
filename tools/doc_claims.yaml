@@ -1,0 +1,181 @@
+# Retired claims — things this repo no longer does, which a live doc must not still say.
+#
+# Read by tools/check_doc_claims.py, which NORMALISES a line (markdown emphasis, code ticks, and
+# `_`-vs-space) before matching. That is the whole point: `Source **both** before every run.` is
+# invisible to `git grep -i 'source both'`, and a grep that finds nothing looks exactly like a
+# surface that is clean.
+#
+# Adding a claim:
+#   id        short kebab slug
+#   retired   version + date it stopped being true
+#   why       one line a reader can act on
+#   patterns  regexes, LOWERCASE, matched against the normalised line. Give the ALTERNATE
+#             PHRASINGS, not just the one you happen to remember -- that is the failure this
+#             registry exists to stop.
+#   allow     regexes for text that legitimately contains the phrase TODAY (the "still works and
+#             is a no-op" sentences). Keep these tight; a loose allow silently disables the claim.
+
+exclude_globs:
+  # These record what was true WHEN WRITTEN. Rewriting them falsifies them.
+  - memory/dev_logs*/**
+  - memory/ana_logs/**
+  - memory/a2mc_development_history.md
+  - memory/model_logs/**
+  - use_cases/*/memory/**
+  - use_cases/*/reports/**
+  - docs/[0-9][0-9]_*.md
+  - Backup/**
+  - tmp/**
+  # The registry and its checker quote the retired wording by construction.
+  - tools/doc_claims.yaml
+  - tools/check_doc_claims.py
+  - tests/**
+
+retired_markers:
+  # A doc whose HEADER (first 12 lines) declares itself superseded is history by declaration and is
+  # skipped whole. Prefer this to an exclude_globs entry: the banner tells the READER, an exclude
+  # tells only this file. Convention matches docs/a2mc_reference/rag_build_roadmap.md.
+  - "**superseded"
+  - "**retired"
+  - "**historical document"
+
+stop_headings:
+  # Scanning stops here. A skill's changelog entry saying "this file used to say X" quotes X
+  # forever and is correct to do so.
+  - "## changelog"
+  - "## version history"
+
+claims:
+  - id: source-both-configs
+    retired: "v2.306 (2026-08-26)"
+    why: >-
+      Every shipped site config auto-sources its machine config, so a reader sources ONE file.
+      Telling them to source both preserves a choice (a2mc_config.sh vs a2mc_noncime_config.sh)
+      that is a named recurring failure and that the guard now repairs.
+    patterns:
+      - "source both"
+      - "both config files before"
+      - "sacred order"
+      - "machine config first, then"
+      - "machine-level config first"
+      - "you always source a2mc_config.sh"
+    allow:
+      # The current, correct sentences that mention the old form as a no-op.
+      - "still works and is a no-op"
+      - "auto-source"
+      - "auto-sources"
+      - "loads it for you"
+      # feedback_layered_config_override_must_be_unconditional describes DIAGNOSING the layering
+      # ("the bug is invisible until you actually source both files in order and print the
+      # variable"). That is still true and is not a run instruction. Kept deliberately narrow --
+      # a loose allow here would disable the claim for every real hit.
+      - "source both files in order"
+
+  - id: single-clause-autosource-guard
+    retired: "v2.306 (2026-08-26)"
+    why: >-
+      The guard tests TWO variables. Describing it as `A2MC_HPC_MPI_RANKS` alone documents the
+      defect that version fixed -- a shell that already exported that variable masked the guard.
+    patterns:
+      - "the guard is a2mc hpc mpi ranks"
+      - "the guard is .a2mc_hpc_mpi_ranks"
+
+  # ---------------------------------------------------------------- seeded 2026-08-26 ----------
+  # Each of the five below was VERIFIED retired against the repo before being written down: the
+  # flag is absent from both sync scripts, the sampler imports `sample_sobol`, `manager.py`'s
+  # signature has no `phase`, `write-report` step 2 says do NOT write the block, and the machine
+  # config is the only place the loop limits live. A claim for something that was never actually
+  # retired is a gate that fails on correct text, so the verification is the work.
+
+  - id: sync-target-flag
+    retired: "never implemented; recorded abandoned 2026-04-27"
+    why: >-
+      The sync scripts take only [--dry-run]. The `--target a2mc / a2mc-elm / all` interface was
+      sketched for the deferred two-public-repo design, never written, and will not be -- two
+      separate script copies replaced it. A doc showing the flag sends the reader to a usage error.
+    patterns:
+      - "sync_to_public.sh --target"
+      - "--target (a2mc|all)\\b"
+      - "--target a2mc-elm"
+    allow:
+      - "abandoned"
+      - "never implemented"
+
+  - id: salib-saltelli-sampler
+    retired: "2026-08-18 (ecosim-run-workflow)"
+    why: >-
+      `SALib.sample.saltelli` is deprecated, has no seed, and its `skip_values` is a sequence offset
+      rather than a seed -- so a design built with it is not re-derivable. Use `SALib.sample.sobol`.
+      NOTE: "Saltelli" as the NAME of the Sobol design is correct and is not what this claim targets.
+    patterns:
+      - "salib\\.sample\\.saltelli"
+      - "sample import saltelli"
+      - "sample_saltelli"
+    allow:
+      - "deprecated"
+      - "deprecationwarning"
+      - "legacy"
+      - "do not revert"
+
+  - id: get-relevant-context-phase-kwarg
+    retired: "the kwarg never existed; the WRONG DOC was corrected 2026-08-19"
+    why: >-
+      `MemoryManager.get_relevant_context()` takes failing_targets / max_chars / targets /
+      parameters / verified_only. Passing `phase=` raises TypeError. The user guide documented the
+      wrong signature and a session called it from that doc, which is why this is a registered claim
+      and not just a code comment.
+    patterns:
+      - "get_relevant_context\\([^)]*phase="
+    allow:
+      - "no .?phase=? kwarg"
+      - "raises typeerror"
+
+  - id: report-readers-key-glossary
+    retired: "2026-08-24 (write-report)"
+    why: >-
+      A report defines each term INLINE on first use. The `## Reader's key` glossary block front-loaded
+      definitions the actual readers already knew and licensed undefined jargon in the body on the
+      excuse that a key existed.
+    only: ['.claude/skills/**', 'docs/**', '*.md']
+    patterns:
+      - "reader['\u2019]s key"
+    allow:
+      - "do not write"
+      - "is removed"
+      - "was removed"
+      - "removed from the contract"
+      - "which write-report removed"
+      - "replaced"
+      - "- \\[x\\]"          # a ticked TODO row records what was DONE
+
+  - id: figure-alt-text-carries-the-label
+    retired: "2026-07-17 (write-report; checker tools/check_report_figures.py)"
+    why: >-
+      Pandoc's implicit_figures turns alt text into a figcaption, so `![Figure N](f.png)` plus a bold
+      `**Figure N.**` paragraph renders the label twice. Empty alt, caption in the bold paragraph.
+    only: ['.claude/skills/**', 'docs/**', '*.md', '.claude_memory/**']
+    patterns:
+      - "!\\[figure ?[0-9n]"
+    allow:
+      - "not !\\[figure"
+      - "never !\\[figure"
+      - "flags any"
+      - "renders the label twice"
+      - "do not write"
+      - "duplicated figure caption"
+      - "non-empty alt text"
+
+  - id: loop-limits-as-literals
+    retired: "v2.282 (2026-08-22)"
+    why: >-
+      A2MC_MAX_EXPERIMENTS / A2MC_MAX_SKIP_TESTING / A2MC_CONFIDENCE_THRESHOLD live in the machine
+      config and NOWHERE else, and orchestrator.py reads all three as its argparse defaults. A doc
+      stating the max as `10` agrees with the config only by coincidence and contradicts it the
+      moment anyone changes the value. Quote the variable. (A CLI EXAMPLE passing an explicit
+      override is fine and is not what this matches.)
+    patterns:
+      - "max cycles:? +10\\b"
+      - "max skip[- ]testing:? +10\\b"
+      - "max experiments:? +10\\b"
+      - "capped at 10\\b"
+      - "confidence threshold:? +0\\.9[05]\\b"

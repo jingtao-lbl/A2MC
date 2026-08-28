@@ -1,0 +1,93 @@
+ATOL <float>
+ Declare convergence when the 2-norm of residual is less than ATOL :math:`\left(\|f(x_n)\|<\text{ATOL}\right)`. (default: :math:`10^{-50}`).
+
+CONVERGENCE_INFO
+ Opens a block for toggling ON/OFF convergence information in screen output (default: YES to all). See example below.
+
+ * 2R, FNORM, 2NORMR - 2-norm of residual
+ * 2X, XNORM, 2NORMX - 2-norm of solution
+ * 2U, UNORM, 2NORMU - 2-norm of update
+ * IR, INORMR - inifinity norm of residual
+ * IU, INORMU - inifinity norm of update
+
+DTOL <float>
+ Declare divergence (cut the time step) when the 2-norm of the residual is greater than DTOL times the 2-norm of the initial residual :math:`\left(\frac{\|f(x_n)\|}{\|f(x_0)\|}>\text{DTOL}\right)`. (default: :math:`10^{4}`).
+
+ITOL <float>
+ @SUPPORTED_MODES RICHARDS TH MPHASE
+ Declare convergence when the infinity norm of residual is less than ITOL :math:`\left(\|f(x_n)\|_{inf}<\text{ITOL}\right)`. (default: not used).
+
+ITOL_UPDATE <float>
+ @SUPPORTED_MODES RICHARDS TH
+ Declare convergence when the infinity norm of update is less than ITOL_UPDATE :math:`\left(\|x_n-x_{n-1}\|_{inf}<\text{ITOL_UPDATE}\right)`. (default: not used).
+
+MATRIX_TYPE <string>
+ @EXPERT
+ Format of main solver matrix. PETSc Mat (i.e. AIJ, BAIJ, or HYPRESTRUCT).
+
+MAXF <int>
+ @EXPERT
+ Maximum number of function evaluations before reporting failed convergence.
+
+MAXIMUM_NUMBER_OF_ITERATIONS <int>
+ Maximum number of Newton iterations before reporting failed convergence.
+
+MAX_NORM <float>
+ @EXPERT
+ Declare divergence (cut the time step) when the infinity norm of the residual is greater than MAX\_NORM 
+ :math:`\left(
+ \| f(x_n) \|_{inf} > \text{MAX_NORM}
+ \right)`. (default: :math:`10^{20}`).
+
+MINIMUM_NUMBER_OF_ITERATIONS <int>
+ @EXPERT
+ Newton solver convergence requires at least MINIMUM_NUMBER_OF_ITERATIONS.
+
+NO_FORCE_ITERATION
+ @EXPERT
+ Toggle off the forcing of at least 1 linear iteration.  The default is to force at least 1 linear iteration.  In a quasi-stationary state, the initial residual may be sufficiently small for convergence, but often it is better to force at least one iteration.
+
+NO_INFINITY_NORM
+ @EXPERT
+ Toggle off calculation of infinity norm on residual and update vectors.  The default is to calculate the infinity norm.
+
+NO_PRINT_CONVERGENCE
+ Toggle off printing of convergence information.
+
+PRECONDITIONER_MATRIX_TYPE <string >
+ @EXPERT
+ Format of preconditioning matrix. PETSc Mat (i.e. AIJ, BAIJ, or HYPRESTRUCT).  Default is same as solver.
+
+PRINT_DETAILED_CONVERGENCE
+ @EXPERT
+ Toggle on printing of detailed convergence information.
+
+PRINT_LINEAR_ITERATIONS
+ Prints the number of linear iterations for each Newton iteration to the screen.
+
+RTOL <float>
+ Declare convergence when the 2-norm of the residual is less than RTOL times the 2-norm of the initial residual :math:`\left(\frac{\|f(x_n)\|}{\|f(x_0)\|}<\text{RTOL}\right)`. (default: :math:`10^{-8}`).
+
+SNES_TYPE <string>
+ The default is LINE_SEARCH (Basic, see PETSc documenetation) from PETSc which is Newton-Raphson nonlinear solver. NTRDC is the Newton Trust-Region Dogleg-Cauchy nonlinear solver, and NTR is the Newton Trust-Region nonlinear solver. The difference between NTRDC and NTR is that NTRDC adds steepest-descent solution update to the Newton solution iff it optimizes better than Newton solution alone within the trust-region. NTR only applies Newton solution update and it is truncated by the trust-region. NTRDC MAY perform better with LESS phase state change simulations for GENERAL MODE.
+
+NTRDC_OPTIONS or NTR_OPTIONS
+ Opens a block for trust-region options and parameters (SNES_TYPE NTRDC or SNES_TYPE NTR required)
+
+ * TR_TOL - trust-region tolerance (default: :math:`1.0^{-12}`)
+ * ETA1 - trust-region parameter :math:`0.0 \le \eta_1 \le \eta_2`, :math:`\density \ge \eta_1` breaks out of the inner iteration (default: :math:`\eta_1=0.001`)
+ * ETA2 - trust-region parameter :math:`0.0 \le \eta_1 \le \eta_2`, :math:`\density \ge \eta_2` shrinks the trust-region (default: :math:`\eta_2=0.25`)
+ * ETA3 - trust-region parameter :math:`\eta_3 > \eta_2`, :math:`\density \ge \eta_3` expands the trust-region (default: :math:`\eta_3=0.75`)
+ * T1 - trust-region parameter, shrinking factor of trust-region (default: 0.25)
+ * T2 - trust-region parameter, initial size of trust-region, :math:`\Delta_0*\|x\|_2` (default: 0.1)
+ * DELTA_M - trust-region parameter, max size of trust-region, :math:`\Delta_M*\|x\|_2` (default: 0.5)
+ * DELTA_0 - trust-region parameter, initial size of trust-region, :math:`\Delta_0*\|x\|_2` (default: 0.1)
+ * AUTO_SCALE - TRUE enables solution update scaling meaning all types of unknowns are equally treated when evaluating solution update (recommended for WIPP-FLOW, TH); FALSE disables solution update scaling meaning that solution update evaluation will focus more on pressure than other unknowns (recommended for GENERAL, HYDRATE).
+ * AUTO_SCALE_MAX - used with AUTO_SCALE, caps the maximum auto-scaling factor
+
+STOL <float>
+ Declare convergence when the 2-norm of the update divided by the 2-norm of the solution is less than STOL :math:`\left(\frac{\|x_n-x_{n-1}\|}{\|x_{n-1}\|}<\text{STOL}\right)`. (default: :math:`10^{-8}`).
+
+VERBOSE_LOGGING
+ Prints additional convergence information to screen.
+

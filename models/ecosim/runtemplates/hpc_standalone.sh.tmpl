@@ -1,0 +1,68 @@
+#!/bin/bash
+# =============================================================================
+# EcoSIM run template: HPC + standalone (compiled binary) on NERSC Perlmutter
+# =============================================================================
+#
+# PROVEN incantation from the BioCON test1_ex1 reproduction
+# (memory/dev_logs_adapterkit/20260711c_Perlmutter_EcoSIM_Build_Repro_Execution.md).
+# EcoSIM is a serial Fortran binary (build default mpi=0) invoked as:
+#     ecosim.f90.x <runfile.nml>
+#
+# Per-case knobs are {{PLACEHOLDERS}} rendered by scripts/init_adapter.py /
+# the ensemble generator. The EcoSIM-specific parts (GCC toolchain, binary
+# path, serial invocation, no stop-config edit) are filled in because they are
+# verified, not guessed.
+
+#SBATCH --job-name={{CASE_NAME}}
+#SBATCH --account={{ACCOUNT}}          # e.g. m5199 (adapter-kit EcoSIM)
+#SBATCH --qos={{QUEUE}}                # serial run -> 'shared'; full-node -> 'regular'
+#SBATCH --constraint=cpu
+#SBATCH --nodes={{NODES}}              # 1
+#SBATCH --ntasks={{MPI_RANKS}}         # 1 (serial; build default mpi=0)
+#SBATCH --cpus-per-task={{CPUS_PER_TASK}}   # e.g. 4
+#SBATCH --time={{WALLTIME}}
+#SBATCH --output={{OUTPUT_DIR}}/slurm_%j.out
+#SBATCH --error={{OUTPUT_DIR}}/slurm_%j.err
+
+set -euo pipefail
+
+# ---- Toolchain (runtime) ----
+# CRITICAL: EcoSIM must be BUILT with GCC <= 13. The default Perlmutter
+# gcc-native/14 makes -Wimplicit-function-declaration a hard error and breaks
+# the bundled netcdf-c TPL (strcasecmp). The reference binary was built with the
+# /usr/bin system GCC 13.2.1. At runtime the binary uses standard system libs;
+# no module load is required, but do NOT rebuild under gcc-native/14.
+{{MODULES}}
+
+export OMP_NUM_THREADS={{OMP_NUM_THREADS}}   # 1 (serial)
+
+# ---- Paths ----
+EXE={{MODEL_BINARY}}      # .../EcoSIM/build/Linux-x86_64-double-Release/bin/ecosim.f90.x
+RUNFILE={{RUN_CMD}}       # the EcoSIM namelist (.nml); input paths already absolute
+WORK={{OUTPUT_DIR}}
+
+[ -x "$EXE" ] || { echo "ERROR: EcoSIM binary not found/executable at $EXE" >&2; exit 1; }
+[ -f "$RUNFILE" ] || { echo "ERROR: EcoSIM runfile not found at $RUNFILE" >&2; exit 1; }
+
+# ---- Pre-run hook (parameter-file injection, input staging) ----
+{{PRE_RUN_HOOK}}
+
+# ---- Run ----
+# Run length is set by `forc_periods = <y0>, <y1>, 1` in the namelist (the driver
+# year-loop), NOT by stop_n (the non-binding within-timer cap). Run the namelist
+# as-is; do not edit stop config. Serial -> no srun rank flags needed, but srun
+# is used for correct Slurm accounting/binding on Perlmutter.
+cd "$WORK"
+# EcoSIM reads the namelist path from the command argument into a fixed-length
+# buffer, so pass the BASENAME (relative to $WORK, where the runfile lives) — a
+# long absolute path is truncated and the open fails (namelist_to_buffer IO ERROR 2).
+RUNFILE_REL="$(basename "$RUNFILE")"
+echo "EcoSIM start: $(date)  binary=$EXE  runfile=$RUNFILE_REL  (cwd=$WORK)"
+srun -n {{MPI_RANKS}} "$EXE" "$RUNFILE_REL"
+echo "EcoSIM end:   $(date)"
+
+# Expected output: <case_name>.ecosim.h0.<start-date>.nc  (h0 history tape)
+ls -la "$WORK"/*.ecosim.h0.*.nc 2>/dev/null || echo "WARN: no h0 tape produced"
+
+# ---- Post-run hook (extraction, target evaluation) ----
+{{POST_RUN_HOOK}}

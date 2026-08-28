@@ -1,0 +1,25 @@
+{{{
+@echo off
+@echo file: cygwin-tcsh.bat
+
+: The following two calls may need to be altered to match the path of the
+: various batch files.
+
+: -- Microsoft Visual Studio 2010 --
+: The following path should match the %VS100COMNTOOLS% environment variable
+
+call "C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\vcvarsall.bat" x86
+
+: -- Intel Composer XE --
+: I have found that the name of the directory containing the composer can
+: differ depending on the release #, update, service pack.  I.e. 
+: "Composer XE" may very much differ in name from your installation.
+: Best to search for the file "ifortvars.bat" under your installation 
+: directory.
+
+call "C:\Program Files (x86)\Intel\Composer XE\bin\ifortvars.bat" ia32
+
+: Note that your cygwin may be installed elsewhere.  Adjust as needed.
+
+C:\software\cygwin\bin\tcsh -l
+}}}

@@ -1,0 +1,31 @@
+#!/bin/bash
+# =============================================================================
+# A2MC run template: local + CIME (rare but real)
+# =============================================================================
+#
+# Rendered by `scripts/init_adapter.py` Step 11. Use this template when your
+# model is:
+#     - Part of the CIME family (ELM/CESM/E3SM)
+#     - Run on a workstation (no scheduler)
+# This is rare but useful for single-case debugging or development on a laptop.
+#
+# Most CIME runs happen on HPC; use hpc_cime.sh.tmpl for that.
+
+set -euo pipefail
+
+# ---- Pre-run hook ----
+{{PRE_RUN_HOOK}}
+
+# ---- CIME case setup + build + submit (synchronous, no scheduler) ----
+{{CREATE_CASE_CMD}}
+cd "${CASE_DIR}"
+
+ln -sf "${A2MC_MODIFIED_PARAM_FILE}" "user_param_file.nc"
+
+./case.setup
+./case.build
+./case.submit
+# CIME's case.submit on a workstation typically runs the model inline.
+
+# ---- Post-run hook ----
+{{POST_RUN_HOOK}}

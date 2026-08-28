@@ -1,0 +1,71 @@
+GAS_COMPONENT_FORMULA_WEIGHT <float>
+ Molecular weight of gas [g/mol]. (default = 2.01588 for H\ :sub:`2(g)`\)
+
+NO_FRACTURE
+ Turns off fracture without removing it from the input file.
+
+NO_CREEP_CLOSURE
+ Turns off creep closure without removing it from the input file.
+
+NO_GAS_GENERATION
+ Turns off gas generation without removing it from the input file.
+
+BRAGFLO_RESIDUAL_UNITS
+ Calculates the residual in units of [kg/m\ :sup:`3` \] instead of [kmol/sec].
+
+MATCH_BRAGFLO_OUTPUT
+ Reports convergence information in units that match BRAGFLO for comparison purposes.
+
+ALLOW_NEGATIVE_GAS_PRESSURE
+ Allows the flow solution to converge with a negative gas pressure. The only reason for this is to match what is coded in BRAGFLO. (default = True) **It is NOT recommended.**
+
+HARMONIC_PERMEABILITY_ONLY
+ Performs a harmonic mean weighting on permeability alone, not the lumped density * permeability / viscosity.
+
+DEFAULT_ALPHA
+ Allows the users to run a simulation without providing ALPHA through a dataset.
+
+ALPHA_DATASET <string>
+ Specifies the dataset containing ALPHA values for all grid cells. Only needed for the 2D flared grid scenario.
+
+ELEVATION_DATASET <string>
+ Specifies a dataset containing elevation value for all grid cells.
+
+DIP_ROTATION_ANGLE <float>
+ Dip rotation angle for calculating ELEVATION internally.
+
+DIP_ROTATION_ORIGIN <float>
+ Dip rotation origin for calculating ELEVATION internally.
+
+DIP_ROTATION_CEILING <float>
+ Dip rotation ceiling for calculating ELEVATION internally.
+
+DIP_ROTATION_BASEMENT <float>
+ Dip rotation basement for calculating ELEVATION internally.
+
+DIP_ROTATION_REGIONS <string1> ... <stringN>
+ Specifies regions for which ELEVATION will be calculated internally.
+
+AUTO_PRESSURE_MATERIAL_IDS <int1> ... <intN>
+ Parameter for calculating initial pressures internally.
+
+AUTO_PRESSURE_RHO_B0 <float>
+ Parameter for calculating initial pressures internally.
+
+AUTO_PRESSURE_C_B <float>
+ Parameter for calculating initial pressures internally.
+
+AUTO_PRESSURE_PB_REF <float>
+ Parameter for calculating initial pressures internally.
+
+AUTO_PRESSURE_PB_0 <float>
+ Parameter for calculating initial pressures internally.
+
+AUTO_PRESS_SHALLOW_ORIGIN <float> <float> <float>
+ Parameter for calculating initial pressures internally.
+
+WITH_RADIOLYSIS
+ Toggles on radiolysis.
+
+2D_FLARED_DIRICHLET_BCS <string>
+ Enables Dirichlet boundary conditions to be specified at cell centers through a list of cells ids and the initial condition. The entries are read from the file named by *string*, with each entry providing the cell ID and flags for whether the *pressure* and *saturation* are held constant.

@@ -1,0 +1,2 @@
+SKIP_RESTART
+ On a restarted simulation, employs the initial condition for process model instead of the restarted solution.

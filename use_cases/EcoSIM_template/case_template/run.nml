@@ -1,0 +1,70 @@
+! EcoSIM base namelist TEMPLATE. Copy to your case, replace every <PLACEHOLDER>.
+! Full option reference + alternatives: OPTIONS.md beside this file.
+!
+! ### HARD LIMIT: the finished runfile must be < 4096 BYTES ###
+! EcoSIM slurps the namelist into a fixed 4096-byte buffer and abort()s if the file
+! FILLS it (fileUtil.F90) -- too LONG fails, not too short. Paths below are short
+! placeholders; real absolute paths run ~100-115 bytes EACH, so 7 inputs can add
+! ~700 bytes. Keep comments short in your copy. backend.py gates this before submit.
+!
+! Paths MUST BE ABSOLUTE: create_case() only repoints pft_file_in (by basename);
+! the other inputs are used exactly as written and are not resolved per case.
+
+&regression_test
+    cells = 3
+/
+
+&ecosim
+    case_name = '<CASE_NAME>'
+    do_regression_test = .false.
+
+    ! ---- Inputs. All absolute. See OPTIONS.md for what each file carries. --------
+    pft_file_in      = '<PFT_PARAM_NC>'        ! plant traits   (A2MC primary surface)
+    grid_file_in     = '<GRID_SOIL_NC>'        ! soil + site properties
+    pft_mgmt_in      = '<PFT_MGMT_NC>'         ! planting/cuts  (A2MC secondary)
+    soil_mgmt_in     = '<SOIL_MGMT_NC>'        ! tillage/amendments
+    clm_hour_file_in = '<CLIMATE_NC>'          ! hourly weather (or use clm_day_file_in)
+    atm_ghg_in       = '<ATM_GHG_NC>'          ! atmospheric CO2/CH4/N2O
+    clm_factor_in    = 'NO'                    ! 'NO' = no climate-change factors
+    micpar_file_in   = ''                      ! '' = compiled-in microbial defaults
+
+    ! ---- Process switches --------------------------------------------------------
+    plant_model      = .true.
+    microbial_model  = .true.
+    soichem_model    = .true.
+
+    ! ---- Time base. forc_periods = (year0, year1, REPEATS) triplets, up to 5. -----
+    ! Recycle forcing for spin-up, e.g. 2000,2009,3 replays that decade 3 times.
+    ! stop_n below MUST equal the total years these triplets produce.
+    start_date   = '<YYYY>0101000000'
+    forc_periods = <Y0>, <Y1>, 1
+    continue_run = .false.
+    grid_mode    = 1                           ! 1=3D  2=2D  3=1D column
+
+    ! ---- Numerics (leave unless you know why) ------------------------------------
+    npxs = 30, 30, 30, 30, 30
+    npys = 10, 10, 10, 10, 10
+    ncyc_litr = 20
+    ncyc_snow = 20
+
+    ! ---- Output. fincl ADDS to the default-active set; nhtfrq is PER TAPE. -------
+    ! -24 = daily mean, -1 = hourly. Add a 2nd tape only if you need sub-daily.
+    hist_mfilt   = 36500
+    hist_nhtfrq  = -24
+    hist_fincl1  = <OUTPUT_VARS>
+    lverbose         = .false.
+    disp_planttrait  = .true.
+/
+
+&bbgcforc
+/
+
+&ecosim_time
+    delta_time  = 3600.0                       ! seconds; 3600 = hourly step
+    stop_n      = <TOTAL_YEARS>                ! MUST match forc_periods total
+    stop_option = 'nyears'
+    rest_opt    = 'nyears'
+    rest_frq    = 1
+    diag_opt    = 'nsteps'
+    diag_frq    = 1
+/

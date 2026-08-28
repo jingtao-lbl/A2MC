@@ -1,0 +1,218 @@
+# =============================================================================
+# Template Curated Relationships YAML — copy + fill in for your model
+# =============================================================================
+#
+# Minimum-viable curated YAML: 3 categories, 3 mechanisms, 5 parameters,
+# 5 outputs. This is what `curated_seed_builder.py` (Doc 19 Step D) produces
+# as a v0.1 starting point per Recipe G1.
+#
+# Schema details: rag/data/curated_relationships.yaml (FATES, full ~1388 lines)
+# Recipe + authoring guidance: docs/a2mc_reference/graphrag_curated_yaml_roadmap.md
+#
+# After copying:
+#   1. Replace each `# TODO(adapter-kit):` marker
+#   2. Cross-check param names against spec.param_name_regex
+#   3. Cross-check output names against spec.output_name_regex
+#   4. Run `python tools/yaml_wiki_validator.py` to verify Dim A-E
+#
+# Every entry can carry a provenance field `_source` per
+# memory/dev_logs_adapterkit/20260427c_*: "auto-extract" | "ai-draft" | "human"
+# so future review passes can filter "things still needing human verification".
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Parameter categories — group parameters by physical-process kinship.
+# 5–15 categories typical. Each maps to one or more mechanisms.
+# -----------------------------------------------------------------------------
+categories:
+  category_one:
+    full_name: "TODO(adapter-kit): Category One Display Name"
+    description: "TODO(adapter-kit): What process kinship does this group represent?"
+    mechanisms:
+      - Mechanism_One
+    key_outputs:
+      - TEMPLATE_VAR_ONE
+    _source: "human"
+
+  category_two:
+    full_name: "TODO(adapter-kit): Category Two Display Name"
+    description: "TODO(adapter-kit): What process kinship does this group represent?"
+    mechanisms:
+      - Mechanism_Two
+      - Mechanism_Three
+    key_outputs:
+      - TEMPLATE_VAR_TWO
+      - TEMPLATE_VAR_THREE
+    _source: "human"
+
+  category_three:
+    full_name: "TODO(adapter-kit): Category Three Display Name"
+    description: "TODO(adapter-kit): What process kinship does this group represent?"
+    mechanisms: []
+    key_outputs: []
+    _source: "human"
+
+
+# -----------------------------------------------------------------------------
+# Mechanisms — named processes that parameters control.
+# Each has a code_reference (file:routine where it lives in source) and a
+# doc_reference (which user-guide section describes it).
+# 5–15 mechanisms typical for a v0.1 seed.
+# -----------------------------------------------------------------------------
+mechanisms:
+  Mechanism_One:
+    description: "TODO(adapter-kit): one-line description of what this mechanism does."
+    code_reference: "TODO(adapter-kit): SourceFile.F90::routine_name"
+    doc_reference: "TODO(adapter-kit): user-guide section name or wiki path"
+    parameters:
+      - template_param_one
+      - template_param_two
+    affects:
+      - TEMPLATE_VAR_ONE
+    notes: |
+      TODO(adapter-kit): calibration context for this mechanism.
+      What does it control? When does it become important?
+      Typical sensitivity ranges? Known interactions with other mechanisms?
+    _source: "human"
+
+  Mechanism_Two:
+    description: "TODO(adapter-kit): one-line description"
+    code_reference: "TODO(adapter-kit): SourceFile.F90::routine_name"
+    doc_reference: "TODO(adapter-kit): user-guide section"
+    parameters:
+      - template_param_three
+    affects:
+      - TEMPLATE_VAR_TWO
+    notes: |
+      TODO(adapter-kit): calibration context.
+    _source: "human"
+
+  Mechanism_Three:
+    description: "TODO(adapter-kit): one-line description"
+    code_reference: "TODO(adapter-kit): SourceFile.F90::routine_name"
+    doc_reference: "TODO(adapter-kit): user-guide section"
+    parameters:
+      - template_param_four
+      - template_param_five
+    affects:
+      - TEMPLATE_VAR_THREE
+    notes: |
+      TODO(adapter-kit): calibration context.
+    _source: "human"
+
+
+# -----------------------------------------------------------------------------
+# Outputs — output variables and what affects them.
+# Heuristic: top 10–30 calibration-relevant variables.
+# -----------------------------------------------------------------------------
+outputs:
+  TEMPLATE_VAR_ONE:
+    description: "TODO(adapter-kit): what does this variable represent? Units?"
+    direct_drivers:
+      - template_param_one
+    indirect_drivers:
+      - template_param_two
+    diagnostic_value: |
+      TODO(adapter-kit): how to interpret this variable during calibration.
+      What does "too high" / "too low" tell you about parameter regime?
+    _source: "human"
+
+  TEMPLATE_VAR_TWO:
+    description: "TODO(adapter-kit): description"
+    direct_drivers:
+      - template_param_three
+    indirect_drivers: []
+    diagnostic_value: "TODO(adapter-kit): interpretation guidance"
+    _source: "human"
+
+  TEMPLATE_VAR_THREE:
+    description: "TODO(adapter-kit): description"
+    direct_drivers:
+      - template_param_four
+      - template_param_five
+    indirect_drivers: []
+    diagnostic_value: "TODO(adapter-kit): interpretation guidance"
+    _source: "human"
+
+  TEMPLATE_VAR_FOUR:
+    description: "TODO(adapter-kit): description"
+    direct_drivers: []
+    indirect_drivers: []
+    diagnostic_value: "TODO(adapter-kit): interpretation guidance"
+    _source: "human"
+
+  TEMPLATE_VAR_FIVE:
+    description: "TODO(adapter-kit): description"
+    direct_drivers: []
+    indirect_drivers: []
+    diagnostic_value: "TODO(adapter-kit): interpretation guidance"
+    _source: "human"
+
+
+# -----------------------------------------------------------------------------
+# Parameters — per-parameter relationships and calibration notes.
+# v0.1 seed: 30–80 parameter entries (only 5 here as a minimum-viable example).
+# Run scripts/curated_seed_builder.py to populate this section AI-assisted from
+# wiki + parameter file (Doc 19 Step D / Recipe G1).
+# -----------------------------------------------------------------------------
+parameters:
+  template_param_one:
+    category: category_one
+    controls:
+      - Mechanism_One
+    affects:
+      - TEMPLATE_VAR_ONE
+    related_to:
+      - template_param_two
+    calibration_notes: |
+      TODO(adapter-kit): typical range, sign convention, gotchas.
+      Examples of effective values for known sites.
+      Cite wiki paths for non-trivial claims.
+    _source: "human"
+
+  template_param_two:
+    category: category_one
+    controls:
+      - Mechanism_One
+    affects:
+      - TEMPLATE_VAR_ONE
+    related_to:
+      - template_param_one
+    calibration_notes: |
+      TODO(adapter-kit): calibration context.
+    _source: "human"
+
+  template_param_three:
+    category: category_two
+    controls:
+      - Mechanism_Two
+    affects:
+      - TEMPLATE_VAR_TWO
+    related_to: []
+    calibration_notes: |
+      TODO(adapter-kit): calibration context.
+    _source: "human"
+
+  template_param_four:
+    category: category_two
+    controls:
+      - Mechanism_Three
+    affects:
+      - TEMPLATE_VAR_THREE
+    related_to:
+      - template_param_five
+    calibration_notes: |
+      TODO(adapter-kit): calibration context.
+    _source: "human"
+
+  template_param_five:
+    category: category_two
+    controls:
+      - Mechanism_Three
+    affects:
+      - TEMPLATE_VAR_THREE
+    related_to:
+      - template_param_four
+    calibration_notes: |
+      TODO(adapter-kit): calibration context.
+    _source: "human"
