@@ -27,7 +27,18 @@ A Phase-5 experiment copies its job scripts into `memory/phase_results/{stem}/su
 
 That is why `PFLOTRAN_miniLEO` ran a whole round with nothing here but a README, and why the absence was not a defect. **What it does not give you is a way to submit N cases in one job**, because every case gets its own script and `submit_ensemble` loops `sbatch` over them. At 4096 members that is 4096 submissions against Perlmutter's 5000-job limit.
 
-**So this folder owns exactly one artifact:** `submit_ensemble_array.sh`. Copy it into your case's `case_template/`, set every value marked `<<< SET`, and commit the copy with the case.
+**So this folder owns two artifacts, both about submitting N cases rather than one.** Copy the one you need into your case's `case_template/`, set every value marked `<<< SET`, and commit the copy with the case.
+
+| artifact | one job per | use it when |
+|---|---|---|
+| `submit_ensemble_array.sh` | **case** (one array task each) | you want a single job id and low submission load, and the per-case resource shape is right |
+| `submit_ensemble_packed.sh` | **node**, running N cases concurrently inside it | the per-case shape is *small* and the queue, not the model, is your bottleneck |
+
+**Which one is not a style question.** A PFLOTRAN case is a small MPI job, so on a `shared` QOS it takes a slice of a node. If your cluster's shared pool is small, thousands of such jobs contend inside it no matter how they were submitted -- an array changes the job-record count, not the resource pool. Measured on `PFLOTRAN_miniLEO` R1 (2026-08-28): `shared_milan_ss11` holds **70 nodes** against `regular_milan_ss11`'s **2853** at comparable queue depth, and the round settled at 8.8 completions/hour with concurrency never above 6, which projects to 19 days for 4096 cases. Packing 16 cases into one node-exclusive `regular` allocation addresses both halves at once: more work per scarce job start, drawn from a 40x larger pool. **It costs no extra allocation** -- `shared` charges 8/128 of a node per case, a packed node charges one node for 16.
+
+Run `sinfo -p <partition> -o '%D'` and `squeue -p <partition> -o '%T'` for your own cluster before adopting the packed form; where the shared pool is not small, none of this applies.
+
+`submit_ensemble_packed.sh` pairs with **`scripts/pflotran_worklist.py`**, which builds its input. That script's completion test is the **final time in the mass-balance tape**, not the tape's existence, because a case killed by TIMEOUT leaves a partial tape that a file-existence test would score as done -- leaving a hole in the design matrix that nothing downstream reports.
 
 > ⚠ **It is NOT the default submitter, and the queue ceiling is not an unsolved problem.** `scripts/submit_adapter_ensemble_batched.py` submits per-case jobs in queue-aware waves against the 5000-job limit, with a reserve for the account's other lanes and idempotency on `job_id.txt`; it is what launched `PFLOTRAN_miniLEO R1` and it survived a mid-wave kill at 52 of 800 submissions because of that idempotency. **Use it unless you have a specific reason not to.** An array buys one job id and near-zero submission load at 10^3-10^4 cases; it costs per-case submit-script provenance, which is this project's only record of which binary a run was bound to ([[feedback_bind_runs_to_archived_binaries]]). The array script's own header carries the full trade-off.
 
@@ -37,3 +48,4 @@ That is why `PFLOTRAN_miniLEO` ran a whole round with nothing here but a README,
 | the perturbed deck | written in place by `write_parameter_file` before `create_case` runs |
 | the per-case `submit.sh` | `models/pflotran/runtemplates/hpc_standalone.sh.tmpl` |
 | **the ensemble array submitter** | **here** |
+| **the node-packed ensemble runner** | **here** |

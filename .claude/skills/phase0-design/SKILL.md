@@ -173,6 +173,37 @@ Arriving here from Phase 6 with the middle loop exhausted (or all candidates pin
 >   ([[feedback_bind_runs_to_archived_binaries]]). Whether an array even relieves the submit ceiling
 >   here is **unverified** — `MaxArraySize` is 65000, but if pending array tasks count individually
 >   against `MaxSubmitJobsPU` it gives no relief at all.
+> - **Submission, when the QUEUE rather than the model is the bottleneck** — a third form exists,
+>   `use_cases/PFLOTRAN_template/case_template/submit_ensemble_packed.sh`, which runs **many cases
+>   concurrently inside ONE node-exclusive allocation**. Reach for it only on the specific signal
+>   below, because it is the least conventional of the three.
+>   **The signal is a small per-case shape meeting a small shared pool.** A PFLOTRAN case is a small
+>   MPI job (miniLEO: 8 ranks), so on a `shared` QOS it takes a node *slice* — and if the cluster's
+>   shared partition is itself small, thousands of such jobs contend inside it regardless of how they
+>   were submitted. **An array does not help here: it changes the job-record count, not the resource
+>   pool.** Measured on `PFLOTRAN_miniLEO` R1 (2026-08-28, log `20260828a`): `shared_milan_ss11` holds
+>   **70 nodes** against `regular_milan_ss11`'s **2853** at comparable queue depth, and the round
+>   settled at 8.8 completions/hour with concurrency never above 6 and reaching 0 with 4010 queued —
+>   every pending job reporting `Reason=Priority`, nothing crashed. That projects to **19 days** for
+>   4096 cases.
+>   **Diagnose before adopting**, since on a cluster with a large shared pool none of this applies:
+>   `sinfo -p <partition> -o '%D'` for pool size, `squeue -p <partition> -o '%T'` for depth,
+>   `squeue -o '%Q'` against `scontrol show config`'s `bf_min_prio_reserve` for whether your jobs can
+>   earn a backfill reservation at all, and `sshare -U -u $USER` for the account's FairShare.
+>   **It costs no extra allocation** — `shared` charges ranks/cores-per-node per case, a packed node
+>   charges one node for (cores/ranks) cases. Same core-hours, minus idle slots at the worklist tail.
+>   Its input comes from **`scripts/pflotran_worklist.py`**, whose completion test is the **final time
+>   in the `*-mas.dat` tape, not the tape's existence** — a TIMEOUT case leaves a partial tape that a
+>   file-existence test scores as done, silently leaving a hole in the design matrix. Two properties
+>   are worth knowing before relying on it: it reads case **directory names** from that worklist, so
+>   unlike the array form it carries no case-naming assumption and a non-contiguous set costs nothing;
+>   and like the array form, **one script binds many cases to one binary**, so record which
+>   ([[feedback_bind_runs_to_archived_binaries]]).
+>   **Gate it on measurement, not on the arithmetic.** "16 cases fit a 128-core node" is a core count,
+>   not a throughput prediction: N cases' worth of MPI ranks contend for one node's memory bandwidth,
+>   so if packed cases run much beyond ~2x their solo p50, *fewer* workers per node may yield *more*
+>   cases per node-hour. Run a one-node gate on a carved-out subset first — and cancel that subset's
+>   individually-queued jobs before it, or the two paths run the same case and clobber each other.
 >
 > - **Scoring** uses the backend extraction (`reduce_target` → `backend.reduce_ecosystem` for
 >   ecosystem-level targets). Step 4 (monitoring) is model-agnostic. Worked example: `20260715d/e` (EcoSIM R1).
@@ -394,6 +425,7 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 
 ## Changelog
 
+- 2026-08-28: **Adds the node-packed submitter as a THIRD submission form, for when the queue rather than the model is the bottleneck.** Signal: `PFLOTRAN_miniLEO` R1 measured 8.8 completions/hour with concurrency never above 6 and then 0 with 4010 queued, projecting 19 days, and the cause was that `--qos=shared` confines a round to a 70-node pool against the node-exclusive partition's 2853 at comparable queue depth (log `20260828a`). The skill already named the batched default and the array alternative, but **both submit one case per job**, so neither addresses a small pool — an array changes the job-record count, not the resource pool, which is the reasoning error this entry exists to pre-empt. Written with its diagnostic commands attached rather than as a recommendation, because on a cluster with a large shared pool the technique is unnecessary. Also states the gate: the core-count arithmetic is not a throughput prediction, since packed cases contend for memory bandwidth. **No correction was needed to the array-template text.** A first pass at this edit believed that text stale and it was not — the stale copy was in a compacted session context, not in the file. Worth recording as its own trap: re-read the file before calling a skill wrong.
 - 2026-08-27 (later): **The PFLOTRAN submission bullet was stale within hours of being written, and its replacement names the real default.** It said miniLEO had no job-array template and that an array was 'an open item, not a solved one' — both written before reading that round's launch log. The actual default is `scripts/submit_adapter_ensemble_batched.py` (queue-aware waves, a reserve, a model-dependent jobs-per-case multiplier, idempotency on `job_id.txt`), which this skill did not mention at all despite owning the launch-mode decision; it is what put 4,097 cases on the scheduler. A template array submitter now also exists, repositioned as the narrow alternative with its cost stated (per-case binary provenance) and one property still unverified (whether an array relieves `MaxSubmitJobsPU`). Found by the 3-hourly self-review, which is the mechanism working: a skill claim invalidated by the same day's work.
 
 - 2026-08-27: **The adapter block names every adapter model's run skill, and states where PFLOTRAN
