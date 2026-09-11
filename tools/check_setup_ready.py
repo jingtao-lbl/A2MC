@@ -35,8 +35,8 @@ from pathlib import Path
 
 ROOT_GUESS = Path(__file__).resolve().parent.parent
 
-PASS, FAIL, NA, INFO = "PASS", "FAIL", "NA", "INFO"
-_MARK = {PASS: "✓", FAIL: "✗", NA: "–", INFO: "ℹ"}
+PASS, FAIL, NA, INFO, WARN = "PASS", "FAIL", "NA", "INFO", "WARN"
+_MARK = {PASS: "✓", FAIL: "✗", NA: "–", INFO: "ℹ", WARN: "!"}
 
 
 def env(name: str, default: str = "") -> str:
@@ -113,6 +113,114 @@ def targets_check_verdict(model: str, rc: int):
     if model == "fates":
         return rc != 0, False
     return rc >= 2, rc == 1
+
+
+#: Env var holding the adopted binary, per non-CIME model. CIME models build per case and have no
+#: single archived executable, so they are absent here and the check reports N/A. VERIFIED against
+#: the shipped configs -- only these two exist. ATS is deliberately ABSENT rather than guessed:
+#: inventing `A2MC_ATS_BINARY` here would create a second name for a quantity ATS does not yet
+#: define, which is the "two names for one quantity" shape the config check exists to prevent.
+_BINARY_ENV = {"ecosim": "A2MC_ECOSIM_BINARY",
+               "pflotran": "A2MC_PFLOTRAN_BINARY"}
+
+
+def _declared_switches(root: Path, model: str, binary: str):
+    """(label, [(key, recommended_value)], note) for the adopted binary, from the case manifest.
+
+    WHY THIS EXISTS. An archived binary's provenance records what is IN it -- commit, checksum,
+    size. It records nothing about what must be SET to get the behaviour it was built for, and a
+    compiled-in default-off switch is invisible in a run log: its absence from a namelist is
+    byte-identical to a deliberate choice to leave it off. Measured 2026-09-04: EcoSIM's
+    `guard_floor_dying_stand` shipped 2026-08-20, was compiled into every binary since, was
+    enabled only by one round's per-cohort relaunch runbook, and reached no case template. It was
+    therefore OFF for EcoSIM_TeRaCON R1, which lost 8 of its first 364 cases to an abort the
+    binary already knew how to suppress. Nothing in the setup gate could have asked.
+    """
+    import json
+    label = Path(binary).parent.name
+    man = Path(env("A2MC_USE_CASE_DIR", "")) / "config" / "binary_archive_manifest.json"
+    if not man.is_file():
+        return label, None, f"no binary_archive_manifest.json beside this case's config"
+    try:
+        entries = json.loads(man.read_text())["archives"]
+    except Exception as exc:                                    # pragma: no cover - malformed json
+        return label, None, f"cannot read {man.name}: {exc}"
+    entry = next((e for e in entries if e.get("label") == label), None)
+    if entry is None:
+        return label, None, (f"'{label}' is not in {man.name} -- run "
+                             f"tools/binary_archive_manifest.py --generate")
+    decl = (entry.get("runtime_switches") or "").strip()
+    if not decl:
+        return label, [], "the manifest records no runtime_switches for this binary"
+    # "key=.true. RECOMMENDED ..." -- take each key=value pair, ignore the prose around it.
+    import re
+    pairs = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\.\w+\.|[-\w.]+)", decl)
+    return label, pairs, decl
+
+
+def _namelist_sets(nml: Path, key: str):
+    """The value `key` is set to in a namelist file, or None if it does not appear."""
+    import re
+    if not nml.is_file():
+        return None
+    for ln in nml.read_text(errors="replace").splitlines():
+        ln = ln.split("!", 1)[0]                                # strip comments; ! is the marker
+        m = re.match(r"\s*%s\s*=\s*(\S+?),?\s*$" % re.escape(key), ln, re.I)
+        if m:
+            return m.group(1)
+    return None
+
+
+def check_binary_switches(add, root: Path, model: str):
+    """Does this case SET the runtime switches its adopted binary declares?"""
+    grp = "Binary provenance"
+    var = _BINARY_ENV.get(model)
+    if not var:
+        add(grp, NA, "adopted-binary runtime switches",
+            f"{model} builds per case (CIME) — no single archived binary")
+        return
+    binary = env(var)
+    if not binary:
+        add(grp, NA, "adopted-binary runtime switches", f"{var} unset")
+        return
+    if "/build/" in binary and "/build_archive/" not in binary:
+        add(grp, FAIL, "binary is an ARCHIVE, not the live build tree",
+            f"{binary} — one rebuild overwrites it in place and a queued job resolves its exe at "
+            f"RUN time (feedback_bind_runs_to_archived_binaries)")
+        return
+    add(grp, PASS if Path(binary).exists() else FAIL, "adopted binary exists",
+        binary)
+
+    label, pairs, note = _declared_switches(root, model, binary)
+    if pairs is None:
+        add(grp, WARN, "binary declares its required runtime switches", note)
+        return
+    if not pairs:
+        add(grp, INFO, "binary declares its required runtime switches", note)
+        return
+
+    # The namelist the ensemble is materialized FROM is the one that decides.
+    # PER-MODEL form ONLY, verified against the shipped configs: EcoSIM exports
+    # A2MC_ECOSIM_BASE_NAMELIST. A generic `A2MC_BASE_NAMELIST` fallback was written here first and
+    # REMOVED -- it exists nowhere in the repo, so it would have been a second name for a quantity
+    # that already has one, with zero readers to justify it.
+    nml = Path(env(f"A2MC_{model.upper()}_BASE_NAMELIST"))
+    if not nml.is_file():
+        add(grp, WARN, f"{label} declares {len(pairs)} switch(es); cannot check the namelist",
+            f"A2MC_{model.upper()}_BASE_NAMELIST is unset or does not point at a file")
+        return
+    for key, want in pairs:
+        got = _namelist_sets(nml, key)
+        if got is None:
+            add(grp, WARN, f"{key} is NOT set in {nml.name}",
+                f"{label} recommends {key}={want}. A namelist read does not require the key, so "
+                f"its absence is SILENT and leaves the compiled-in default. Set it deliberately, "
+                f"either way.")
+        elif got.lower() != want.lower():
+            add(grp, INFO, f"{key} = {got} in {nml.name}",
+                f"deliberate: {label} recommends {want}")
+        else:
+            add(grp, PASS, f"{key} = {got} in {nml.name}", f"matches what {label} recommends")
 
 
 def main() -> None:
@@ -288,10 +396,12 @@ def main() -> None:
         for p in ("ADSP", "RGSP", "TRANS"))
     add("Simulation protocol", INFO, "configured protocol (confirm it matches the goal)", proto)
 
+    check_binary_switches(add, root, env("A2MC_MODEL", "fates").lower())
+
     # ---- report ----
     order = ["Model + milestone", "Config layering", "Targets + cost fn", "Parameters",
              "Round record", "PFT inventory (PFT-level goal)", "PFT inventory", "FATES base file",
-             "Simulation protocol"]
+             "Simulation protocol", "Binary provenance"]
     seen_groups = [g for g in order if any(r[0] == g for r in results)]
     print(f"A2MC setup readiness — site '{Path(env('A2MC_USE_CASE_DIR')).name}' "
           f"({'FATES' if fates_on else 'ELM-only'}, "

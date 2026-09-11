@@ -48,6 +48,41 @@ from typing import Dict, List
 # NetCDF numeric dtype kind -> CDL type token. FATESOutputParser only
 # recognizes float/double/int in its variable-declaration regex, so map
 # everything numeric onto those three and skip pure-string metadata vars.
+
+def _assert_commit_matches(checkout, label, allow_mismatch):
+    """REFUSE to stamp a commit label the scanned tree is not actually at.
+
+    The scanner walks a LIVE directory tree while `--commit` writes a label into the header and the
+    filename. Nothing tied the two together, so pointing it at a checkout that had moved produced a
+    CDL labelled with one commit and derived from another -- false provenance in the artifact the
+    RAG build and the validators treat as version-true.
+
+    MEASURED 2026-09-08: regenerating `ecosim_output_info_2dea74d9.cdl` from a checkout sitting 123
+    commits ahead on an experiment branch produced 623 fields against the pin's 581. It was caught
+    only because the variable count is printed and a human compared it to the committed file. The
+    label was already written by then.
+
+    `--allow-commit-mismatch` exists for the legitimate case (scanning a tree you know differs, to
+    diff two registries) and makes the divergence explicit in the header instead of silent.
+    """
+    import subprocess
+    try:
+        head = subprocess.run(["git", "-C", str(checkout), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    except Exception as exc:                     # not a git checkout: nothing to verify against
+        print(f"  [warn] cannot read HEAD of {checkout} ({exc}); commit label unverified")
+        return
+    if head.startswith(label) or label.startswith(head[:len(label)]):
+        return
+    msg = (f"COMMIT MISMATCH: --commit says {label!r} but {checkout} is at {head[:len(label)]!r}.\n"
+           f"  The scan reads the WORKING TREE, so the output would carry a label it was not\n"
+           f"  derived from. Check out {label}, pass --commit {head[:len(label)]}, or pass\n"
+           f"  --allow-commit-mismatch if the divergence is deliberate.")
+    if not allow_mismatch:
+        raise SystemExit("ERROR: " + msg)
+    print("  [warn] " + msg)
+
+
 def _cdl_type(dtype_str: str) -> str:
     d = dtype_str.lower()
     if "float64" in d or d == "double":
@@ -130,6 +165,13 @@ def extract_from_source(checkout: Path) -> Dict:
         seen.add(name)
         um = re.search(r"units\s*=\s*'([^']*)'", body)
         lm = re.search(r"long_name\s*=\s*'([^']*)'", body)
+        #: `avgflag` is the history writer's time-aggregation flag, and it is the ONE fact that
+        #: separates a per-record increment from an instantaneous snapshot of a running total.
+        #: 'A' = averaged over the history interval, 'I' = instantaneous. It sits in the same call
+        #: body as `units` and was simply never read; without it a consumer must guess the temporal
+        #: semantics from the name, which is how a mean got applied to a resetting cumulative
+        #: (dev log 20260908h).
+        af = re.search(r"avgflag\s*=\s*'([^']*)'", body)
         status = "inactive" if "inactive" in body else "active"
         axis = next((a for p, a in ptr_axis.items() if p in body), None)
         if axis is None:  # 2d calls carry no ptr_*; fall back to the fname suffix
@@ -145,6 +187,7 @@ def extract_from_source(checkout: Path) -> Dict:
             "name": name, "type": "float", "dimensions": dimensions,
             "units": um.group(1) if um else "", "long_name": lm.group(1) if lm else "",
             "cell_methods": "", "status": status,
+            "avgflag": af.group(1) if af else "",
         })
     # Registry is size-agnostic (per-case dim sizes vary); nominal 1 for the header.
     dims = {d: (0 if d == "time" else 1, d == "time") for d in dims_used}
@@ -152,18 +195,26 @@ def extract_from_source(checkout: Path) -> Dict:
 
 
 def emit_cdl(parsed: Dict, out_path: Path, commit: str, source_nc: Path,
-             source_checkout: Path = None) -> None:
+             source_checkout: Path = None, allow_mismatch: bool = False) -> None:
     short = commit[:8] if len(commit) >= 8 else commit
     today = datetime.now().strftime("%Y-%m-%d")
     dims = parsed["dims"]
     variables = sorted(parsed["variables"], key=lambda v: v["name"])
 
     if source_checkout is not None:
+        _assert_commit_matches(source_checkout, short, allow_mismatch)
         lines = [
             "// EcoSIM history-output variable registry",
             f"// Source pin: EcoSIM commit {short}",
             f"//             DERIVED FROM SOURCE — every hist_addfld1d/2d call in",
-            f"//             {source_checkout}/f90src (the authoritative, version-true registry).",
+            #: DO NOT interpolate `source_checkout` here. This CDL ships to the public repo, and
+            #: the raw path is the authoring machine's home/project tree. Commit 0e229307 scrubbed
+            #: it out of the ARTIFACT and left the GENERATOR emitting it, so every regeneration
+            #: silently undid that scrub. Keep the example concrete but non-personal
+            #: ([[feedback_scrub_paths_keep_the_example]]).
+            "//             the model checkout's f90src/ tree -- $A2MC_MODEL_PATH/f90src, typically",
+            "//             on shared NERSC project space (such as /global/cfs/cdirs/<project>/<user>/EcoSIM).",
+            "//             That tree is the authoritative, version-true registry.",
             f"// Generated: {today}",
             "//",
             "// This is the ground truth for a version-pinned commit: a history TAPE only",
@@ -171,6 +222,10 @@ def emit_cdl(parsed: Dict, out_path: Path, commit: str, source_nc: Path,
             "// Each var carries its source long_name, units, and a :status attribute —",
             "//   status=\"inactive\" means default='inactive' in HistDataType.F90: the field is",
             "//   NOT written to the h0 tape unless named in the hist_fincl1 namelist.",
+            "// Each var also carries :avgflag, the history writer's time-aggregation flag —",
+            "//   'A' = averaged over the history interval, 'I' = instantaneous snapshot. With the",
+            "//   units this is what separates a rate from a per-record increment from a running",
+            "//   total, i.e. which time-axis reduction is correct. See tools/read_reduced.py.",
             "// Dimension sizes are NOMINAL (=1; per-case sizes vary); the axis names are true.",
             "",
             f"netcdf ecosim_output_{short} {{",
@@ -218,6 +273,8 @@ def emit_cdl(parsed: Dict, out_path: Path, commit: str, source_nc: Path,
             lines.append(f"      :cell_methods = \"{_escape(v['cell_methods'])}\" ;")
         if v.get("status"):
             lines.append(f"      :status = \"{v['status']}\" ;")
+        if v.get("avgflag"):
+            lines.append(f"      :avgflag = \"{v['avgflag']}\" ;")
     lines.append("}")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text("\n".join(lines) + "\n")
@@ -241,6 +298,12 @@ def parse_args() -> argparse.Namespace:
         help="EcoSIM source commit for the source-pin header (default: 2dea74d9)",
     )
     ap.add_argument(
+        "--allow-commit-mismatch", action="store_true",
+        help="Permit --commit to differ from the scanned checkout's HEAD. Without it the run "
+             "REFUSES, because the scan reads the working tree and would otherwise stamp a label "
+             "the output was not derived from. Use only for a deliberate cross-version diff.",
+    )
+    ap.add_argument(
         "--from-source", type=Path, default=None, metavar="CHECKOUT",
         help="Build the registry from the model SOURCE tree (authoritative, version-true; "
              "adds a :status active/inactive attribute) instead of from a history tape. "
@@ -261,7 +324,8 @@ def main() -> int:
         nact = sum(1 for v in parsed["variables"] if v.get("status") == "active")
         print(f"  {n} registered output fields ({nact} active, {n - nact} inactive-by-default)")
         print(f"Writing {args.output}")
-        emit_cdl(parsed, args.output, args.commit, args.output, source_checkout=args.from_source)
+        emit_cdl(parsed, args.output, args.commit, args.output, source_checkout=args.from_source,
+                 allow_mismatch=args.allow_commit_mismatch)
         print(f"Done. {n} variables written (source-derived).")
         return 0
     if not args.output_nc.exists():

@@ -43,6 +43,8 @@ plt.rcParams.update({
 # For a SLIDE, scale the four size lines ~1.4× (titlesize 18, labelsize 16, ticks 14, legend 12).
 ```
 
+**This is the GENERIC starting point, and a REPORT figure uses a different block.** The house style below sets `dpi` 200 with smaller type (9 / 9.5 / 8.5) — which looks like it contradicts both the `>200 rarely needed` note above and rule 1's *if in doubt, bigger*, and does not, because the two are **matched sets rather than independent knobs**: the house style pairs the smaller type with a modest page-width figsize and the higher dpi, so type is comparable on the printed page while thin 0.8 pt axes and panel letters stay crisp. **Do not mix the two blocks** — take one whole. Use this one for a quick working figure; use the house style for anything a person other than you will read.
+
 ## Checklist (each item is a common way the view-check fails)
 
 1. **Readable fonts.** matplotlib's defaults are too small for a report page. Set the sizes above
@@ -64,6 +66,10 @@ plt.rcParams.update({
    grey = baseline/reference. Avoid red↔green as the *only* distinction; add markers/linestyles too.
    **For A2MC biomass-vs-targets time-series specifically, the colors are FIXED semantic roles — use the
    ensemble figure template below, not free choices.**
+   **And for a REPORT figure the report-figure house style below fixes them too, differently:** reference
+   is **black**, not grey, and grey demotes to a passive band. Vermillion `#D55E00` is the bad/problem role
+   — it is the colourblind-safe red this rule asks for, named exactly so it is not re-picked by eye.
+6b. **Before writing an rcParams block, look in `use_cases/{Model}_{Case}/scripts/` for a figure template — and ask for the house STYLE, not for a script that plots your quantity.** A throughput figure and a flux time series share the style and share nothing else, so searching by figure type finds nothing and concludes wrongly that nothing is there. Measured 2026-09-04: a case's publication-figure template existed, was searched for by figure type, was not found, and the style was re-derived from the original source — arriving at an rcParams block **byte-identical** to the template's, which is what makes the miss provable rather than arguable. See the report-figure house style below.
 7. **Layout + save.** `constrained_layout=True` (set above) or `fig.tight_layout()` before `savefig`;
    both prevent clipped tick labels and titles. Save PNG at the rcParams DPI.
 8. **VERIFY BY VIEWING** (the load-bearing rule) — Read the PNG and eyeball it. Fix and re-render until
@@ -111,6 +117,40 @@ opposite: solid, opaque colored lines (`alpha=1.0`), one distinct color per vari
 This template **overrides generic rule 6** for these figures — red / blue / purple / black-dashed are fixed
 semantic roles here (best-fit / most-targets / cloud / control), not free color choices.
 
+## The A2MC report-figure house style (everything that is NOT the ensemble figure)
+
+The template above governs biomass-vs-target time series. **Everything else — a report figure, an analysis figure, a provenance or throughput figure — follows a second, separate house style**, and a case that has adopted it carries a template at `use_cases/{Model}_{Case}/scripts/`. The two do not compete: they answer different questions and fix different palettes, so adopting this one is not license to restyle an ensemble plot.
+
+| element | value |
+|---|---|
+| palette | Okabe-Ito, colourblind-safe **and legible in greyscale**: reference/observation black `#000000`, model/problem vermillion `#D55E00`, passive band `#BBBBBB`, secondary blue `#0072B2` |
+| spines | top and right removed; `axes.linewidth` 0.8, tick widths 0.8 |
+| gridlines | none |
+| legend | frameless (`legend.frameon: False`), and often unnecessary — a two-series figure with semantic colour does not need one |
+| panel letters | bold lowercase, `ax.text(-0.14, 1.06, s, transform=ax.transAxes, fontsize=11, fontweight="bold", va="top")` |
+| axes | units on **every** axis |
+| statistics | reported **IN-PANEL** (≈7.6 pt, `color="0.25"`) rather than pushed into the caption, and placed by **where the curve is**, not by habit — per panel, not once for the figure |
+| title | `suptitle` states the **FINDING as a sentence**, often two clauses |
+| sizes | `savefig.dpi` 200; font 9, `axes.labelsize` 9.5, ticks 8.5, legend 8.5 |
+
+```python
+plt.rcParams.update({
+    "savefig.dpi": 200,
+    "figure.constrained_layout.use": True,
+    "font.size": 9, "axes.titlesize": 10, "axes.labelsize": 9.5,
+    "xtick.labelsize": 8.5, "ytick.labelsize": 8.5, "legend.fontsize": 8.5,
+    "axes.spines.top": False, "axes.spines.right": False,
+    "axes.linewidth": 0.8, "xtick.major.width": 0.8, "ytick.major.width": 0.8,
+    "legend.frameon": False,
+})
+```
+
+Like the ensemble template, this **overrides generic rule 6** within its scope: black / vermillion / grey are fixed roles here, not free choices. It does **not** override rule 1 — see the note under Setup for why smaller type is not a step backwards.
+
+**Reference implementation:** `use_cases/EcoSIM_Lusignan/memory/phase_results/20260816a_obs_vs_sim_publication_figures/make_publication_figures.py`, which states the contract in its own docstring. Its generalized form — the shared SHAPE, with paths and scored variables resolved from the environment rather than hardcoded — is what a case carries in `scripts/`.
+
+**Why this section exists, and it is a coverage failure rather than a preference.** The style was invented in one case, produced five figures across two folders, was promoted to a case template on a second occasion, and was then **missed twice**: once by a session that made three sets of figures without ever loading this skill, and once by a session that DID load this skill, could not find the template because it searched by figure type, and re-derived the whole style from the original source. Nothing in this file named any of it. The conventions appeared in six files across two cases while the words *Okabe-Ito*, *panel letter*, *spines* and *in-panel* appeared in this skill **zero** times.
+
 ## Footguns
 
 - **Legend/annotation drawn last but placed by habit** (`loc="best"` or a fixed corner) lands on the data
@@ -121,6 +161,8 @@ semantic roles here (best-fit / most-targets / cloud / control), not free color 
 - **Tiny default fonts** look fine at the interactive size but are unreadable in an embedded report page —
   set sizes explicitly.
 - **Not viewing the PNG** — the #1 footgun. The code compiling ≠ the figure being readable.
+- **Viewing the PNG but only checking LAYOUT.** The view-check catches false CLAIMS too, and those are the more expensive kind. Measured 2026-09-04 on a single figure: an in-panel annotation read *"then monotonic decline"* while the last four bars visibly rose; a title claimed a ratio stronger than its own final bar supported; and a colour rule marked the decline as starting two blocks before it did. Three false statements, none visible in the code, all obvious in the picture. **Read the figure as a reader would and ask whether each word on it is true**, not just whether anything overlaps.
+- **Searching `scripts/` for a matching FIGURE TYPE instead of for the house STYLE** — see checklist 6b; it concludes "no template" while one is sitting there.
 
 ## Cross-references
 
@@ -146,6 +188,7 @@ semantic roles here (best-fit / most-targets / cloud / control), not free color 
 
 ## Changelog
 
+- 2026-09-04: **Adds the A2MC report-figure house style, and a footgun about what the view-check is FOR.** PI-directed, after pointing at a figure and asking that its style be followed. The style was invented in one case, produced five figures across two folders, was promoted to a case template on a second occasion — and was then missed TWICE, once by a session that never loaded this skill and once by a session that did load it but searched `scripts/` for a matching figure TYPE rather than for the STYLE, then re-derived the whole thing from source to a **byte-identical** rcParams block. The conventions lived in six files across two cases while *Okabe-Ito*, *panel letter*, *spines* and *in-panel* appeared here zero times, so the skill could not have helped either session. New: the house-style section (scoped explicitly to NON-ensemble figures, so it cannot be read as overriding the fixed ensemble palette), checklist item 6b (look in `scripts/` for the style, not the quantity), and two footguns — searching by figure type, and treating the view-check as a layout check when its more valuable catch is a false CLAIM on the figure (three of them on one figure the same day). **Reconciled in the same pass (refine-skill step 5), because the edit contradicted three things it did not touch:** the Setup block's `dpi` 135 and its `>200 rarely needed` note, rule 1's *if in doubt, bigger* against the house style's smaller type, and rule 6's *grey = baseline/reference* against the house style's black. The first two are answered by saying the two rcParams blocks are **matched sets, not independent knobs** — take one whole, do not mix — and the third by a carve-out beside the one the ensemble template already needed. **No trigger change:** `description` is untouched, so when this skill fires is unaffected.
 - 2026-08-16 (later): **The reciprocity invariant is now ENFORCED, not just written down.**
   `tools/check_skill_registry.py::reciprocity_check` reads the `**Reciprocal skills**` bullet and
   fails the pre-commit gate if any skill named there does not name `plotting` back. The bullet was

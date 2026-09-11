@@ -58,6 +58,39 @@ esac; done
   echo "ERROR: -j, -n and -s are all required" >&2; exit 2; }
 
 mkdir -p "$(dirname "$STATE")"
+
+# --- RUN A RUN-SCOPED COPY OF THIS SCRIPT ------------------------------------------------------
+# Bash reads a script by BYTE OFFSET as it executes -- it does not load the file up front. So
+# editing this file while an instance is running moves the ground under that instance: it resumes
+# mid-file at a shifted offset and dies on whatever garbage lands there.
+#
+# MEASURED 2026-09-03, and it is why this block exists. Commit 5f613ec6 fixed the bad-squeue-poll
+# bug in this very file while a watcher launched the previous day was still executing the OLD
+# code. That watcher resumed at a shifted offset and died with
+#   watch_slurm_array.sh: line 190: syntax error near unexpected token `)'
+# INSIDE the block the fix had just added. The fix was correct; deploying it killed the thing it
+# was fixing, and a 3,733-task array then ran unwatched for 31 hours.
+#
+# So: copy this file next to the state file and exec the copy. `exec` REPLACES the process, so the
+# PID does not change and any pid file recorded by the launcher stays valid. Past this point the
+# original is never read again and can be edited, committed or rewritten freely.
+#
+# The guard variable prevents an exec loop; the snapshot's own copy sees it set and falls through.
+# A snapshot that cannot be written is a WARNING, not a failure: running unprotected is strictly
+# better than not watching at all, and the warning says which one you got.
+if [ -z "${A2MC_WATCHER_SNAPSHOT:-}" ]; then
+  _snap="$(dirname "$STATE")/.watch_slurm_array.${JOB}.snapshot.sh"
+  if cp -- "$0" "$_snap.tmp" 2>/dev/null && mv -- "$_snap.tmp" "$_snap" 2>/dev/null; then
+    chmod +x "$_snap" 2>/dev/null || true
+    echo "[$(date '+%F %T')] exec'ing a run-scoped snapshot: $_snap" \
+         "(sha $(sha256sum "$_snap" 2>/dev/null | cut -c1-12))"
+    A2MC_WATCHER_SNAPSHOT="$_snap" exec bash "$_snap" "$@"
+  fi
+  echo "[$(date '+%F %T')] WARN could not snapshot $0 to $(dirname "$STATE") -- running the LIVE" \
+       "file, which an edit or a commit can kill mid-run" >&2
+fi
+
+EMPTY_STREAK=0
 LAST_DECILE=-1
 FINISHED=0
 
@@ -145,8 +178,17 @@ while true; do
   # 2026-08-20 on R3 chunk 1: pending was published as 1 against 4,959 actually pending. -r expands
   # one line per task. (Running elements happen to list individually either way, but -r there too
   # keeps the two counts derived the same way rather than relying on that coincidence.)
-  PEND=$(timeout 20 squeue -j "$JOB" -h -r -t PENDING -o '%i' 2>/dev/null </dev/null | wc -l)
-  RUN=$(timeout 20 squeue -j "$JOB" -h -r -t RUNNING -o '%i' 2>/dev/null </dev/null | wc -l)
+  # CAPTURE squeue's EXIT STATUS, not just its output. `| wc -l` swallows the status, so a
+  # timeout or a transient scheduler error yields 0 and is INDISTINGUISHABLE from "no jobs left".
+  # Measured 2026-09-02: one bad poll took wave-2 from running=109 to running=0 in a single
+  # interval, the watcher declared ENDED_UNACCOUNTED and EXITED, and 109 live jobs were left
+  # unwatched with a state file that read terminal -- which also made the health guard report
+  # the array FINISHED rather than stale, so nothing downstream could catch it either.
+  _pend_raw=$(timeout 20 squeue -j "$JOB" -h -r -t PENDING -o '%i' 2>/dev/null </dev/null); _pend_rc=$?
+  _run_raw=$(timeout 20 squeue -j "$JOB" -h -r -t RUNNING -o '%i' 2>/dev/null </dev/null);  _run_rc=$?
+  PEND=$(printf '%s' "$_pend_raw" | grep -c .)
+  RUN=$(printf '%s' "$_run_raw"  | grep -c .)
+  SQUEUE_OK=1; { [ $_pend_rc -ne 0 ] || [ $_run_rc -ne 0 ]; } && SQUEUE_OK=0
   # Completion from sacct: O(1) and authoritative. Do NOT count output files (a model that
   # creates its tape at init makes "file exists" mean STARTED, not finished), and do NOT grep
   # multi-GB stdout (the scan cannot finish and returns a partial count that looks like a total).
@@ -169,7 +211,17 @@ while true; do
 
   # Terminal is an allow-list: absence from squeue alone is not "finished", because a slurmdbd
   # outage reads identically. Require the accounted count to reach the task total.
-  if [ "$PEND" -eq 0 ] && [ "$RUN" -eq 0 ]; then
+  # TERMINAL REQUIRES: a SUCCESSFUL squeue, and TWO CONSECUTIVE empty polls. One empty poll is
+  # not evidence -- see the note at the poll above. `EMPTY_STREAK` is the confirmation.
+  if [ "$SQUEUE_OK" -eq 0 ]; then
+    echo "[$(date '+%F %T')] WARN squeue poll FAILED (pend rc=$_pend_rc run rc=$_run_rc) -- holding, not concluding terminal"
+    EMPTY_STREAK=0
+  elif [ "$PEND" -eq 0 ] && [ "$RUN" -eq 0 ]; then
+    EMPTY_STREAK=$((EMPTY_STREAK+1))
+  else
+    EMPTY_STREAK=0
+  fi
+  if [ "$SQUEUE_OK" -eq 1 ] && [ "$EMPTY_STREAK" -ge 2 ]; then
     if [ "$((OK + BAD))" -ge "$NTASKS" ]; then
       FINISHED=1; write_state "ENDED" "$PEND" "$RUN" "$OK" "$BAD"
       echo "[$(date '+%F %T')] ARRAY ENDED complete=$OK failed=$BAD of $NTASKS"

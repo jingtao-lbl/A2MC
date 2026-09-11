@@ -100,17 +100,30 @@
 # EXAMPLE ROWS (delete + replace with your model's parameters) — drawn from more than one model,
 # so the schema reads as model-neutral rather than as one model's list.
 # =============================================================================
-name,pft,organ,category,description,units,nc_dim,default,lower_bound,upper_bound,bound_source
+# `full_name` -- WHAT THE NAME MEANS, in the MODEL'S OWN WORDS.
+#   Model parameter names are often opaque (DMRT, SPOMC, CNWL) or are raw input paths, and a
+#   reader cannot tell from the name what the quantity is or what its index runs over. TAKE THE
+#   STRING FROM THE MODEL rather than inventing one: EcoSIM declares these in its own writer,
+#   e.g. PlantInfoMod.F90 gives DMRT as 'Root dry matter C production yield
+#   [gC root g-1 nonstrucal C]'. Where there is no such declaration, quote the source
+#   declaration comment. Reproduce it verbatim, misspellings included, so it stays greppable.
+#   THE UNITS IN THAT STRING ARE LOAD-BEARING: 'gC root g-1 nonstructural C' is what tells you
+#   DMRT is a YIELD, so 1-DMRT is a respired fraction OF THE CONSUMED carbon and not of root
+#   carbon. A round report stated that backwards until the units were read (2026-09-09).
+# COLUMN ORDER: keep `name` FIRST. tools/count_param_list.py finds the header row by testing
+#   whether the first field is `name` or `fates_name`. Consumers otherwise read by NAME
+#   (csv.DictReader), so extra columns are carried and safe to add.
+name,full_name,pft,organ,category,description,units,nc_dim,default,lower_bound,upper_bound,bound_source
 # --- per-PFT, no organ (EcoSIM: plant type 1) ---
-CNLF,1,,stoichiometry,Plant leaf N:C mass ratio,gN (gC)-1,npfts,0.2,0.02,0.2,literature: leaf N:C ceiling; Kerkhoff 2005 doi:10.1086/430237 (source-verified: rNCLeaf_pft is a MAX not the realized value)
-CNRT,1,,stoichiometry,Plant root N:C mass ratio,gN (gC)-1,npfts,0.016,0.008,0.02,database: FRED root N:C; Iversen 2017 doi:10.1111/nph.14486
+CNLF,Plant leaf NC mass ratio [gN (gC)-1],1,,stoichiometry,Plant leaf N:C mass ratio,gN (gC)-1,npfts,0.2,0.02,0.2,literature: leaf N:C ceiling; Kerkhoff 2005 doi:10.1086/430237 (source-verified: rNCLeaf_pft is a MAX not the realized value)
+CNRT,Plant root NC mass ratio [gN (gC)-1],1,,stoichiometry,Plant root N:C mass ratio,gN (gC)-1,npfts,0.016,0.008,0.02,database: FRED root N:C; Iversen 2017 doi:10.1111/nph.14486
 # --- per-PFT AND per-organ: two axes on one row (FATES-style; read today by param_spec.py) ---
-fates_stoich_nitr,1,1,stoichiometry,Leaf N stoichiometry,gN (gC)-1,,0.033,0.0187,0.0387,database: TRY leaf N per PFT; Kattge 2020 doi:10.1111/gcb.14904
+fates_stoich_nitr,Leaf nitrogen stoichiometry [gN (gC)-1],1,1,stoichiometry,Leaf N stoichiometry,gN (gC)-1,,0.033,0.0187,0.0387,database: TRY leaf N per PFT; Kattge 2020 doi:10.1111/gcb.14904
 # --- GLOBAL / scalar: every axis blank = applies to the whole variable ---
-DIFFUSIVITY,,,transport,Bulk aqueous diffusion coefficient,m2 s-1,,1.0e-09,5.0e-10,2.0e-09,provisional: default +/-50% -- refine before the next round
+DIFFUSIVITY,Bulk aqueous diffusion coefficient [m2 s-1],,,transport,Bulk aqueous diffusion coefficient,m2 s-1,,1.0e-09,5.0e-10,2.0e-09,provisional: default +/-50% -- refine before the next round
 # --- INTERIM: a non-PFT axis carried in `pft` until multi-axis ids land (PFLOTRAN, see above) ---
-RATE_CONSTANT,Calcite,,kinetics,log10 dissolution rate constant,log10 mol m-2 s-1,,-8.8,-9.8,-7.8,literature: Palandri & Kharaka 2004 Table 1 doi:10.3133/ofr20041068
-RATE_CONSTANT,Glass_FB,,kinetics,log10 rate constant for basaltic glass,log10 mol m-2 s-1,,-12.6,-13.6,-11.6,literature: Palandri & Kharaka 2004 Table 1 doi:10.3133/ofr20041068
+RATE_CONSTANT,Mineral dissolution rate constant (log10) [log10 mol m-2 s-1],Calcite,,kinetics,log10 dissolution rate constant,log10 mol m-2 s-1,,-8.8,-9.8,-7.8,literature: Palandri & Kharaka 2004 Table 1 doi:10.3133/ofr20041068
+RATE_CONSTANT,Mineral dissolution rate constant (log10) [log10 mol m-2 s-1],Glass_FB,,kinetics,log10 rate constant for basaltic glass,log10 mol m-2 s-1,,-12.6,-13.6,-11.6,literature: Palandri & Kharaka 2004 Table 1 doi:10.3133/ofr20041068
 # --- TARGET SHAPE once ModelSpec.grouping_axis accepts several axes: the same two rows become
 #     a declared `mineral` column, and a coupled EcoSIM<->PFLOTRAN list carries pft AND mineral.
 #     Uncomment the column and drop the stopgap only after the multi-axis id builder lands.

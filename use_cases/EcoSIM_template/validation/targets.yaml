@@ -39,6 +39,12 @@ targets:
   NPP:
     variable: NPP_pft
     reduce: annual
+    start_year: 2000             # record 0's calendar year (run.nml `start_date`).
+                                 # PINNED PER TARGET on purpose: without it this falls
+                                 # back to $A2MC_VALIDATION_START_YEAR, whose NAME reads
+                                 # as the validation window's start. Getting that wrong
+                                 # scores the SPIN-UP, silently. Not a filter -- the
+                                 # scored years are `window_years` below.
     window_years: [2012, 2022]
     observed: X.X
     uncertainty: 0.3
@@ -50,6 +56,12 @@ targets:
   plant_C:
     variable: [SHOOT_C_pft, Root_C_pft]
     reduce: sum_pft_peak
+    start_year: 2000             # record 0's calendar year (run.nml `start_date`).
+                                 # PINNED PER TARGET on purpose: without it this falls
+                                 # back to $A2MC_VALIDATION_START_YEAR, whose NAME reads
+                                 # as the validation window's start. Getting that wrong
+                                 # scores the SPIN-UP, silently. Not a filter -- the
+                                 # scored years are `window_years` below.
     window_years: [2012, 2022]
     observed: X.X
     uncertainty: 0.3
@@ -61,6 +73,12 @@ targets:
   Fs:
     variable: CO2_SEMIS_FLX_col
     reduce: growing_season_mean_abs
+    start_year: 2000             # record 0's calendar year (run.nml `start_date`).
+                                 # PINNED PER TARGET on purpose: without it this falls
+                                 # back to $A2MC_VALIDATION_START_YEAR, whose NAME reads
+                                 # as the validation window's start. Getting that wrong
+                                 # scores the SPIN-UP, silently. Not a filter -- the
+                                 # scored years are `window_years` below.
     window_years: [2012, 2022]
     observed: X.X
     uncertainty: 0.3

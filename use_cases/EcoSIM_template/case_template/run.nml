@@ -48,7 +48,10 @@
     ncyc_snow = 20
 
     ! ---- Output. fincl ADDS to the default-active set; nhtfrq is PER TAPE. -------
-    ! -24 = daily mean, -1 = hourly. Add a 2nd tape only if you need sub-daily.
+    ! -24 = daily mean, -1 = hourly. CHECK THIS AGAINST validation/targets.yaml: a
+    ! target whose `reduce` is sub-daily needs the tape it names (`tape: h1`), and
+    ! without it the run COMPLETES and that target is silently unscoreable. To add
+    ! an hourly tape 2: hist_nhtfrq = -24, -1  and  hist_fincl2 = '<HOURLY_VARS>'.
     hist_mfilt   = 36500
     hist_nhtfrq  = -24
     hist_fincl1  = <OUTPUT_VARS>

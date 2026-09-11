@@ -77,7 +77,7 @@ requested. Timers are session-only, so re-arm at session start
    - **`na.kind == "done"`** → the calibration is CONVERGED (or a terminal limit). By this point the
      resolver has already routed you through BOTH close positions, so the round summary, the
      cross-round ledger, the ROUND report and the housekeeping all exist. Write the **final
-     configuration** — six required elements, specified in
+     configuration** — seven required elements, specified in
      [`phase6-refinement`](../phase6-refinement/SKILL.md) under "The Phase-7 CONVERGED deliverable",
      and **not** a free-form paragraph: `check_workflow_state_offline.py` asserts a converged state
      carries a resolvable pointer to it. Then stop. **DONE.**

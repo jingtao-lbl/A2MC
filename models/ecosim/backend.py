@@ -85,6 +85,30 @@ class EcoSIMBackend(ModelBackend):
 
     # ---- Parameter-file writing (real; operates on the PFT NetCDF) ----
 
+    def read_secondary_param(self, path, name: str) -> float:
+        """Read one pft_pltinfo token back. Accepts a bare name or a canonical id, as the writer does."""
+        import netCDF4 as nc
+        bare = name.rsplit("_", 1)[0] if name.rsplit("_", 1)[0] in _PFT_MGMT_TOKENS else name
+        if bare not in _PFT_MGMT_TOKENS:
+            raise KeyError(f"secondary-surface parameter '{name}' unknown "
+                           f"(known: {sorted(_PFT_MGMT_TOKENS)})")
+        tok = _PFT_MGMT_TOKENS[bare]
+        d = nc.Dataset(Path(path))
+        try:
+            pi = d.variables[_PFT_MGMT_VAR]
+            s = pi[0, 0, _PFT_MGMT_SLOT].tobytes().decode("ascii", "replace").strip("\x00").strip()
+            parts = s.split()
+            if len(parts) <= tok:
+                raise ValueError(f"pft_pltinfo has {len(parts)} tokens; need index {tok}")
+            return float(parts[tok])
+        finally:
+            d.close()
+
+    def secondary_param_names(self) -> set:
+        """The pft_mgmt tokens this backend can write -- the SAME map `write_parameter_file`
+        consumes, so a name the router accepts is a name the writer accepts."""
+        return set(_PFT_MGMT_TOKENS)
+
     def write_parameter_file(
         self,
         base_param_file: Path,
@@ -206,14 +230,23 @@ class EcoSIMBackend(ModelBackend):
             pi = ds.variables[_PFT_MGMT_VAR]           # (year, ntopou, maxpfts, string128)
             width = pi.shape[3]
             for name, val in modifications.items():
-                if name not in _PFT_MGMT_TOKENS:
+                # Accept a CANONICAL id (`PPI_1`) as well as a bare name (`PPI`). The ensemble
+                # materializer keys every surface's edits by canonical id, so requiring bare names
+                # here would make the secondary surface the one that could not be sampled through
+                # the generic pipeline -- which is exactly the gap this accepts to close. The
+                # trailing `_<axis>` is dropped rather than validated: this file writes the
+                # calibrated PFT slot (`_PFT_MGMT_SLOT`) regardless of which axis id the list
+                # declares, so honouring the suffix would imply a per-axis write that does not
+                # happen.
+                bare = name.rsplit("_", 1)[0] if name.rsplit("_", 1)[0] in _PFT_MGMT_TOKENS else name
+                if bare not in _PFT_MGMT_TOKENS:
                     raise KeyError(
                         f"secondary-surface parameter '{name}' unknown "
                         f"(known: {sorted(_PFT_MGMT_TOKENS)})"
                     )
-                tok = _PFT_MGMT_TOKENS[name]
+                tok = _PFT_MGMT_TOKENS[bare]
                 token_str = (
-                    str(int(round(float(val)))) if name in _PFT_MGMT_INT else repr(float(val))
+                    str(int(round(float(val)))) if bare in _PFT_MGMT_INT else repr(float(val))
                 )
                 for y in range(pi.shape[0]):
                     s = pi[y, 0, _PFT_MGMT_SLOT].tobytes().decode("ascii", "replace")
@@ -671,6 +704,10 @@ class EcoSIMBackend(ModelBackend):
             # Σ over PFTs of one-or-more per-PFT vars → the PER-YEAR peak, then MEAN over the
             # window YEARS. The obs is "peak standing biomass, control MEAN 2012-2022" = a year-mean
             # of annual (August) peaks, NOT a single window maximum (which over-scores any config with
+            # -- the "(August)" is the MANUSCRIPT's, verified verbatim 2026-09-05: biomass was
+            # "sampled annually at peak standing biomass (in August)". It was uncited here until
+            # then, and this comment quoting targets.yaml's description, which quoted nobody, was a
+            # circular justification for a reducer whose choice moves plant_C by 1.6x-2.4x --
             # a transient spike — a latent bug that only showed once a peaky config was scored, since a
             # flat reference has max ≈ mean; verified on D4: mean-of-annual-peaks 595.7 == R1's 596,
             # vs the old window-max 813). `window` here is a YEAR range [lo, hi] (like `annual`).

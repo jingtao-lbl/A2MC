@@ -53,6 +53,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Invoke when:** "which cases failed", "rerun the failed cases", "restart the crashed runs", "the ensemble has holes", or before any sensitivity analysis — a crashed case is a **hole** in a Saltelli design, while a finished-but-degenerate case is a valid data point.
 - **Backing tools:** `tools/model_ensemble_status.py` (reconciles the scheduler against the model's own completion check — pass `--ensemble-jobs` for an array or task-farm, which write no per-case `job_id.txt` and would otherwise leave dead cases reported as `RUNNING`), each model's `backend.check_case_status()`, `sacct -P` for step-level exit codes.
 - **Key discipline:** the **exit code lies** — measured on EcoSIM R3, `sacct` reported COMPLETED for all 11,425 cases while 853 had not finished, because the model's `ENDRUN` exits 0 and its history tape is created at initialisation. Completion is the model's **end-of-run artifact**. The same crash is also recorded differently by submission arm (direct exec `rc=136` vs an `srun` step's `ExitCode 0:8`), and `sacct` must be read with `-P` or truncation drops every array task ≥ 1000. Persist the case **list**, not a count; relaunch idempotently; and where a model fix is involved, pass the V0 / inertness / efficacy gates first.
+- **Modes:** `any` — the non-CIME adapter models; no FATES dependency.
 
 ### `arm-hpc-monitoring`
 - **Purpose:** At session start (or after compaction), detect live long-running login-node
@@ -109,6 +110,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Key discipline:** harness-neutral (no `/goal`/`Monitor` dependency — optional hardenings only);
   pause ONLY at the 4 human gates (Phase-6 decision, curated-KB write, expensive/irreversible, hard
   stop); `st.save()` after every advance.
+- **Modes:** `any` — harness-neutral loop mechanics, model-agnostic.
 
 ### `setup-discipline`
 - **Purpose:** The per-**stage** definition of done for the SETUP arc, the counterpart of
@@ -123,6 +125,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
   use_cases/) before trusting what the session says; a Yellow validator is a decision, not a pass; the
   two items that silently break every *later* clone are milestone registration and actually committing
   the RAG index (`skip-worktree` makes `git add` a no-op); a checked box means the check was RUN.
+- **Modes:** `any` — model-agnostic.
 
 ### `calibration-discipline`
 - **Purpose:** The per-cycle and per-round **definition of done** that keeps a long offline campaign
@@ -138,6 +141,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
   arm monitors right after every HPC launch (own jobs only); update + validate state after every phase;
   a synthesis report at each cycle end; drive to the loop limit; and a **round summary that MUST propose
   the next-round work plan** (param add/remove, bounds recenter, base update, residual split).
+- **Modes:** `any` — model-agnostic.
 
 ### `curate-knowledge`
 - **Purpose:** Review + promote staged Tier-3 knowledge proposals — the human-in-the-loop half
@@ -162,11 +166,14 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
   `experiments: []`, `failed_approaches: []`, `parameters: {}`.
 
 ### `diagnose-forensics`
-- **Purpose:** Investigate an anomaly (outlier, too-good "best" case, failure cluster, stuck
-  target) — determine FIRST whether it is real or an artifact (contamination, infra-timing,
-  mislabeled index, NaN), then root-cause it with the phase-3 diagnosis tools.
+- **Purpose:** Triage ONE suspicious result (outlier, too-good "best" case, small failure cluster,
+  an impossible-looking number) — determine FIRST whether it is real or an artifact (contamination,
+  infrastructure timing, mislabeled index, NaN, truncated output, stale run-state), then root-cause it.
 - **Invoke when:** "why is case X an outlier", "is this real or contamination", "investigate this anomaly".
-- **Modes:** `any` — workflow is model-agnostic; the worked examples are FATES/Morris.
+- **NOT for:** a whole round's failing targets, or ranked root causes across the ensemble — that is
+  `phase3-diagnosis`. This skill is reactive and single-case; that one is proactive and round-wide.
+- **Modes:** `any` — model-agnostic, with the CIME and adapter tool paths named in separate columns;
+  the mechanism tools (carbon / mortality / nutrient / PFT) are FATES-shaped and have no adapter analog.
 
 ### `scientific-analysis`
 - **Purpose:** A manuscript-supporting investigation that ends in a figure + an ana_log:
@@ -277,6 +284,14 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Invoke when:** "rebuild/refresh the RAG", "rebuild the EcoSIM/PFLOTRAN index", "the index is stale".
 - **Modes:** `any` — the workflow is model-agnostic; the scripts are not.
 
+### `wire-knowledge-graph`
+- **Purpose:** Audit and fix **which relations** a model's knowledge graph actually carries from its curated seed, and prove a graph rebuild is purely additive.
+- **The failure it owns is SILENT.** A seed field no builder pass reads produces no error, no `skipped edge` line and no count change, since counts do not fall when an edge is never created. It also passes `validate_curated_yaml.py`, which checks that names RESOLVE and never that anything consumes them. Measured on EcoSIM 2026-09-08: two relation blocks unread, 95 edges absent, among them the driver of a live round's binding target.
+- **One `build_graph()` per model, and node identity differs** — FATES `rag/graph_builder.py`, EcoSIM `scripts/build_ecosim_rag.py`, PFLOTRAN `scripts/build_pflotran_rag.py`; only `FATESKnowledgeGraph` is shared. EcoSIM keys by bare Fortran name, PFLOTRAN by deck-card leaf with addresses attached. Do not merge them; do not edit `graph_builder.py` to fix an adapter.
+- **Carries the additive-rebuild proof:** diff node by node and edge by edge, and require zero removals and zero pre-existing edge attribute changes — `networkx.add_edge` replaces attributes on a repeat, so a second pass silently relabels edges a count line cannot show.
+- **Invoke when:** "the graph cannot reach X from Y", "add this relation to the graph", "audit the graph wiring", or a Phase 3/4 traversal from a scored output returns nothing.
+- **Modes:** `any` — the workflow is model-agnostic; the builders and their seed field names are not.
+
 ### `generate-codebase-wiki`
 - **Purpose:** Generate a source-grounded codebase wiki for a model (the substrate the RAG indexes).
 - **Invoke when:** "generate the codebase wiki", "make a wiki for <model>".
@@ -321,16 +336,22 @@ ADSP/RGSP/TRANS spinup, Morris μ*). The `modes:` gate keeps them out of ELM-onl
 
 ### `summarize-calibration-round`
 - **Purpose:** One-round summary — whole-ensemble figures + an evaluation report (best case,
-  targets met vs tolerance) + a Morris μ* sensitivity report → markdown/PDF. Targets from the
-  case `targets.yaml`.
-- **Invoke when:** "summarize round N", "report for R<N>", "how did R<N> do".
-- **Modes:** `requires_fates: true` — FATES PFT/SZPF figures + a Morris ensemble.
+  targets met vs tolerance) + a sensitivity report + the round's **mechanism inventory** (what the
+  round established about the system, each finding with a citation) → markdown/PDF. Targets from
+  the case `targets.yaml`. A required step before the ROUND report, which does not derive them.
+- **Invoke when:** "summarize round N", "report for R<N>", "how did R<N> do", "what did this round
+  establish", "what did we learn this round".
+- **Modes:** `requires_fates: false` — generic since 2026-08-24; the CONTRACT is model-agnostic and
+  the figure/screen BACKEND is per model.
 
 ### `compare-calibration-rounds`
-- **Purpose:** Compare rounds R1…RN against each other + the validation targets — top-N biomass
-  overlay, per-target Morris μ* overlay; refresh a multi-round figure.
-- **Invoke when:** "compare rounds", "which round is best", "refresh the multi-round figure".
-- **Modes:** `requires_fates: true`.
+- **Purpose:** The cross-round **parameter ledger** (what every round did with each parameter) and
+  the cross-round **mechanism ledger** (what the campaign now knows about the system, one row per
+  established mechanism), plus performance and sensitivity across rounds. Required before EVERY
+  round report including the first, where only the cross-round figures are not applicable.
+- **Invoke when:** "compare rounds", "which round is best", "refresh the multi-round figure", "what
+  have we learned about the system across rounds", "why was parameter X refuted".
+- **Modes:** `requires_fates: false` — generic since 2026-08-24.
 
 ### `ecosim-run-workflow`
 - **Purpose:** The EcoSIM (non-CIME) counterpart to `offline-testing-workflow` — design a probe or

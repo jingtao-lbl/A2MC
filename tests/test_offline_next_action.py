@@ -199,14 +199,49 @@ def test_a_state_missing_both_records_does_not_crash():
     assert na.kind == "close" and na.phase == "round_close", na
 
 
-def test_an_unknown_experiment_limit_does_not_invent_a_close():
-    """With no resolvable max_experiments, 'is the round closing?' is unanswerable -- and an
-    unanswerable question must not be answered YES."""
+def test_a_state_carrying_no_limit_reads_it_from_the_machine_config(monkeypatch):
+    """A state with no `max_experiments` is the NORMAL case, not a corrupt one: the field is
+    written only when a Phase-6 decision is recorded, and the limit's single source of truth is
+    `A2MC_MAX_EXPERIMENTS` in the machine config.
+
+    Measured 2026-09-08. A case sat at `experiment_count == 20` with twenty completed cycles on
+    disk and `max_experiments: null`. `check_workflow_state_offline.py` fell back to the config,
+    read 20 >= 20 and called the round closed; `_round_is_closing` found no int, returned False,
+    and the resolver drove toward a twenty-first cycle. The tool the DRIVER consults was the one
+    ignoring the budget."""
+    monkeypatch.setenv("A2MC_MAX_EXPERIMENTS", "20")
+    st = _st(round_closed=False, current_phase="refinement")
+    st.data.pop("max_experiments", None)
+    st.set_position(experiment_count=20)
+    assert st.resolve_next_action().kind == "close"
+    st.set_position(experiment_count=19)
+    assert st.resolve_next_action().kind == "gate"
+
+
+def test_the_limit_is_enforced_on_the_run_phase_path_too(monkeypatch):
+    """The limit test used to live ONLY in the `refinement` branch, and a `rethink_6to3` sets
+    `current_phase = "diagnosis"` -- which is runnable, so the resolver returned before
+    `_round_is_closing` was ever consulted. The budget was unenforced along the one path every
+    cycle takes."""
+    monkeypatch.setenv("A2MC_MAX_EXPERIMENTS", "20")
+    st = _st(round_closed=False, current_phase="diagnosis")
+    st.data.pop("max_experiments", None)
+    st.set_position(experiment_count=20, current_phase="diagnosis")
+    na = st.resolve_next_action()
+    assert (na.kind, na.phase) == ("close", "round_close"), na
+
+
+def test_no_limit_anywhere_still_does_not_invent_a_close(monkeypatch):
+    """The negative control the change must preserve: with the env unset AND the config
+    unreadable, 'is the round closing?' really is unanswerable, and an unanswerable question must
+    not be answered YES."""
+    monkeypatch.delenv("A2MC_MAX_EXPERIMENTS", raising=False)
+    monkeypatch.setattr("tools.workflow_state_offline.limit_from_config",
+                        lambda *a, **k: (None, "no config on this machine"))
     st = _st(round_closed=False, current_phase="refinement")
     st.data.pop("max_experiments", None)
     st.set_position(experiment_count=99)
-    na = st.resolve_next_action()
-    assert na.kind == "gate", na
+    assert st.resolve_next_action().kind == "gate"
 
 
 # --------------------------------------------------------------------- T9: state safety

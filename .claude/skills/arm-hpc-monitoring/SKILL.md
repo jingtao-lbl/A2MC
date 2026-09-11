@@ -2,7 +2,7 @@
 name: arm-hpc-monitoring
 visibility: public
 category: calibration
-description: Set up real-time monitoring of an active A2MC HPC ensemble or experiment on Perlmutter at session start (CLAUDE.md Rule #6). Detects live long-running login-node processes (auto-monitor, submitter, extractor) via `ps -ef`, arms Claude `Monitor` tasks on each long-running log with the right event + error filter (silence ≠ success), and reminds Claude to react with proposals rather than just relaying events. Use whenever a session begins (or resumes after compaction) while an ensemble round is in flight. Also use immediately after launching a new submitter or restart job.
+description: Set up real-time monitoring of an active A2MC HPC ensemble or experiment on Perlmutter at session start (CLAUDE.md Rule 6). Detects live long-running login-node processes (auto-monitor, submitter, extractor) via `ps -ef`, arms Claude `Monitor` tasks on each long-running log with the right event + error filter (silence ≠ success), and reminds Claude to react with proposals rather than just relaying events. Use whenever a session begins (or resumes after compaction) while an ensemble round is in flight. Also use immediately after launching a new submitter or restart job.
 modes:
   requires_fates: false      # session-start HPC monitoring; model-agnostic
   nutrient_pathway: any

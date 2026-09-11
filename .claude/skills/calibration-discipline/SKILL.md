@@ -28,6 +28,8 @@ per experiment cycle (Phase 3→4→5→6):
   □ that .py was COPIED FROM the case template in use_cases/{Model}_{Case}/scripts/ and ADAPTED here;
      a script's SECOND use is the trigger to template it (measured: 7 byte-identical duplicate pairs)
   □ analysis is FIRST-HAND this cycle (check_offline_log_evidence.py exit 0 for phase 3/4/6)
+  □ every tape variable REDUCED per its own semantics (rate / increment / resetting-cumulative /
+     run-cumulative / stock) and checked ACTIVE, never inferred from its name or units
   □ the INNER loop actually ran: before routing 4->5, is there another question EXISTING data can
      answer? keep asking while Phase 5 runs. (measured: 46 logs at iter01, 4 at iter02, cap is
      $A2MC_MAX_SKIP_TESTING)
@@ -40,7 +42,9 @@ per experiment cycle (Phase 3→4→5→6):
   □ FINDINGS recorded into the state AS THEY ARE ESTABLISHED, not saved up for Phase 6
      (`st.add_decision(finding, rationale=why)`) — `next_action` is the program COUNTER,
      the `decisions` list is the RECORD, and PhaseLogger rebuilds the reasoning chain from
-     the latter. Same checker now WARNs when the case has moved with nothing written down.
+     the latter. (It is the record of WHAT was established and WHERE; it is not where a claim
+     is VERIFIED -- that is the artifact it points at. See "A CLAIM ABOUT WHAT THE ROUND HAS
+     ESTABLISHED" below.) Same checker now WARNs when the case has moved with nothing written down.
      ↳ that validator now also WARNs when the state's current phase has no matching offline log
        (stem `_phase{N}_{name}_r{RR}`), so the 'each phase logged' box above is observable rather
        than remembered. WARN not ERROR on purpose: it fires legitimately mid-phase (the state is
@@ -51,6 +55,7 @@ per experiment cycle (Phase 3→4→5→6):
       lever CLASS exhausted vs untried · each refutation's DIRECTION + the base's MISS SIGN, still valid?
       → NEW PATHWAYS with falsifiers). Enforced: check C9
   □ cycle end → a synthesis report (write-report): empty-alt figs, no em dash, one canonical script/fig
+     ENFORCED by check_cycle_reports.py (pre-commit 18, WARN) -- a closed cycle with no report is named
   □ no KB write / model-source edit before a verified test + human gate
 
 per round (loop limit reached OR converged):
@@ -140,6 +145,10 @@ appears to disagree with the config, the config wins: it is what the code reads.
    or `NOTES.md`, the exact producing `.py`, and its data. The figure `.py` is **canonical here** — edit
    and regenerate it *in place*; never develop it in a scratch/CFS dir and copy the PNG back (that is how
    the script and the figure silently diverge). Memory: `feedback_plot_scripts_canonical_in_phase_results`.
+   **A new script generating new artifacts that belong to no existing stem lives with the
+   REPORT it serves** — normal for a round report, since it synthesizes across all cycles. The rule
+   bites when a CYCLE report would copy an existing stem's script and edit it there; the fix then is
+   to go back and fix the canonical script in the stem.
 
 2b. **Start from the case's script TEMPLATE, and template a script on its SECOND use.** The template
    lives in `use_cases/{Model}_{Case}/scripts/`, seeded at onboarding (`onboard-case` item 3c). A phase
@@ -175,6 +184,15 @@ appears to disagree with the config, the config wins: it is what the code reads.
    this exposed: **a conditioned screen must be paired with a check that the lever preserves
    membership in the set you conditioned on**, because conditioning on a variable the intervention
    itself moves hides exactly the cost that matters.
+
+3c. **AN OUTPUT VARIABLE IS VERIFIED LIKE A PARAMETER. Never infer what a tape field MEANS from its name or its units.** The standing rule -- KB first, confirm in source, never infer behaviour from a name -- has always been written about **parameters and mechanisms**. Output variables are a third category, no rule named them, and the same failure mode arrives one category over. Before reducing any tape variable, establish two things about it:
+
+   - **Is it ACTIVE?** A field registered `default='inactive'` is not written unless a run names it, and a tape that carries it anyway may be carrying something else. For EcoSIM this is in the KB already: `docs/ecosim-knowledge-base/ecosim_output_info_<commit>.cdl` gives every field a `:status = "active"|"inactive"` attribute, derived from the source rather than from a tape.
+   - **What is its TEMPORAL SEMANTICS?** A rate, a per-record increment, a within-year cumulative that RESETS, a run-cumulative, or a stock. **One reduction does not fit all five**, and the units alone do not distinguish them: `gC/m2` is worn by both a per-record increment and a run-cumulative.
+
+   **MEASURED 2026-09-08, and both halves cost something.** A diagnostic pull applied a single `nanmean` over the last 365 records to six variables. `NPP_pft` is a per-record increment whose annual value is a SUM (its mean is comparable to nothing); `Uptk_NMin_CumYr_FLX_pft` is a sawtooth resetting each year, whose annual total is the value at year end, so a mean returns roughly half of it and depends on where the reset falls; `CAN_cumGPP_pft` is monotone-cumulative, where a mean reports where the run was on average rather than what it accumulated. Separately, `CAN_GPP_pft` was read as gross production on the strength of its name and units; it is `default='inactive'` and carried the `NPP_pft` values, and the KB's own CDL said `status = "inactive"` in a line that was never opened. The false reading escalated into an alarm that the round had scored gross production against a net observation for twenty cycles, disproved only by a column-level cross-check.
+
+   **The case already solves this for the targets it SCORES and not for anything else.** `validation/targets.yaml` gives every scored target its own `reduce:` (`annual`, `sum_pft_peak`, `growing_season_daytime_mean_abs` with its `tape:`). Diagnostic reads have no equivalent, which is the gap: **pick the reduction per variable, from that variable's own semantics, and say in the log which reduction each one got.** Where a scored target's variable is involved, use the target's own `reduce` rather than a second opinion.
 
 4. **Arm monitors the moment you launch a testing simulation.** Right after a Phase-5 launch, arm
    monitoring on the run's live log(s) with the event + error filters — and **only on runs THIS session
@@ -223,7 +241,7 @@ appears to disagree with the config, the config wins: it is what the code reads.
    `feedback_never_self_declare_exhaustion`.
 6b. **On a 6→3 routing, ANSWER the rethink protocol in the Phase-6 log.** The route is the default and, until 2026-08-23, was only a counter increment: nothing said what a rethink should DO, so a cycle could re-enter Phase 3 carrying the previous cycle's base, binding target and lever class forward unexamined. Measured on one round: three consecutive rethinks ran on ONE base and attacked ONE target, and the cycle that finally re-examined both found the base already held that target in band with half a band's headroom — so the experiment those cycles kept designing would have broken the target the base held. The protocol is `phase6-refinement` Step 4 and its six questions are all settled by existing data at zero compute: synthesize THIS cycle (phases 3-6, separating what it ESTABLISHED from what it merely tried); re-read Phases 1 and 2 against that synthesis rather than citing them; is the BASE still right for the question now being asked; has the BINDING TARGET moved; what lever CLASS has the round exhausted versus never tried; and for each refuted lever, which DIRECTION was moved from a base with which SIGN of miss, and does that still apply — a refutation is a property of a (parameter, direction, base) triple, and a dose that moved monotonically the wrong way is positive evidence for the opposite direction rather than a closed door. The deliverable is **NEW PATHWAYS, plural**, each with its class and its falsifier, named in `set_phase_handshake(handed_to=...)` so Phase 3 starts from them. **Where it must be written:** the Phase-6 log, because the next cycle reads the log and not the state enum (`calibration-log`, Enrichment contract). **Enforced:** `check_calibration_log_conformance.py` C9 errors when a 6→3 log carries no rethink section and warns when it is thin or names no pathway. **Carried onward:** the class verdict and pathways go into the cycle report too (`write-report`, CYCLE item 4) — drawn from this synthesis, not derived again.
 
-7. **Synthesize a report at each cycle end.** Use `write-report`, whose "two calibration deliverables"
+7. **Synthesize a report at each cycle end. ENFORCED: `tools/check_cycle_reports.py`** (pre-commit 18, WARN) reports every closed cycle with no report folder, so skipping one is visible instead of silent -- measured 2026-09-09, three cycles closed without one and the omission was recorded as "debt" rather than fixed. Use `write-report`, whose "two calibration deliverables"
    section now states this report's **scope**: it must walk the whole inner loop iteration by
    iteration, name every hypothesis with its falsification bar and the variants and job ids that
    tested it, and report results **per variant per SCORED target** against the measurements. Plus the
@@ -397,6 +415,40 @@ finding. It costs seconds, and this is the third occasion in one session where t
 recording something the case already knew ([[feedback_dont_assert_absence_from_one_grep]],
 [[feedback_reread_the_decision_before_writing_its_successor]]).
 
+### A CLAIM ABOUT WHAT THE ROUND HAS ESTABLISHED IS VERIFIED AT THE ARTIFACT, NOT AT THE INDEX
+
+**"The round has never found X", "no lever does Y", "every lever we measured behaves like Z" is the
+same high-risk shape as a claim that a variable is never read in the source, and it needs the same
+discipline: TRACE IT, do not grep it** (PI, 2026-09-08).
+
+**The three layers are each a POINTER TO THE NEXT, and only the last one settles anything:**
+
+```
+decisions[] / the ## Reasoning chain   ->  tells you WHICH cycle and WHICH log
+        the log stem it names           ->  tells you WHICH artifact folder
+        phase_results/{stem}/ + its data ->  SETTLES IT
+```
+
+**Checking the index is not enough, and this is not a hypothetical.** A `decisions[]` entry is prose
+written at the time — a synthesis of the artifact, exactly as a phase log is a synthesis of its stem
+folder — and this project has already measured a bar that lived only in prose and appeared in **no
+artifact anywhere in the round**, one of whose three values was wrong by 1e-4 relative. A round-level
+claim rests on the same kind of sentence. So open the folder, read the data file the script wrote,
+and confirm the number before writing that the round has or has not established something.
+
+**MEASURED, 2026-09-08, and it is the cleanest instance this project has.** One cycle's refinement log
+concluded *"nine levers, no exceptions"* and *"the round has never found a negative-rate lever and has
+never explicitly looked for one."* That same log mentions the parameter that refutes both statements
+**35 times — every one of them inside its own auto-generated reasoning chain, and none in its body.**
+The evidence sat in the same file as the conclusion. The next cycle overturned it not by re-reading
+the chain but by opening three earlier cycles' Phase-5 data files and recomputing the rates from
+them: 1.92, 2.42 and 37.10, none inside the range the log had just declared universal.
+
+**And the search that should have caught it did not.** `prior_art.py` on the phrase *"negative
+exchange rate opposite direction plant_C NPP"* returned **0 of 111 logs**, while **86 of 111** mention
+the parameter by name. Term-overlap ranking degrades badly on a phrase. **Search the bare NOUN** — the
+parameter name, the case id, the mechanism — and only then narrow.
+
 ## ARM THE REVIEW AT SESSION START — it is a mechanism or it is nothing
 
 **This checklist only works if it actually fires.** Through 2026-08-22 it fired because the PI typed
@@ -424,8 +476,15 @@ with the session, so re-arming is part of session start, not a one-time setup; a
 while the REPL is idle, so it will not interrupt long work. Neither makes it worthless: an armed
 cron that survives an hour of quiet is strictly better than a checklist nobody runs.
 
-**Nothing in the loop is the PI's decision except the Phase-6 converge/redesign/stop fork.** `rethink_6to3` is auto-taken — meaning it needs no PI approval, **NOT that it needs no work**. Auto-taken is about the gate, not the effort: the routing is automatic and the rethink protocol behind it (item 6b) is mandatory. A model-evolution item queued in `TODO.md` (a parameter bound, a source defect) is NOT a loop gate. Ending a turn by surfacing one as though it blocks is the same
-premature stop as item 6, wearing politeness instead of a verdict.
+**Nothing in the loop is the PI's decision except the Phase-6 converge/redesign/stop fork.** `rethink_6to3` is auto-taken — meaning it needs no PI approval, **NOT that it needs no work**. Auto-taken is about the gate, not the effort: the routing is automatic and the rethink protocol behind it (item 6b) is mandatory. **FIX IT NOW vs QUEUE IT — and the examples matter, because getting them backwards parks the loop.**
+
+**FIX IMMEDIATELY, inside the phase that found it, never queued and never surfaced as a blocker:** a parameter BOUND that the round's own data shows is wrong, a source DEFECT, a bug in A2MC's tooling, a broken run script, a mis-set walltime or queue. These are the phase's work. A round that discovers its own bound is degenerate and then stops to ask has converted a finding into a delay. **When monitoring reports failed cases, DIAGNOSE AND FIX — model bug, infrastructure failure, or a mistake in your own run scripts — before continuing** (`phase0-design` Step 4a).
+
+**QUEUE in `TODO.md`** only what is genuinely out of the round's scope: a NEW MECHANISM to design, or a SIGNIFICANT CHANGE TO MODEL STRUCTURE. Those are `model-evolution` work with their own discipline and their own gate.
+
+**And a queued item is still not a loop gate.** Ending a turn by surfacing one as though it blocks is the same premature stop as item 6, wearing politeness instead of a verdict.
+
+**Measured, 2026-09-05 (PI correction).** This paragraph previously read *"A model-evolution item queued in TODO.md (a parameter bound, a source defect) is NOT a loop gate"* — whose parenthetical implied a bound or a defect is the kind of thing you QUEUE. R1's gate found `OMGR`'s upper bound degenerate on units grounds, with 26 of 26 failures above 0.68 and a monotone dose-response; the agent then parked the loop across several turns asking the PI to choose, having read this very line as licensing the pause. The bound was its own call to make on the evidence it already had.
 
 ## Two of these items are observed, not just written down
 
@@ -470,6 +529,11 @@ per-transition checklist reminder would be noise, and noise gets muted.
   pushes back, `docs/38`).
 
 ## Changelog
+
+- 2026-09-09: **Item 2 says where a REPORT's own script lives.** The canonical-script rule was read as forbidding scripts in report folders; it governs a phase's figure scripts. A new script making new artifacts that belong to no stem lives with the report it serves, which is normal for a round report. PI correction, after the rule was applied too broadly.
+
+- 2026-09-08 (later): **New item 3c -- an OUTPUT VARIABLE is verified like a parameter.** PI-directed, after a diagnostic pull applied one `nanmean` to six tape variables with five different temporal semantics and read an `inactive` field as gross production. The standing verify-in-source rule was written about PARAMETERS and mechanisms; output variables are a third category no rule named, so the identical failure mode arrived one category over in the same session that had applied the rule rigorously to a parameter. Two checks now required before reducing anything: is the field ACTIVE (the model's output-info CDL carries `:status`, derived from source), and what are its temporal semantics (a mean of a resetting cumulative returns half its annual total; a mean of a monotone cumulative is meaningless). Notes that the case already does this correctly for SCORED targets via `targets.yaml`'s `reduce:` and that diagnostic reads have no equivalent, which is the gap. No `description` change.
+- 2026-09-08: **New section: a claim about what the ROUND has established is verified at the ARTIFACT, not at the index** (PI-directed, fix-now). The file already required searching before recording a finding as new, and `prior_art.py` for the superseded-log case. What it did not say is what to do with what the search RETURNS: `decisions[]` and the auto-generated reasoning chain are POINTERS -- they name the cycle and the log; the log names its stem; **`phase_results/{stem}/` and the data file the script wrote are what settle it.** A decision entry is prose written at the time, the same kind of object as a phase log, and this project has already measured a bar that lived only in prose and appeared in no artifact anywhere in the round. **Measured the day this landed, and it is the cleanest instance so far:** one refinement log concluded *"nine levers, no exceptions"* and *"the round has never found a negative-rate lever"* while mentioning the refuting parameter **35 times, every one inside its own auto-generated reasoning chain and none in its body** -- the evidence was in the same file as the conclusion. The next cycle overturned it by opening three earlier cycles' Phase-5 data files and recomputing, not by re-reading the chain. Also records the retrieval failure that let it through: `prior_art.py` on a five-word phrase returned 0 of 111 logs while 86 of 111 mention the parameter by name, so **search the bare NOUN first**. Twin clause added to `phase6-refinement` Step 2b, which is where such sentences get written. Reconciled in the same pass: the At-a-glance line calling `decisions` "the RECORD" now says it is the record of what was established and where, not where a claim is verified. No `description` change.
 
 - 2026-08-27: **The self-review cadence is chosen from the model's simulation speed, not fixed at
   hourly** (PI-directed). An hourly review of a round whose cases take ~15 minutes mostly reports

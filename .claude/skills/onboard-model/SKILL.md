@@ -255,6 +255,30 @@ python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
    --output-cdl … [--user-guide pdf]` (default `--mode prompt-pack` = PI-in-the-loop). This is the
    most leveraged, most human-intensive step — its quality decides whether Phase 3 diagnosis can
    recommend parameters. Hand-authored additions go through `inject-knowledge`.
+
+   **GATE IT — the builder cannot tell you it produced a partial seed.** It prints
+   `[SKIP] category X has no assigned mechanisms` and then **exits 0**, so a half-covered seed reads
+   as a finished one, and a parameter no mechanism names is invisible to Phase 3 no matter how well
+   the wiki documents it. Run:
+
+   ```bash
+   python tools/validate_seed_coverage.py --seed models/<name>/curated_seed.yaml
+   ```
+
+   C1 = every category with parameters has ≥1 mechanism; C2 = every calibratable parameter is named
+   by ≥1. It also accepts the builder's work-in-progress pair (`stage_b_categories.yaml` +
+   `stage_c_mechanisms.yaml`), so it can gate the step *before* the seed is assembled. Model-agnostic
+   — verified on the EcoSIM seed (PASS 10/10, 44/44), the PFLOTRAN seed (FAIL, 4 unreachable) and a
+   FATES `curated_relationships_*.yaml` (FAIL). **Do not treat FAIL as cosmetic**: an unreachable
+   parameter is one the calibration can never be told to move.
+
+   **Also curate the SCORED TARGETS, not only the parameters.** Graph `affects` edges are built from
+   `mechanisms[*].affects`, so an output no mechanism names has **zero incoming edges** and the graph
+   cannot answer "what reaches my binding target" for it. Measured 2026-09-06 on an onboarded model:
+   all four variables one case scored had zero incoming edges — 20 of 581 outputs were wired and every
+   wired one belonged to a *different* case, because each case's targets had been added as they were
+   onboarded and this one's never were. Check with a one-liner over `rag/graphs/<profile>.json` after
+   the build: every scored target in the case's `validation/targets.yaml` should have in-degree ≥ 1.
 5. **RAG build + milestone (step 9) — ONE BUILD SCRIPT PER MODEL.** Write
    `scripts/build_<name>_rag.py`, a sibling of the existing per-model family:
 
@@ -519,6 +543,8 @@ complete, promote their provisional lines here to firm.
 - User-facing narrative twin (planned, not yet written — Master Plan §8 #3): a `forking_a2mc_for_a_new_model` roadmap under `docs/a2mc_reference/`
 
 ## Changelog
+
+- 2026-09-06: **Step 7 (curated seed) gains its GATE, and a note that the SCORED TARGETS must be curated too.** PI-directed. `tools/validate_seed_coverage.py` was referenced by **no skill at all**, though it exists precisely because `curated_seed_builder.py` prints `[SKIP] category X has no assigned mechanisms` and then exits 0 — so a partial seed reads as a finished one and an unreachable parameter is invisible to Phase 3 forever. It also accepts the builder's work-in-progress `stage_b`/`stage_c` pair, so it can gate the step before the seed is assembled. Verified model-agnostic on all three shapes rather than assumed (EcoSIM PASS, PFLOTRAN FAIL with 4 unreachable, a FATES `curated_relationships_*.yaml` FAIL). **Second half from a measured failure:** graph `affects` edges come from `mechanisms[*].affects`, so an output no mechanism names has zero incoming edges; on 2026-09-06 all four variables one case scored had none, 20 of 581 outputs were wired, and every wired one belonged to a different case — each case's targets had been curated as it was onboarded and this one's never were. Two consecutive diagnosis cycles fell back on ensemble correlations because of it. No `description` changed.
 
 - 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. The model-author step now says to give the site-config TEMPLATE the same guard, copied from an existing one, since a template without it produces cases without it -- and names the test that asserts every shipped config has one.
 

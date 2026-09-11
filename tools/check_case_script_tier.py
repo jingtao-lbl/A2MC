@@ -66,8 +66,21 @@ def tracked_files() -> list[str]:
     return out.stdout.split() if out.returncode == 0 else []
 
 
-def scan(site_filter: str | None = None):
-    """-> (findings, n_exempt). A finding is one duplicated script name with no template."""
+def scan(site_filter=None):
+    """-> (findings, n_exempt). A finding is one duplicated script name with no template.
+
+    `site_filter` is None (every case) or a collection of case directory names. It became a
+    COLLECTION on 2026-09-08 so the pre-commit hook can scope one invocation to the cases whose
+    files are actually staged: run repo-wide, this check prints other cases' stem names into every
+    commit, and in a shared clone those are stems from campaigns the committer is not working on.
+    Measured that day: a Phase-5 experiment in one case was named with a NUMBERING CONVENTION
+    belonging to another, whose stems this warning had put in front of the author on roughly a
+    dozen consecutive commits.
+    """
+    if isinstance(site_filter, str):
+        site_filter = {site_filter}
+    elif site_filter is not None:
+        site_filter = set(site_filter)
     files = tracked_files()
 
     # site -> set of template names, and site -> {script name: [(stem, path)]}
@@ -80,7 +93,7 @@ def scan(site_filter: str | None = None):
         if len(parts) < 3 or parts[0] != "use_cases" or not rel.endswith(".py"):
             continue
         site = parts[1]
-        if site_filter and site != site_filter:
+        if site_filter is not None and site not in site_filter:
             continue
         if parts[2] == "scripts":
             templates[site].add(parts[-1])
@@ -110,14 +123,16 @@ def scan(site_filter: str | None = None):
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--site", default=None, help="restrict to one use case, e.g. EcoSIM_BioCON")
+    ap.add_argument("--site", action="append", default=None, metavar="CASE",
+                    help="restrict to this use case; repeatable. Omit to scan every case.")
     args = ap.parse_args(argv)
 
     findings, exempt = scan(args.site)
 
     if findings:
+        scope = "" if not args.site else f" in {', '.join(sorted(args.site))}"
         print(f"\n  [warn] check_case_script_tier: {len(findings)} script(s) duplicated across "
-              f"phase_results/ folders with no template in the case's scripts/")
+              f"phase_results/ folders with no template in the case's scripts/{scope}")
         for f in findings:
             same = "BYTE-IDENTICAL" if f["identical"] else "diverged copies"
             print(f"    {f['site']}/{f['name']}  ({len(f['hits'])} copies, {same})")
@@ -134,7 +149,9 @@ def main(argv: list[str]) -> int:
     if exempt:
         print(f"  [note] {exempt} duplicated-script group(s) predate the rule "
               f"({TIER_RULE_EFFECTIVE}) and are exempt.")
-    print("✔ check_case_script_tier: no untemplated duplicate scripts across phase_results/ folders")
+    scope = "every case" if not args.site else ", ".join(sorted(args.site))
+    print(f"✔ check_case_script_tier: no untemplated duplicate scripts across phase_results/ "
+          f"folders ({scope})")
     return 0
 
 

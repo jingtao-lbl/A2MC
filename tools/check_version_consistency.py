@@ -10,6 +10,12 @@ Checks (ERROR, exit 1):
   1. the version in CLAUDE.md's `**Status:** Implementation Complete (vX.YZ)` header appears
      EXACTLY ONCE as a `- **vX.YZ**` entry in memory/a2mc_development_history.md
   2. no version has two changelog entries (the merge-collision signature)
+  3. README.md's `**Version:** X.YZ` line agrees with that header
+
+Check 3 exists because it had already failed. On 2026-09-03 the README said 2.317 while
+CLAUDE.md said 2.355 -- 38 versions of drift, in the file a new reader sees first, because the
+README carried its own COPY of a number with a single authority and nothing compared the two.
+Fixing the number without adding the comparison would have guaranteed a repeat.
 """
 import re
 import sys
@@ -18,6 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CLAUDE_MD = ROOT / "CLAUDE.md"
 CHANGELOG = ROOT / "memory" / "a2mc_development_history.md"
+README_MD = ROOT / "README.md"
 
 
 def main():
@@ -49,6 +56,17 @@ def main():
     if header not in entries:
         errors.append(f"CLAUDE.md header says {header} but no `- **{header}**` entry exists in "
                       f"memory/a2mc_development_history.md — add the changelog entry or fix the header.")
+
+    # README.md restates the version for a reader who never opens CLAUDE.md. That restatement is
+    # a derived fact, so it is checked rather than trusted. Absent line = skip, not fail: the
+    # README is not required to carry one, only to be right if it does.
+    if README_MD.exists():
+        rm = re.search(r"^\*\*Version:\*\*\s*v?([\d.]+)", README_MD.read_text(encoding="utf-8"), re.M)
+        if rm:
+            readme_v = "v" + rm.group(1).rstrip(".")
+            if readme_v != header:
+                errors.append(f"README.md says Version {readme_v} but CLAUDE.md's header says "
+                              f"{header} — CLAUDE.md is the authority; update the README line.")
 
     for w in warnings:
         print(f"  [warn] {w}")

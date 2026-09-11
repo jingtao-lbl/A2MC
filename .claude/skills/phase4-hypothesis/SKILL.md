@@ -27,12 +27,52 @@ whether the existing ensemble can already answer it.
 
 **Inputs (from Phase 3):** ranked root causes, implicated parameters, selected base cases.
 **Deliverable:** a `Hypothesis` (name, mechanism, parameter moves with bounds, expected outcomes,
-success criteria, confidence) + a routing decision: skip-test now, or queue a Phase 5 experiment.
+success criteria, confidence), **the chosen base and the reason it was chosen** (Step 2a), and a
+routing decision: skip-test now, or queue a Phase 5 experiment. Phase 5 follows this and may adjust
+it for practical reasons; a change that would move the bar comes back here.
+
+## Step 0 — BUILD THE CASE'S MECHANISM GRAPH, then design from it
+
+**This phase owns the SCIENCE. Phase 5 owns executing what you decide here correctly.** The
+division is worth stating plainly because it was ambiguous until 2026-09-07 and the ambiguity cost
+a round: **what varies, from which base, to what values, against what bar is settled HERE and is
+fixed before the handoff**; staging, verification, the gate and submission are Phase 5's.
+
+So before framing a hypothesis, **construct the mechanism network for THIS CASE'S PROBLEM** — not a
+general reading of the model, but the sub-network that produces the specific miss the round is
+failing on. State the problem as a direction first ("the model underestimates standing biomass while
+maintaining production"), then assemble, from the five KB surfaces below:
+
+- every **mechanism** that feeds the scored variables in that statement, traced
+  `parameter -> controls -> mechanism -> affects -> output`;
+- the **`depends_on` couplings** among anything you intend to move together;
+- and **which of those mechanisms this round's parameter list can actually reach.**
+
+**That last one is the step that gets skipped, and it is the one that pays.** A sensitivity screen
+cannot rank a mechanism the design has no parameter on, so "we tested it and nothing worked" is only
+ever a statement about the reachable part. Measured on one site: the round's parameters sat almost
+entirely on the production INPUT side of a carbon balance, **six whole categories and seven of
+twenty-one plant-side mechanisms had no sampled parameter at all**, and sixteen experiment cycles
+refuted lever after lever without any of them being able to move the part of the network that
+mattered. The graph traversal that found it took minutes and existed on disk the whole time.
+
+Two consequences for the design that follows:
+
+- **A parameter outside the round's sampled list is testable.** Phase 5 stages values directly and
+  is not confined to the Phase-0 design matrix, so an unreachable mechanism is a candidate now
+  rather than a reason to open a new round.
+- **Check the candidate is not INERT at this case before spending a cycle on it.** A parameter whose
+  name matches the deficit is the most seductive and the most likely to be gated off. Trace the
+  guard, not just the name: on one case the single parameter in the `turnover` category was an
+  integer selecting a pattern rather than a rate, and every read of it was behind a
+  woody-vascular test that is false for all three of that site's PFTs, so changing it would have
+  done nothing. One command against five cases and a cycle.
 
 ## Step 1 — generate the hypothesis (you are the reasoning)
 
-Mirror the `Hypothesis` schema (`reasoning/schemas.py`): **name**, **mechanism** (verify against RAG,
-never from a param name), **parameters** (list of `{name, current, proposed, rationale}`, plus
+Mirror the `Hypothesis` schema (`reasoning/schemas.py`): **name**, **mechanism** (verify against the
+model's KNOWLEDGE BASE first and the model SOURCE to confirm, never from a param name — see the
+KB-first note below), **parameters** (list of `{name, current, proposed, rationale}`, plus
 `pft` / `organ` / `bounds` when relevant — FATES names; 2-organ params need dual leaf+fineroot
 entries), **design_type** (`cumulative` or `factorial`), **expected_outcomes** + **success_criteria**
 (quantified, e.g. "leaf_pft9 within 20%"), **confidence**. Must target a *different* mechanism
@@ -49,6 +89,28 @@ m.check_do_not_repeat([{"parameter": "CNRT", "old_value": 0.016, "new_value": 0.
 has been prose for months while the callable sat unused. A refutation is a property of a
 `(parameter, direction, base)` triple, so a hit is a prompt to check the DIRECTION and the BASE,
 not an automatic veto.
+
+> **KB FIRST, SOURCE TO CONFIRM (PI, 2026-09-05).** Before reading model source to establish what a
+> parameter, dimension or mechanism IS, query that model's knowledge base —
+> `docs/<model>-knowledge-base/`, greppable with `git grep -i <term> -- docs/<model>-knowledge-base/`
+> even with no RAG profile active. It usually carries the `file:line` you were about to go find, and
+> it carries context the source does not: which axis a dimension belongs to, which of two
+> similarly-named axes applies, what a prior round already measured. Then read the source to CONFIRM
+> and cite it; source remains ground truth on what the model DOES. Measured 2026-09-05: a session reconstructed the EcoSIM `micresb` slot semantics from Fortran over several turns, while `docs/ecosim-knowledge-base/ecosim-codebase-wiki-2dea74d9/microbial_bgc/index.md:133` stated it in one line WITH the same `MicBGCPars.F90:178-179` citation -- and additionally recorded that the 2-slot necromass axis is NOT the 3-slot living-biomass axis, a distinction the source read missed and which turned out to matter. The cost of skipping it: a wrong root-cause diagnosis and two fixes that treated symptoms.
+> **STAGE MATTERS, AND THIS IS THE CALIBRATION-STAGE RULE (PI, 2026-09-06).** While ONBOARDING a model the KB does not exist yet, source is the only recourse, and [[feedback_param_description_can_lie_verify_in_source]] governs: trace the read, then the internal variable, then its usage, especially before setting a bound. **At CALIBRATION stage the case is set up and the KB is assumed well-built, so the KB is where you START and it usually hands you the citation. It does NOT replace verifying in source: a KB page tells you what a thing IS, and only the code settles what it DOES -- or, just as often, what is ABSENT from it, which no page can state.** Query all five surfaces FIRST, then confirm in source. If you are in the source to LEARN what a parameter does rather than to CONFIRM what the KB told you, stop and name which it is: either you skipped the KB, or the KB has a gap. **A gap is a BUILD TASK** (rebuild the wiki, extend the curated seed, curate the round's findings at round close) and not something to route around every cycle. Full rule: [[feedback_full_mechanism_picture_before_designing_an_experiment]].
+>
+> **THE KB IS FIVE SURFACES, NOT ONE, AND THEY ARE NOT INTERCHANGEABLE. QUERY ALL FIVE, not the first one or two that answer.** They are: the **codebase wiki** `docs/<model>-knowledge-base/<model>-codebase-wiki-<commit>/` (`git grep -i <term> -- docs/<model>-knowledge-base/`, which works with no RAG profile active), the **RAG vector index** `rag/chroma_db/<profile>/` and the **knowledge graph** `rag/graphs/<profile>.json` (both via `HybridRetriever`), the **MODEL-level adaptive memory** `memory/<model>/gained_knowledge/`, and the **SITE-level adaptive memory** `use_cases/{Model}_{Case}/memory/gained_knowledge/`. The last two are the ones that get forgotten and they are populated: 21 entries for EcoSIM at model level, 28 for one case at site level, on 2026-09-05. Measured the same day on ONE parameter, `SPORC`: the knowledge-graph node carried a one-line description and units but no bounds, no code location and no mention of the two-slot axis, while the codebase wiki carried the slot semantics, the defaults AND the `MicBGCPars.F90` citation. Concluding "the KB does not have it" from the thin surface would have been wrong, so check the surfaces that hold that KIND of knowledge rather than the first one you open.
+>
+> **The curated overlay lives in DIFFERENT PLACES by model family, and looking in the wrong one reads as "it does not exist".** An adapter model keeps it at `models/<model>/curated_seed.yaml`; only the FATES profiles use `rag/data/curated_relationships_<profile>.yaml`. The active profile's `rag/metadata/<profile>.json` names the file its graph was built from, so read that rather than guessing the path. Measured 2026-09-06: `models/ecosim/curated_seed.yaml` was declared missing on the strength of an `ls rag/data/`, and it is human-authored and is what built the EcoSIM graph.
+>
+> **MEASURED COST OF QUERYING ONE SURFACE INSTEAD OF FIVE (EcoSIM_TeRaCON R1, seven cycles, 2026-09-06).** The graph stated `parameter:RMOM --controls--> mechanism:Microbial_Maintenance_Respiration --affects--> output:CO2_SEMIS_FLX_col`, the exact variable that case scores as `Fs`, and named 12 parameters for that output where a rank-correlation screen surfaced 4. The curated seed's `RMOM` entry carried the mechanism, the `NitroPars.F90:209` citation, the positive sign, the Morris rank and the `VMXO` coupling. The SITE store listed `RMOM` as an untested rank-1 alternative and recorded `CNRT` as a confirmed lever at +41% `plant_C`. All of it was re-derived from correlations across two cycles. The graph also declares three `depends_on` pairs among nine levers composed in one experiment, which is the documented explanation for a non-additivity that got written up as a discovery.
+>
+> **THEN GO TO THE SOURCE AND CONFIRM IT. This step is not optional and is not reserved for claims you have already decided are load-bearing.** Confirming is not the same as learning: at calibration stage you arrive at the source already knowing what the KB says, in order to check it, so the read is short and targeted. A long exploratory source read at this stage is the signal described above. The KB tells you what a thing IS; the source tells you what it DOES. Open the `file:line` the KB handed you in the checkout at `$A2MC_MODEL_PATH` and read **the code that USES the value**, not only its declaration or its description string: a `description`, a `long_name` or a `units` field in any of these surfaces can be wrong, which is a standing rule here ([[feedback_param_description_can_lie_verify_in_source]]) and is exactly why the KB read is a starting point rather than an answer. Confirming costs one command -- `git -C "$A2MC_MODEL_PATH" show HEAD:<path> | sed -n '<lo>,<hi>p'` -- against the hours a wrong mechanism costs downstream.
+>
+> **AND AN OUTPUT VARIABLE IS VERIFIED LIKE A PARAMETER.** The rule above is written about parameters and mechanisms; a tape field is a third category and the same failure arrives one category over. Before reducing one, establish that it is ACTIVE (a field registered `default='inactive'` is not written unless a run names it, and the model's `docs/<model>-knowledge-base/<model>_output_info_<commit>.cdl` carries a source-derived `:status`) and what its TEMPORAL SEMANTICS are -- rate, per-record increment, within-year cumulative that RESETS, run-cumulative, or stock. One reduction does not fit all five and the units do not separate them. Full rule and the measured cost: `calibration-discipline` item 3c.
+>
+> **A hypothesis is where this bites hardest**, because a mechanism asserted from a half-understood
+> parameter propagates into the experiment design, the bar, and the compute spent on it.
 
 ## Step 2 — can existing data test it? (skip-testing inner loop, Phase 3↔4)
 
@@ -126,6 +188,29 @@ workflow has already produced once and retracted.
 `phases/phase4_hypothesis/synthesis.py` consolidates multi-cycle skip-testing insights into
 experiment designs when you exit the loop toward Phase 5.
 
+## Step 2a — CHOOSE THE BASE, and choose it for the mechanism under test
+
+Phase 3 hands up `selected_base_cases` with rationale; **which one this experiment runs on is a
+scientific decision and it is made here.** Phase 5 restates the same rule from the execution side
+(`phase5-testing` step 0b) and instantiates whatever you choose; the two must agree, so if you
+change one, change both.
+
+- **Rank by in-band count first, composite as tie-break, and EXCLUDE anything below the model's
+  viability floor.** A collapsed stand posts a flattering composite for the wrong reason, since
+  every relative error approaches -1.
+- **Then choose from among the top cases by what THIS experiment needs. The current best is not
+  automatically the right base.** The base must have HEADROOM on the targets the hypothesis will
+  move, and a configuration with a better composite that sits on a band edge in the direction the
+  experiment pushes is the wrong base for that experiment.
+- **Say which one you chose and why, in the log.** The rationale is part of the design, because
+  Phase 6 reads a refutation as a property of a `(parameter, direction, base)` triple and cannot do
+  that if the base was implicit.
+
+Worked example: one round deliberately based several cycles on a configuration that was NOT its
+composite-best, because that one needed the smallest correction and therefore had the largest
+allowance on the target each experiment had to spend. A rule that said "use the best case" would
+have picked the wrong base every time.
+
 ## Step 2b — EVERY hypothesis carries its own test plan and falsification bar
 
 Online, `design_experiments(hypothesis, base_case)` returns a `List[Experiment]` — so each
@@ -155,9 +240,13 @@ merged entry — Phase 6 evaluates them individually and the reasoning chain tra
 
 If it can't be answered with existing data, the hypothesis becomes a parameter-sweep experiment.
 **Hand off to the model's Phase-5 procedure** — `offline-testing-workflow` for ELM/ELM-FATES,
-**`ecosim-run-workflow`** for EcoSIM, **`pflotran-run-workflow`** for PFLOTRAN, **`ats-run-workflow`** for ATS (all non-CIME; none of them transfer to each other, let alone to FATES) — it owns variant design, param-file
-generation + verification, the V0 reproducibility gate, submission, and analysis. Invoke
-`phase5-testing` for the phase-level routing.
+**`ecosim-run-workflow`** for EcoSIM, **`pflotran-run-workflow`** for PFLOTRAN, **`ats-run-workflow`** for ATS (all non-CIME; none of them transfer to each other, let alone to FATES) — it owns variant **EXECUTION**: param-file
+generation and verification, the V0 reproducibility gate, submission, and analysis. **The DESIGN —
+which parameters move, from which base, in which direction, against what bar — is yours** (Steps 0,
+2a and 2b). Phase 5 follows it and may adjust it for PRACTICAL reasons during execution, recording
+what it changed; anything that would change what the experiment CONFIRMS or REFUTES comes back here
+to be redesigned and re-logged. Invoke `phase5-testing` for the phase-level routing; its step 0b is
+the execution-side statement of both that boundary and the base rule in Step 2a.
 
 ## Step 4 — log and hand off
 
@@ -251,6 +340,16 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 
 ## Changelog
 
+- 2026-09-08: **An OUTPUT VARIABLE is verified like a parameter** (one line appended to the KB-first block; PI-directed). The rule that block states is written about parameters and mechanisms, and a tape field is a third category no rule named -- so in one session the identical failure arrived one category over: a single `nanmean` applied to six variables with five different temporal semantics, and an `inactive` field read as gross production while the model's own output-info CDL carried `status = "inactive"`. Canonical rule and the measured cost: `calibration-discipline` item 3c. No `description` change.
+
+- 2026-09-07 (later still): **Reworded to match `phase5-testing`'s loosened boundary (PI).** Saying the design is "fixed before the handoff" was too strong: Phase 5 legitimately adjusts for PRACTICAL reasons during execution — a value not representable at the file's dtype, a dose respaced to avoid two rungs staging the same stored value, a resubmission after an infrastructure failure — and must record what it changed. What comes BACK here is anything that would change what the experiment confirms or refutes: which parameter, which direction, which base, what range, what counts as a pass. Step 3 and the Deliverable line both say so, in the same words `phase5-testing` step 0b uses, so the two cannot drift. **No `description` change.**
+
+- 2026-09-07: **New Step 0 (build the case's mechanism graph, then design from it) and Step 2a (choose the base, for the mechanism under test).** **PI-directed division of labour: Phase 4 owns the SCIENCE, Phase 5 owns EXECUTING it correctly.** The two skills contradicted each other and one of them contradicted itself: `phase4-hypothesis` Step 3's HEADING read "design the experiment -> Phase 5" while its BODY four lines later said the model's run skill "owns variant design", and `phase5-testing` invited the agent to add variants and a second base of its own. Nothing said who decided what, and the ambiguity is not academic: on one round the design was done in Phase 4 (correctly) and the staging machinery then had to be invented in Phase 5 with no rule saying which phase owned which. The base rule is now stated in BOTH skills rather than moved -- Phase 4 as a scientific choice, Phase 5 as a check the executor performs -- with each naming the other and an instruction to change both together. **Step 0** requires the mechanism network to be built for the case's SPECIFIC miss, stated as a direction, and -- the part that gets skipped -- for the design to record WHICH of those mechanisms this round's parameter list can actually reach, because a sensitivity screen cannot rank a mechanism the design has no parameter on. Measured on one site: the round's parameters sat almost entirely on the production input side of a carbon balance, six categories and seven of twenty-one plant-side mechanisms had no sampled parameter at all, and sixteen cycles refuted lever after lever without being able to move the part of the network that mattered; the graph traversal that found it took minutes. Step 0 also records that an unsampled parameter is testable NOW (Phase 5 stages directly, outside the Phase-0 matrix) and that a candidate must be checked for INERTNESS before it is spent on -- on one case the single parameter whose name matched the deficit was an integer selecting a pattern rather than a rate, gated behind a test false for all three of that site's PFTs. **Step 2a** carries the base rule: rank by in-band count with the composite as tie-break, exclude anything below the viability floor, then choose by headroom on the targets THIS hypothesis moves, and say which and why in the log, because Phase 6 reads a refutation as a property of a (parameter, direction, base) triple. **Reconciled in the same pass:** Step 3's body now says the run skill owns variant EXECUTION, and the Deliverable line names the chosen base and its reason. **No `description` change, so when this skill fires is unaffected.**
+
+- 2026-09-06: **"the KB is meant to be sufficient" removed -- it invited exactly the misreading it warns against.** PI-directed, and the signal is a measured misreading in the session that first followed this rule: the agent paraphrased the sentence as "the KB is assumed sufficient", which reads as permission to stop at the KB, and the PI corrected it -- *"KB is not sufficient, they just let you have a quick understanding, you still need to verify in the source code if needed"*. The sentence already said *and only then confirm in source*, so the instruction was right and one clause of it was pulling the other way. **Evidence that both halves are load-bearing, from the same session:** the wiki DID carry the model's respiration temperature functions with their constants and `file:line`, so one grep would have replaced six source reads of LEARNING -- and the finding that mattered was that NO calibratable array appears in either function body, a claim about ABSENCE that no wiki page can settle. The KB would have oriented in seconds and still not answered it. Replaced with "the KB is where you START and it usually hands you the citation; it does NOT replace verifying in source". Applied identically across nine skills. The five-surface requirement, the query order and every `description` are UNCHANGED, so when each skill fires is unaffected.
+
+
+- 2026-09-05: **KB FIRST, SOURCE TO CONFIRM.** PI-directed, after a session reconstructed the EcoSIM `micresb` slot semantics from Fortran over several turns while `docs/ecosim-knowledge-base/ecosim-codebase-wiki-2dea74d9/microbial_bgc/index.md:133` stated it in one line with the same `MicBGCPars.F90:178-179` citation -- and additionally recorded that the 2-slot NECROMASS axis is not the 3-slot LIVING-biomass axis, a distinction the source read missed and which mattered. Cost: a wrong root-cause diagnosis and two fixes that treated symptoms. The knowledge was in the repo THREE times (the KB, a sibling case's hand-authored parameter list, and the Fortran) and the lowest-level one was reached for. **This is a SEARCH ORDER, not a demotion of source:** source stays ground truth on what the model DOES, and a load-bearing claim still gets a `file:line`; the KB is where you START, because it usually carries that citation already plus context the source does not. `git grep -i <term> -- docs/<model>-knowledge-base/` works with no RAG profile active. Placed at the hypothesis step because a mechanism asserted from a half-understood parameter propagates into the experiment design, its bar, and the compute spent on it. `description` untouched; no trigger change.
 - 2026-08-27: **Names every adapter model's run skill at the Phase-5 handoff, not EcoSIM alone**
   (PI-directed, first PFLOTRAN campaign), and states that the adapter models do not transfer to each
   other. A handoff that names one of three sends the other two to the wrong procedure or to none.

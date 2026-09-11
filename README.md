@@ -3,7 +3,7 @@
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 **Status:** Implementation Complete <br>
-**Version:** 2.317 <br>
+**Version:** 2.409 <br>
 **Purpose:** Fully autonomous multi-target calibration of process-based environmental models using AI API + HPC + RAG/GraphRAG + Adaptive Memory. This repo is the **non-CIME line** (EcoSIM, PFLOTRAN, ATS); for a CIME-configured Earth system model see **Which A2MC do you want?** below.
 
 > **New here?** This README is the front door. For the full operational detail — configuration reference, per-phase behavior, module APIs, knowledge-system internals, state persistence, cost, and reporting — see the [**A2MC User Guide**](docs/a2mc_reference/user_guide.md).
@@ -99,7 +99,7 @@ A discovery vetted by either agent is available to the other on the next run.
 | 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | Yes |
 | 2 | SCREENING | Rank ensemble by validation targets | Yes |
 | 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes |
-| 4 | HYPOTHESIS | Generate experiments OR test with existing data | Yes |
+| 4 | HYPOTHESIS | Generate testable hypotheses, then design experiments OR test them on existing data | Yes |
 | 5 | TESTING | Run designed experiments on HPC | No |
 | 6 | REFINEMENT | Evaluate results, extract lessons, check equifinality | Yes |
 | 7 | CONVERGED | Final optimal configuration | - |

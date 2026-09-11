@@ -91,18 +91,49 @@ is "small reorder + a handful of renames."** Unexpectedly large removed-nodes/ed
 something dropped; large added = something duplicated or mis-categorized → root-cause back
 in Step 1/2.
 
-## Step 4 (post-rebuild) — index coverage self-test  (`check_rag_coverage.py`)
+## Step 4 (post-rebuild) — index self-test, ROUTED BY MODEL
 
 The three validators above check the *source→wiki→YAML→graph* chain; they do **not** catch a whole
 knowledge base silently missing from the **vector index** (the 2026-07-05/06 ELM-wiki-absent bug — the
-retriever answered FATES-only with no error). After a rebuild, run:
+retriever answered FATES-only with no error). After a rebuild, run the one for your model:
+
+| model | run this |
+|---|---|
+| **ELM / FATES** | `python tools/check_rag_coverage.py --profile <profile>`  (docs/33 §3c) — plus `tools/check_rag_queries.py` for content |
+| **EcoSIM** | `python tools/check_ecosim_rag_queries.py --profile ecosim-2dea74d9` |
+| **PFLOTRAN** | `python tools/check_ecosim_rag_queries.py --profile pflotran-157a26f7` |
+
+**`check_ecosim_rag_queries.py` is model-GENERIC despite its filename**, which is kept for
+back-compat: it reads the per-profile `collection` from `rag/golden_queries.yaml` and queries that
+vector store directly, so it needs none of the FATES retriever plumbing and works for any registered
+profile. It carries **both** guards in one run — a count-regression check against
+`rag/milestones.json` and the golden-query content assertions, plus graph node floors.
+
+**Do not read "FATES-only script" as "adapter models are unchecked."** `check_rag_coverage.py` reads
+`rag/canary_queries.yaml`, which lists only the two `api-*` profiles, so on an adapter profile it
+falls through to the default `fates_knowledge` collection and exits 1 — a missing config block, not a
+missing capability. Measured 2026-09-06: reading that failure as an absence of coverage produced a
+wrong conclusion in a dev log, corrected the same day.
+
+### Step 4b — the curated-seed coverage gate (`validate_seed_coverage.py`)
+
+**Run this after any curated-seed or curated-YAML edit**, for every model:
 
 ```bash
-python tools/check_rag_coverage.py --profile <profile>   # docs/33 §3c
+python tools/validate_seed_coverage.py --seed <the file the profile was built from>
 ```
 
-It asserts every expected `kb_source` is present above a floor and canary wiki files appear (config:
-`rag/canary_queries.yaml`). Metadata-only, no embedding model; ERRORs if a `kb_source` count is 0.
+C1 asserts every category with parameters has at least one mechanism; C2 asserts every calibratable
+parameter is named by at least one. It exists because the seed builder prints
+`[SKIP] category X has no assigned mechanisms` and then **exits 0**, so a partial seed reads as a
+finished one — and an unreachable parameter is invisible to Phase 3, which can only recommend what a
+mechanism reaches.
+
+**Model-agnostic, verified on all three shapes** rather than assumed: `models/ecosim/curated_seed.yaml`
+(PASS 10/10, 44/44), `models/pflotran/curated_seed.yaml` (FAIL, 4 unreachable) and
+`rag/data/curated_relationships_api-43-1.yaml` (FAIL, unreachable parameters plus an orphan
+mechanism). Read `rag/metadata/<profile>.json` for which file to pass — adapters keep it at
+`models/<model>/curated_seed.yaml`, only the FATES profiles use `rag/data/`.
 
 ## Verdict scheme & triage
 
@@ -136,5 +167,7 @@ Whole pass ~half a working day for a coupled pair; re-runs after fixes are secon
   injection + `--graph-only` rebuild.
 
 ## Changelog
+
+- 2026-09-06: **Step 4 routes by model, and gains Step 4b for the curated-seed coverage gate.** PI-directed. Step 4 named only `check_rag_coverage.py`, which is FATES-only by configuration, so on an adapter model it exits 1 and the step read as inapplicable — while `tools/check_ecosim_rag_queries.py` is model-generic despite its filename and covers EcoSIM and PFLOTRAN today. **Signal:** on 2026-09-06 that failure was read as "the silently-missing-KB class is undetectable on the adapter line" and written into a dev log; it was false and was corrected the same day. New Step 4b names `tools/validate_seed_coverage.py`, which was referenced by **no skill at all** despite being the natural gate after a curated-seed edit — the seed builder skips an uncovered category and exits 0, so a partial seed reads as finished. Every claim in both steps was verified before being written: the generic guard runs on `pflotran-157a26f7` (14 assertions), and the seed gate runs on all three seed shapes with two genuine FAILs. No `description` changed, so no trigger moved.
 
 - 2026-06-17: Initial version — distilled from docs/a2mc_reference/rag_validation_workflow.md.

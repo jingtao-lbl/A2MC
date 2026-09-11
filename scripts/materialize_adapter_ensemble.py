@@ -39,7 +39,8 @@ density at R2's best value while the primary/tertiary surfaces are Sobol-sampled
 Env (source a2mc_noncime_config.sh + the site config first):
     A2MC_MODEL                onboarded model name (registry dispatch)          (required)
     A2MC_BASE_PARAM_FILE      primary base file to perturb + stage per row      (required)
-    A2MC_SECONDARY_PARAM_FILE secondary base file, staged FIXED (no edits)      (optional)
+    A2MC_SECONDARY_PARAM_FILE secondary base file; PER-CASE if the param list samples
+                              a name on it, else staged fixed                     (optional)
     A2MC_BASE_PARAM_FILE_3    tertiary base file to perturb + stage per row     (optional)
     A2MC_PARAM_LIST_FILE      the explicit-column param list (name + pft)        (required)
     A2MC_OUTPUT_DIR           ensemble run root (per-case subdirs land here)     (required)
@@ -60,7 +61,8 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from scripts.create_adapter_parameter_sample import (  # noqa: E402
-    parse_pft_param_list, nc_varnames, route_surfaces, is_netcdf,
+    parse_pft_param_list, nc_varnames, route_surfaces, is_netcdf, parse_param_modes,
+    bare_name,
 )
 
 
@@ -78,7 +80,7 @@ def main() -> int:
     ap.add_argument("--base-param", default=os.environ.get("A2MC_BASE_PARAM_FILE"),
                     help="PRIMARY base file, perturbed per row (default $A2MC_BASE_PARAM_FILE)")
     ap.add_argument("--secondary-param", default=os.environ.get("A2MC_SECONDARY_PARAM_FILE"),
-                    help="SECONDARY base file, staged FIXED/unperturbed into every case "
+                    help="SECONDARY base file. Written PER CASE when the param list samples a name on this surface (e.g. EcoSIM PPI); staged unperturbed into every case when it does not. "
                          "(default $A2MC_SECONDARY_PARAM_FILE; omit for a single/dual-surface model)")
     ap.add_argument("--tertiary-base", default=os.environ.get("A2MC_BASE_PARAM_FILE_3"),
                     help="TERTIARY base file, perturbed per row like --base-param "
@@ -114,7 +116,7 @@ def main() -> int:
         return 1
     secondary = Path(args.secondary_param) if args.secondary_param else None
     if secondary is not None and not secondary.exists():
-        print(f"ERROR: secondary (fixed) parameter file not found: {secondary}", file=sys.stderr)
+        print(f"ERROR: secondary parameter file not found: {secondary}", file=sys.stderr)
         return 1
     tertiary_base = Path(args.tertiary_base) if args.tertiary_base else None
     if tertiary_base is not None and not tertiary_base.exists():
@@ -122,6 +124,8 @@ def main() -> int:
         return 1
 
     names, _, _ = parse_pft_param_list(args.param_list)
+    modes = parse_param_modes(args.param_list)          # {} when the list has no `mode` column
+    multiplier_ids = {cid for cid, m in modes.items() if m == "multiplier"}
     X = np.loadtxt(args.matrix)
     if X.ndim == 0:      # a matrix file with exactly one value loads as a bare scalar
         X = X.reshape(1, 1)
@@ -136,7 +140,10 @@ def main() -> int:
         if is_netcdf(base):
             primary_vars = nc_varnames(base)
             tertiary_vars = nc_varnames(tertiary_base) if tertiary_base is not None else set()
-            routing = route_surfaces(names, primary_vars, tertiary_vars, tertiary_base is not None)
+            routing = route_surfaces(
+                names, primary_vars, tertiary_vars, tertiary_base is not None,
+                secondary_names=backend.secondary_param_names(),
+                secondary_given=secondary is not None)
         else:
             # A NON-NETCDF primary surface (PFLOTRAN's text input deck). `route_surfaces`
             # probes NetCDF variable names, so it cannot describe this file at all -- see
@@ -154,6 +161,7 @@ def main() -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
     n_tertiary = sum(1 for s in routing.values() if s == "tertiary")
+    n_secondary = sum(1 for s in routing.values() if s == "secondary")
 
     n_rows = X.shape[0]
     end = args.end if args.end > 0 else n_rows
@@ -167,9 +175,10 @@ def main() -> int:
     print(f"Model:        {args.model}")
     print(f"Run root:     {run_root}")
     print(f"Base params:  primary={base.name}"
-          + (f"  secondary(fixed)={secondary.name}" if secondary else "")
+          + (f"  secondary({'PER-CASE' if n_secondary else 'fixed'})={secondary.name}" if secondary else "")
           + (f"  tertiary={tertiary_base.name}" if tertiary_base else ""))
-    print(f"Param list:   {len(names)} params ({len(names) - n_tertiary} primary, {n_tertiary} tertiary)"
+    print(f"Param list:   {len(names)} params ({len(names) - n_tertiary - n_secondary} primary, "
+          f"{n_secondary} secondary, {n_tertiary} tertiary)"
           f"  |  matrix: {n_rows} rows x {X.shape[1]} cols")
     print(f"Materialize:  rows {start}..{end}  ({end - start + 1} cases)"
           + (f" + V0 baseline (case {args.baseline_index})" if args.baseline else ""))
@@ -180,9 +189,50 @@ def main() -> int:
             print(f"    {run_root}/{_case_name(args.case_pattern, i)}/")
         return 0
 
+    # Base values for every MULTIPLIER row, read ONCE from the surface each is routed to. Resolving
+    # the factor here rather than in a backend keeps `write_parameter_file` unchanged across every
+    # adapter: it already accepts a list, so an array parameter is handed the scaled ARRAY and a
+    # scalar the scaled scalar. Broadcasting a bare factor would set every element to the factor,
+    # which is the defect this exists to fix.
+    base_vals = {}
+    if multiplier_ids:
+        import netCDF4 as _nc
+        _srcs = {"primary": base, "secondary": secondary, "tertiary": tertiary_base}
+        for cid in sorted(multiplier_ids):
+            if cid not in routing:
+                continue
+            src = _srcs.get(routing[cid])
+            if src is None or not is_netcdf(src):
+                raise SystemExit(
+                    f"ERROR: {cid} is mode=multiplier but its {routing[cid]} surface is not a "
+                    f"NetCDF base whose current value can be read. A multiplier needs a base to "
+                    f"multiply.")
+            bare = bare_name(cid)
+            with _nc.Dataset(src) as _d:
+                if bare not in _d.variables:
+                    raise SystemExit(f"ERROR: {cid} is mode=multiplier but '{bare}' is not a "
+                                     f"variable in {Path(src).name}")
+                base_vals[cid] = np.array(_d.variables[bare][:], dtype=float)
+        print("Multiplier rows: " + ", ".join(
+            f"{c} (base shape {base_vals[c].shape}, {base_vals[c].min():g}..{base_vals[c].max():g})"
+            for c in sorted(base_vals)))
+
+    def _resolve(edits: dict) -> dict:
+        """Turn a mode=multiplier FACTOR into the concrete value the writer should store."""
+        out = {}
+        for k, v in edits.items():
+            if k in base_vals:
+                scaled = base_vals[k] * float(v)
+                out[k] = scaled.tolist() if scaled.ndim else float(scaled)
+            else:
+                out[k] = v
+        return out
+
     def _materialize(name: str, edits: dict) -> Path:
+        edits = _resolve(edits)
         primary_edits = {k: v for k, v in edits.items() if routing[k] == "primary"}
         tertiary_edits = {k: v for k, v in edits.items() if routing[k] == "tertiary"}
+        secondary_edits = {k: v for k, v in edits.items() if routing[k] == "secondary"}
         case_dir = run_root / name
         case_dir.mkdir(parents=True, exist_ok=True)
 
@@ -200,7 +250,15 @@ def main() -> int:
         # this keeps single-surface models (R1's case, and every other adapter today) calling
         # create_case() with the exact same signature as before this script gained surfaces.
         extra = {}
-        if secondary is not None:
+        if secondary_edits:
+            # SAMPLED secondary surface: write a PER-CASE file, exactly as primary/tertiary do.
+            sfile = case_dir / secondary.name
+            backend.write_parameter_file(secondary, secondary_edits, sfile, surface="secondary")
+            extra["secondary_param_file"] = sfile
+        elif secondary is not None:
+            # FIXED-STAGE path, unchanged: no secondary parameter is being sampled, so every case
+            # points at the one shared base. This is what every ensemble before 2026-09-01 did and
+            # it must stay byte-identical (SCOPE_secondary_surface_routing.md, F5).
             extra["secondary_param_file"] = secondary
         if tfile is not None:
             extra["tertiary_param_file"] = tfile

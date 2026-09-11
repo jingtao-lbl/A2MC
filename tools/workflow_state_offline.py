@@ -28,6 +28,56 @@ from datetime import datetime
 
 SCHEMA = "a2mc.offline_workflow_state.v1"
 
+#: The machine configs that EXPORT the loop limits. Both are read; a disagreement between them is
+#: reported rather than silently resolved, because "keep in sync" is a comment and not a mechanism.
+CONFIG_FILES = ("a2mc_noncime_config.sh", "a2mc_config.sh")
+
+#: The directory those configs live in. A module attribute so a test can point it at a fixture.
+CONFIG_ROOT = Path(__file__).resolve().parents[1]
+
+
+def limit_from_config(var, files=None, root=None):
+    """-> (int_or_None, note). Read `export <var>=<int>` from the shipped machine configs.
+
+    THE SINGLE DERIVATION OF THE LOOP LIMITS, and it lives here rather than in the checker
+    because BOTH need it and a second copy is how the first drift happened.
+    `A2MC_MAX_EXPERIMENTS` and `A2MC_MAX_SKIP_TESTING` are exported by `a2mc_config.sh` and
+    `a2mc_noncime_config.sh` and by nothing else; `orchestrator.py` reads them as its argparse
+    defaults, so the ONLINE agent obeys whatever the PI sets. Anything offline that hardcodes a
+    number instead disagrees with the online agent the moment the PI changes one.
+
+    Measured 2026-09-07: `set_phase6_decision` defaulted `max_experiments=10` while
+    `a2mc_noncime_config.sh` exports 20, so an adapter case's Phase-6 decision recorded
+    `experiment_count 12 of 10` -- a routing gate reading as exhausted eight cycles early.
+
+    Returns None when no config states the value, leaving the caller's own fallback as the last
+    resort it was written to be. Stdlib regex only, so a pre-commit interpreter needs nothing
+    from the A2MC package.
+    """
+    files = CONFIG_FILES if files is None else files
+    root = CONFIG_ROOT if root is None else Path(root)
+    found = {}
+    for name in files:
+        f = root / name
+        if not f.is_file():
+            continue
+        mm = re.findall(rf"^\s*export\s+{re.escape(var)}=([0-9]+)\s*$", f.read_text(), re.M)
+        if mm:
+            found[name] = int(mm[-1])
+    if not found:
+        return None, None
+    vals = set(found.values())
+    if len(vals) > 1:
+        # THE TWO CONFIGS DISAGREE, and a bare state file cannot say which model family it belongs
+        # to. Take the LARGER, deliberately and never silently: this value gates ROUTING, so a
+        # too-small guess declares a round exhausted while cycles remain, which is the worse error.
+        pairs = ", ".join(f"{k}={v}" for k, v in sorted(found.items()))
+        return max(vals), (f"{var} DISAGREES between the machine configs ({pairs}) -- using the "
+                           f"LARGER, because this limit gates routing and a too-small guess "
+                           f"declares a round exhausted while cycles remain")
+    v = next(iter(vals))
+    return v, f"{var}={v} read from {'/'.join(sorted(found))}"
+
 # The next workflow action a driver (the `calibration-goal` skill, docs/38 §4.3) should take,
 # resolved PURELY from state. kind ∈ {"run_phase", "gate", "done"}:
 #   run_phase  -> phase is the phase to run next (the driver ensures current_phase==phase, runs it)
@@ -349,13 +399,32 @@ class WorkflowStateOffline:
 
     def set_phase6_decision(self, decision, binding_target="", next_targeted_experiment="NONE",
                             exhaustion_justification="", objective="", best_so_far="",
-                            max_experiments=10):
+                            max_experiments=None):
         """Record a Phase-6 routing decision + the objective restatement it requires (docs/34).
 
         `next_targeted_experiment`: a named, in-range, target-aimed experiment aimed at
         `binding_target`, or the literal "NONE" if genuinely none remains.
         Call validate_phase6_decision() before acting on the result.
+
+        `max_experiments` defaults to the MACHINE CONFIG rather than to a literal. It used to
+        default to 10 while `a2mc_noncime_config.sh` exports 20, so an adapter case at cycle 12
+        recorded `experiment_count 12 of 10` and the routing gate read as exhausted eight cycles
+        early. The environment wins when it is set, then the config, then 10.
         """
+        if max_experiments is None:
+            env = os.environ.get("A2MC_MAX_EXPERIMENTS")
+            mx = None
+            if env is not None:
+                try:
+                    mx = int(env)
+                except ValueError:
+                    mx = None
+            if mx is None:
+                mx, _ = limit_from_config("A2MC_MAX_EXPERIMENTS")
+            if not isinstance(mx, int) or mx < 1:
+                mx = 10
+        else:
+            mx = max_experiments
         self.data["phase6_decision"] = {
             "objective": objective,
             "best_so_far": best_so_far,
@@ -364,7 +433,7 @@ class WorkflowStateOffline:
             "exhaustion_justification": exhaustion_justification,
             "decision": decision,
             "experiment_count": self.data.get("experiment_count", 0),
-            "max_experiments": max_experiments,
+            "max_experiments": mx,
         }
         return self
 
@@ -378,7 +447,9 @@ class WorkflowStateOffline:
           - stop_model_dev / redesign_6to0 are INVALID while experiment_count < max_experiments
             AND a named next_targeted_experiment remains (that is a rethink_6to3);
           - stop_model_dev additionally REQUIRES next_targeted_experiment == "NONE" AND a non-empty
-            exhaustion_justification (you may not stop with a lever on the table).
+            exhaustion_justification (you may not stop with a lever on the table);
+          - rethink_6to3 is INVALID once experiment_count + 1 would exceed max_experiments, because a
+            rethink SPENDS a cycle -- the guard must test the POST-increment value.
         """
         d = self.data.get("phase6_decision")
         errs = []
@@ -407,6 +478,20 @@ class WorkflowStateOffline:
                 f"decision '{dec}' is invalid while experiment_count ({ec}) < max_experiments "
                 f"({mx}) and a named in-range experiment remains ('{nxt}') — that is a rethink_6to3; "
                 f"run it first (feedback_performance_experiment_is_the_objective).")
+        # A rethink SPENDS a cycle, so it is only legal if the round has one left. The guard has to
+        # test the POST-increment value: at ec = mx - 1 a rethink looks legal, and it is the increment
+        # to mx that crosses the limit. MEASURED TWICE on one round -- at 19 of 20 the validator
+        # returned no errors and the cycle's log went on to describe a "cycle 20" the budget did not
+        # contain; at 21 of 21, after the PI granted one cycle over, it STILL returned no errors and
+        # would have licensed a 22nd. Nothing else in the gate mentions rethink_6to3 at all, which is
+        # why the round's only auto-taken route was also its only unguarded one.
+        if dec == "rethink_6to3" and ec + 1 > mx:
+            errs.append(
+                f"decision 'rethink_6to3' is invalid at experiment_count ({ec}) of max_experiments "
+                f"({mx}): a rethink INCREMENTS the counter, so it would spend cycle {ec + 1} of {mx}. "
+                f"The middle loop is exhausted -- this is a round CLOSE followed by the human "
+                f"converge/redesign/stop gate, not another cycle. Raise max_experiments explicitly if "
+                f"the PI has granted more budget (calibration-discipline, the per-round banner).")
         if dec == "stop_model_dev":
             if has_named:
                 errs.append("stop_model_dev requires next_targeted_experiment == NONE — you may not "
@@ -449,7 +534,33 @@ class WorkflowStateOffline:
         if not isinstance(mx, int) or isinstance(mx, bool) or mx < 1:
             mx = (d.get("phase6_decision") or {}).get("max_experiments")
         if not isinstance(mx, int) or isinstance(mx, bool) or mx < 1:
-            return False                      # unknown limit: do not invent a close
+            # FALL BACK TO THE MACHINE CONFIG, exactly as `check_workflow_state_offline.py`'s
+            # `resolve_max_experiments` does. This used to `return False` on the reasoning that an
+            # unknown limit should not invent a close -- but the limit is never unknown: it lives in
+            # `A2MC_MAX_EXPERIMENTS` in the machine config and NOWHERE ELSE, and a state that
+            # carries no copy of it is the normal case, not a corrupt one, because the field is
+            # written only when a Phase-6 decision is recorded.
+            #
+            # Measured 2026-09-08. A case sat at `experiment_count == 20` with twenty completed
+            # cycles on disk and `max_experiments: null` in its state. The validator fell back to
+            # the config, read 20 >= 20 and called the round closed; this method found no int,
+            # returned False, and the resolver drove toward a twenty-first cycle. Two tools reading
+            # one state disagreed about whether the round was over, and the one the DRIVER consults
+            # was the one ignoring the budget.
+            #
+            # Refusing to guess is right when a value has no source of truth. This one has exactly
+            # one ([[feedback_bind_derived_facts_to_their_source]]), so reading it is not a guess.
+            env = os.environ.get("A2MC_MAX_EXPERIMENTS")
+            mx = None
+            if env is not None:
+                try:
+                    mx = int(env)
+                except ValueError:
+                    mx = None
+            if not isinstance(mx, int) or mx < 1:
+                mx, _ = limit_from_config("A2MC_MAX_EXPERIMENTS")
+            if not isinstance(mx, int) or isinstance(mx, bool) or mx < 1:
+                return False                  # genuinely no limit anywhere: do not invent a close
         return int(d.get("experiment_count", 0) or 0) >= mx
 
     def resolve_next_action(self) -> "NextAction":
@@ -499,6 +610,25 @@ class WorkflowStateOffline:
             return NextAction("done", "converged", "all targets met — Phase 7 CONVERGED")
 
         phase = d.get("current_phase", "design")
+
+        # THE MIDDLE-LOOP LIMIT IS CHECKED BEFORE ANY run_phase, NOT ONLY IN THE REFINEMENT BRANCH.
+        #
+        # Measured 2026-09-08 on a case at `experiment_count == max_experiments == 20`, with twenty
+        # completed cycles on disk: the resolver returned `run_phase(diagnosis)` and would have
+        # driven a twenty-first, while `check_workflow_state_offline.py` called the same state
+        # closed. The two disagreed because the limit test lived only in the `refinement` branch,
+        # and a `rethink_6to3` sets `current_phase = "diagnosis"` -- which is runnable, so the
+        # branch above returned before `_round_is_closing` was ever consulted. The budget was
+        # therefore unenforced along the ONE path every cycle takes.
+        #
+        # `not rc_done` is what keeps this from firing after a redesign: the post-redesign
+        # `run_phase("design")` is reached only once the close AND the housekeeping are recorded.
+        if not rc_done and self._round_is_closing(d, dec):
+            return NextAction("close", "round_close",
+                              "the middle loop is at its limit (experiment_count == "
+                              "max_experiments) — write the round close before anything else, so "
+                              "the Phase-6 gate is decided with the report in hand")
+
         if phase in self.RUNNABLE_PHASES:
             return NextAction("run_phase", phase, f"execute the {phase} phase skill")
 

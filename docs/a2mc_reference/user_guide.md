@@ -402,7 +402,7 @@ A2MC uses a 7-phase workflow with intelligent iteration paths to minimize HPC co
 | 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | **Yes** | `extract_sensitivity_outputs.py`, `morris_sensitivity_analysis.py` |
 | 2 | SCREENING | Rank ensemble by validation targets | Yes | `screen_ensemble.py` |
 | 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes | `run_diagnosis.py` (+ 11 diagnostic tools) |
-| 4 | HYPOTHESIS | Generate experiments OR test with existing data | Yes | `reasoning/`, `phases/phase4_hypothesis/` |
+| 4 | HYPOTHESIS | Generate testable hypotheses, then design experiments OR test them on existing data | Yes | `reasoning/`, `phases/phase4_hypothesis/` |
 | 5 | TESTING | Run designed experiments on HPC | No | `submit_experiments.py` (+ design, monitor) |
 | 6 | REFINEMENT | Evaluate results, extract lessons, check equifinality | Yes | `reasoning/`, `phases/phase6_refinement/` |
 | 7 | CONVERGED | Final optimal configuration | - | - |

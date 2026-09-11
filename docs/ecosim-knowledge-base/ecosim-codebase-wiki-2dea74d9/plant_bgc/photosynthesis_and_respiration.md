@@ -533,3 +533,52 @@ parameter file through `InitPlantMod`.
 No Farquhar/von Caemmerer/Berry, Ball-Berry, or Medlyn citations appear in source
 comments. The model is thus best described as "Grant (1989) C3/C4 biochemical model
 with mechanistically prognosed enzyme pools and diffusion-based stomatal closure".
+
+---
+
+## 14. Output traps verified against a real run (added 2026-09-08)
+
+**Added by hand after a calibration cycle tripped on them; verified against an 8,401-record `h0` tape from an EcoSIM_TeRaCON run at source pin `2dea74d9`, not from a code reading alone.** Everything above this section is the original commit-pinned generation; this section is dated separately so a regeneration can drop it deliberately rather than silently.
+
+### 14.1 `CAN_GPP_pft` is element-wise IDENTICAL to `NPP_pft` on a real tape. Do not read it as GPP.
+
+Measured over all 8,401 records of one run, PFT slot 0: `max |NPP_pft - CAN_GPP_pft| = 0.0`, exactly. They are registered from different source variables and carry different units and long names:
+
+| history field | fed from | units | `hist_addfld1d` |
+|---|---|---|---|
+| `NPP_pft` | `NetPrimProduct_pft` (`HistDataType.F90:4616`) | `gC/m2` | active |
+| `CAN_GPP_pft` | `GrossCO2Fix_pft` (`HistDataType.F90:4676`) | `gC/m2/hr` | **`default='inactive'`** (`HistDataType.F90:2286`) |
+
+**`NPP_pft` is the trustworthy one.** Summed over the run it gives 622.6 gC m-2 against `ECO_NPP_col` = 598.2 (4% apart, and they are per-PFT versus ecosystem), while `ECO_GPP_col` = 1351. The ratio `ECO_NPP_col / ECO_GPP_col` sits at **0.44 across five runs spanning a factor of 3.6 in `CNRT`**, which is a plausible carbon-use efficiency and is not 1.0. So net production is being computed and written correctly.
+
+**`CAN_GPP_pft` is the one to distrust**: it is `default='inactive'`, and on a tape where it appears it carried the `NPP_pft` values rather than gross fixation. Use `ECO_GPP_col` or `CAN_cumGPP_pft` when gross fixation is what you want.
+
+**Why the trap is worth a section.** `NetPrimProduct_pft = GrossCO2Fix_pft + GrossResp_pft` (`GrosubsMod.F90:242`, respiration negative by sign convention), so `NPP_pft == CAN_GPP_pft` reads at first as "autotrophic respiration is zero", which would invalidate any NPP target scored on this field. It is not: the ecosystem-level ratio above settles it. A session raised exactly that alarm from the equality plus that one line, and only the column-level cross-check disproved it.
+
+### 14.2 The `pft` dimension is an ALLOCATION size, not a count of living plants
+
+The `pft` dimension is 5 on a case running a single C4 grass. Verified on the same tape:
+
+| slot | `NPP_pft` | `Root_N_pft` | reading |
+|---|---|---|---|
+| 0 | max 0.684, 3,706 nonzero | max 27.2 | **the one real plant** |
+| 1 | max 1.5e-10 | 0 nonzero | numerical dust |
+| 2 | max 1.4e-11 | 12 nonzero | numerical dust |
+| 3, 4 | all NaN (fill) | all NaN | never allocated |
+
+**Select slot 0 explicitly.** A `nanmean` across the slot axis silently averages the real plant with two dust slots (NaN slots drop out), dividing by 3 and understating every per-PFT quantity by that factor. It is a uniform factor, so relative comparisons across cases survive it and absolute values do not.
+
+### 14.3 Growth is gated by MINIMA in at least two places, and both depend on stoichiometry
+
+Recorded together because a cycle that finds one and not the other will read a threshold as a novelty:
+
+- **Leaf protein**, `PlantBranchMod.F90:3547`: `LeafProteinC_node += AMIN1(GrowthElms(ielmn)*rProteinC2LeafN_pft, GrowthElms(ielmp)*rProteinC2LeafP_pft)` — a **nitrogen route against a phosphorus route**. While N is the minimum the P term is slack and `CPLF` does nothing; below the switch it binds and the stand collapses.
+- **Root growth**, `RootMod.F90:638` (secondary) and `:1359` (primary): `AMIN1(FracRoot*CSinkL*RootMycoNonstElms_rpvr(ielmn,...), RootMycoNonst4Grow_Oltd(ielmc)*CNRTW)` — nitrogen **supply** against nitrogen **demand**, the demand arm linear in `CNRTW`, so the crossover's location is set by the root N:C ratio itself. `RootMod.F90:641` then charges `1.70` gC per gN of the switched quantity as assimilation respiration into the root CO2 flux at `:648`.
+
+**Consequence for calibration:** a stoichiometric parameter on either path is inert on one side of its switch and strong on the other, so a dose response measured on one side does not extrapolate across it.
+
+**A clamp that looks like a third one is inert at a grassland.** `GrosubsMod.F90:453` and `:456` carry `CNRTW` in a denominator against a ceiling of 1, but `:436` sets the woody fraction to `AZMAX1(1 - 1.0) = 0` for a non-woody PFT, so both evaluate to `AMIN1(0, 1)` identically, and they are litter partition fractions rather than growth terms.
+
+### 14.4 `CNRT` reaches leaf and sheath stoichiometry only BEFORE emergence
+
+`PlantBranchMod.F90:485` branches on `iPlantCalendar_brch(ipltcal_Emerge,NB,NZ).NE.0`. The emerged arm sets `CNLFB = CNLFW` from `rNCLeaf_pft`; only the pre-emergence ELSE arm at `:496-497` sets `CNLFB = CNSHB = CNRTW` and the growth yield to `RootBiomGrosYld_pft`. Citing `:496-497` without its condition overstates the root ratio's reach into the shoot: it acts through each branch's establishment window, not continuously.

@@ -29,8 +29,18 @@ run is active, otherwise a date stamp for the interactive session.
 
 ## Type A — phase log (via PhaseLogger)
 
-Don't hand-roll the format; call `tools/phase_logger.py` so the output matches the autonomous
-agent byte-for-byte.
+Don't hand-roll the format, and **don't hand-roll the DRIVER either — use `tools/write_phase_log.py`.**
+
+```bash
+python tools/write_phase_log.py --phase 3 --payload <phase_results/{stem}/payload_phase3.py> \
+                               --site-dir use_cases/<Model>_<Case>
+```
+
+The payload is a small PYTHON module (not JSON: the reasoning body is a long r-string and wants to stay one) defining exactly four names — `TITLE`, `COUNTERS`, `HANDSHAKE`, `LOG` — where `LOG` is the phase method's own kwargs minus `title`, passed through verbatim so the tool never has to know a phase's field names and cannot fork the contract when `PhaseLogger` gains one. **It is a thin front-end over the same `PhaseLogger` API the ONLINE agent uses**, deliberately: a second way to write a log would be a second contract.
+
+**Why a tool rather than a per-case script.** The content of a phase log is the case's; the MECHANICS are A2MC's, and that is where the failures were. Measured 2026-09-07: **47 tracked copies** of `write_phase{N}_log.py` across two cases, 39 of them stem copies, and three distinct failures in a single session, all in the boilerplate and none in the content. `create_logger()` with no site **falls back to `use_cases/TEMPLATE`** and writes a log stamped `**Site:** TEMPLATE` that passes every conformance check; with `A2MC_AGENT_MODE` unset the log lands in the ONLINE nested layout while `topic_artifact_dir()` keeps the offline stem, which `PhaseLogger` warns about and then does anyway; and a descriptor slugified to two different lengths minted a `zd` folder against a `ze` log. The tool refuses the first, sets the mode before constructing the logger for the second, and **asserts the written log pairs with its folder** for the third, so a split cannot be committed rather than being found later by `check_stem_pairing.py`. Guards proven by negative control in `tests/test_write_phase_log.py` (removing a guard turns its test red).
+
+The underlying library is still `tools/phase_logger.py`, and calling it directly remains correct for the online path and for anything the tool does not cover:
 
 ```python
 # source use_cases/{Model}_{Case}/config/{site}_config.sh first -- since v2.306 it auto-sources its own
@@ -75,7 +85,15 @@ folds these flat logs into synthesis alongside session-scoped ones.
 
 **It holds the case's model-update logs too** (PI, 2026-08-24): when a change to the model SOURCE is made for this case, the write-up goes here, beside the record of which rounds ran it. Keeping the mechanism and its effect on the calibration in one place under the case is what makes both readable by whoever picks the case up.
 
-**The `log/{stem}.md` and `phase_results/{stem}/` have DIFFERENT jobs — do both fully.**
+**A PHASE LOG IS A SYNTHESIS OF ITS `phase_results/{stem}/`.** The scripts and data in that folder PRODUCED the numbers; the log is the write-up of them. So the two are not two independent records that happen to agree: the folder is UPSTREAM and the log is DOWNSTREAM of it, and every number in the log is a citation of something in the folder. Three consequences, and the third is the one that bites:
+
+- **Write the log from the folder**, not from recall of what the analysis returned.
+- **Verify each number you carry forward against the script that computed it and the data file that holds it** — including numbers you are quoting from a PREVIOUS phase's log, which are citations of *that* phase's folder.
+- **Where a log and a stem folder disagree, the FOLDER WINS** and the log gets a dated correction.
+
+**MEASURED, and it is why this is stated rather than assumed.** One cycle's Phase-4 log carried three hand-entered gate values that appear in no artifact anywhere in the round, one wrong by 1e-4 relative. The next phase's control gate was EXACT by construction (a copied base), so quoting that log faithfully would have FAILED the gate and reported non-determinism in the model — a false and serious finding, produced by trusting a log over the folder behind it. It passed only because the gate was run against the prior cycle's data file instead. Same discipline as [[feedback_bind_derived_facts_to_their_source]], reaching the one place that memory does not: a number copied out of an artifact and into prose.
+
+**Given that, the two artifacts have DIFFERENT jobs — do both fully.**
 - **`log/{stem}.md` carries the ANALYSIS this session** — the reasoning, findings, discussion, the numbers
   with their interpretation, the conclusion, and the next action. Not a caption dump; the argument a cold
   reader reconstructs. (Analysis-phase logs also perform *first-hand* analysis, not a restatement of a prior

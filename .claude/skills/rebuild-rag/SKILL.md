@@ -142,11 +142,43 @@ print(r.get_targeted_context(param_names=['fates_cnp_pid_kp'],
   Feb-2026 index): phenology defaults `-68 / 638 / -0.01`, transpiration units in `mm`,
   and the phantom `fates_cnp_nfix` parameter **absent**. Open a matched `.md` and confirm
   it's the new commit's content, not legacy.
-- **Coverage self-test (docs/33 §3c):** `$PY tools/check_rag_coverage.py --profile <profile>` —
+> ### THE VERIFY CHECKERS ROUTE BY MODEL TOO — the same fork as Step 0
+> Step 0 routes the BUILD script by model and, until 2026-09-06, this step did not route the
+> CHECKERS. Both names below are FATES-shaped, so on an adapter model a session reads
+> `check_rag_queries.py`, finds it does not fit, and concludes the check does not apply — while
+> **`tools/check_ecosim_rag_queries.py` is model-GENERIC and covers exactly that case.** Its
+> filename is kept for back-compat; its own docstring calls it "the non-FATES analog of
+> `tools/check_rag_queries.py` ... works for ANY registered model profile". Measured that day: a
+> curated-seed edit was rebuilt and shipped without the REQUIRED golden-query test for precisely
+> this reason.
+>
+> | model | golden-query content + count regression | metadata coverage |
+> |---|---|---|
+> | **ELM / FATES** | `tools/check_rag_queries.py --profile api-43-1` | `tools/check_rag_coverage.py --profile <p>` |
+> | **EcoSIM** | `tools/check_ecosim_rag_queries.py --profile ecosim-2dea74d9` | not configured — see below |
+> | **PFLOTRAN** | `tools/check_ecosim_rag_queries.py --profile pflotran-157a26f7` | not configured — see below |
+>
+> **"Not configured" is not "not covered."** `check_rag_coverage.py` reads `rag/canary_queries.yaml`,
+> which lists only the two `api-*` profiles, so on an adapter profile it falls through to the default
+> `fates_knowledge` collection and exits 1. The generic guard carries its own **count-regression
+> check plus graph node floors**, which is the same bug class from the other side, so an adapter
+> rebuild is verified — just not by that script. Adding adapter blocks to `canary_queries.yaml` is
+> open work, not a blocker.
+>
+> **Also run after any curated-seed or curated-YAML edit:** `$PY tools/validate_seed_coverage.py
+> --seed <the file the profile was built from>`. It is **model-agnostic and works on every shape** —
+> verified on `models/ecosim/curated_seed.yaml`, `models/pflotran/curated_seed.yaml` and
+> `rag/data/curated_relationships_api-43-1.yaml`. It asserts C1 every category has a mechanism and
+> C2 every calibratable parameter is named by one, because the seed builder prints
+> `[SKIP] category X has no assigned mechanisms` and then **exits 0**, so a partial seed reads as a
+> finished one. Read the profile's own `rag/metadata/<profile>.json` for which file to pass —
+> adapters use `models/<model>/curated_seed.yaml`, only the FATES profiles use `rag/data/`.
+
+- **Coverage self-test (docs/33 §3c) — FATES profiles:** `$PY tools/check_rag_coverage.py --profile <profile>` —
   asserts every expected `kb_source` is present above a floor and canary wiki files appear.
   This catches the ELM-wiki-absent bug class (a whole KB silently dropped: `kb_source 'elm' = 0`).
   Update `rag/canary_queries.yaml` floors after a legitimate rebuild; the *presence* invariant should hold.
-- **Golden-query content test (REQUIRED after any content change):**
+- **Golden-query content test (REQUIRED after any content change; route by model per the table above):**
   `$PY tools/check_rag_queries.py --profile <profile>`. Coverage is metadata-only — it does NOT
   catch a *wrong answer* (a bad SZPF ordering formula, a mislabeled PFT identity: dev_logs
   `20260710r/t`). This one runs the embedding model + graph and asserts real query results:
@@ -159,6 +191,10 @@ print(r.get_targeted_context(param_names=['fates_cnp_pid_kp'],
 
 ## Step 3b — graph-only rebuild after a curated-YAML edit
 
+**Route by model first (Step 0).** The command below is FATES's; EcoSIM is
+`$PY scripts/build_ecosim_rag.py --graph-only`, and **PFLOTRAN has no `--graph-only` at all**, so a
+curated edit there is a full `--rebuild`.
+
 ```bash
 $PY scripts/build_rag_index.py --rebuild --graph-only --test
 ```
@@ -169,6 +205,21 @@ isn't in the CDL is **silently dropped** (`graph_builder.py:414`). Either add th
 to the CDL or use the YAML curated-only fallback. (To inject a *new fact* across all three
 memory channels before rebuilding, that's the `inject-knowledge` skill — this skill only
 re-indexes what's already authored.)
+
+> **A graph-only rebuild is a CONTENT change, so Step 3's checks are not optional here.** This is
+> the step most likely to be entered directly, and the silently-dropped edge above is exactly the
+> failure they catch. Run both, routed by model per Step 3's table: the **golden-query test**
+> (`check_rag_queries.py` for FATES, `check_ecosim_rag_queries.py` for an adapter) and
+> `$PY tools/validate_seed_coverage.py --seed <the file the profile was built from>`. Cheap
+> arithmetic check while you are here: **the edge count should rise by exactly the number of edges
+> you authored.** If it rose by fewer, an endpoint did not resolve, and that is the dropped-edge
+> case reading as success.
+>
+> **Check that the counts guard actually ran.** EcoSIM's builder gated both its count-regression
+> check and its `expected_counts` write-back on `not args.graph_only` until 2026-09-06 — disarming
+> them in the one mode a curated edit uses. Fixed there; if you add a builder for a new model, do
+> not re-introduce that gate. A graph-only run should still print `expected_counts written to
+> milestones.json`.
 
 ## Step 4 — COMMIT the rebuild (the step that silently does nothing)
 
@@ -242,6 +293,8 @@ compat fix (`20260204a`).
   — don't bump its wiki commit here without reason.
 
 ## Changelog
+
+- 2026-09-06: **The VERIFY checkers now route by model, like the build scripts in Step 0 already did.** PI-directed. Step 0 forked the BUILD script per model in 2026-08-07 and this step kept naming only the two FATES-shaped checkers, so on an adapter model the REQUIRED golden-query test read as not-applicable — while `tools/check_ecosim_rag_queries.py` is model-GENERIC (its docstring: "the non-FATES analog ... works for ANY registered model profile") and covers EcoSIM and PFLOTRAN today. **Measured signal:** on 2026-09-06 a curated-seed edit for one adapter model was rebuilt and committed without that required test, by a session following this skill; the FATES filename hid the generic script until the PI asked whether a parallel existed. Verified before writing the table rather than asserted: the generic guard runs on `pflotran-157a26f7` too (14 assertions), and `tools/validate_seed_coverage.py` — previously named by NO skill — works on all three seed shapes (EcoSIM PASS, PFLOTRAN FAIL with 4 unreachable parameters, FATES `curated_relationships_api-43-1` FAIL with an orphan mechanism). Also states that `check_rag_coverage.py` being FATES-only by configuration is a gap in `canary_queries.yaml`, not a hole in adapter coverage, since the generic guard carries its own count-regression check and graph node floors. No `description` changed, so no trigger moved.
 
 - 2026-08-07: **Per-model routing (new Step 0) + the commit step (new Step 4).** The skill was
   FATES-only in practice — every command was `build_rag_index.py`, and it mentioned PFLOTRAN zero

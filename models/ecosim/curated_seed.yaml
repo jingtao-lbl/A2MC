@@ -1,1303 +1,1759 @@
-# =============================================================================
-# EcoSIM Curated Relationships YAML — v0.1 seed (GraphRAG Layer 2)
-# =============================================================================
-#
-# Model:   EcoSIM  (jinyun1tang/EcoSIM, commit 2dea74d9)
-# Profile: ecosim-2dea74d9
-# Case:    BioCON test1_ex1 (3 PFTs)
-#
-# Provenance: this is a v0.1 seed authored by the A2MC interactive agent from
-#   (a) the 15 source-cited calibration findings in
-#       memory/dev_logs/20260424g_EcoSIM_Codebase_Wiki_Rewrite.md,
-#   (b) the EcoSIM codebase wiki at commit 2dea74d9
-#       (docs/ecosim-knowledge-base/ecosim-codebase-wiki-2dea74d9/), and
-#   (c) the real parameter/output surface parsed from the BioCON sample files
-#       (ds_input__pft_test__ex1.nc: 104 vars / 3 PFTs; output CDL: 516 vars).
-#   PROMOTED ai-draft -> human on 2026-07-11: every entry was source-verified
-#   against the EcoSIM Fortran (~/EcoSIM) by a
-#   13-agent fan-out (116 entries traced: 110 confirmed, 6 structural errors
-#   fixed — PEPC label, CHL4 removed as unused, FCO2 sign, RSRR/RSRA units,
-#   ZTYPI reclassified continuous). Log: memory/dev_logs_adapterkit/20260711k.
-#   CAVEAT — SENSITIVITY/PRIORITY claims in notes ("dominant", "primary lever",
-#   "highest-priority", "near-linear", "most/low sensitivity") are PRE-MORRIS
-#   PRIORS to guide the first ensemble, NOT source-verified rankings. They are
-#   confirmed only structurally; a Phase-1 Morris run is required to verify
-#   ordering ([[feedback_no_kb_injection_before_verified_test]]).
-#   Numeric bounds are still TODO (Item 4) — this seed carries relationships, not
-#   ranges; a Morris design needs a separate salib/param-list bounds artifact.
-#
-# Parameter names are EcoSIM's bare Fortran identifiers (VCMX, XKCO2, ICTYP …).
-# Output names are EcoSIM history vars with axis suffixes (_pft, _col).
-# Validate with the V2 yaml-wiki validator before shipping.
-#
-# EcoSIM is structurally UNLIKE FATES/CLM — do NOT port FATES priors blindly:
-#   hydraulics = Campbell (not van Genuchten); decomposition = microbially
-#   explicit + Johnson-Lewin-Eyring (not Q10/CENTURY); P sorption = Langmuir
-#   (not Freundlich); stomata = turgor-based Grant-1989 (not Ball-Berry/Medlyn);
-#   allocation = stage-prescribed (not sink-source PARTEH).
-# =============================================================================
-
-# -----------------------------------------------------------------------------
-# Parameter categories — physical-process groupings (from spec.param_categories,
-# grounded in the pft-file long_names).
-# -----------------------------------------------------------------------------
 categories:
   photosynthesis:
-    full_name: "Photosynthesis (Rubisco / PEP kinetics)"
-    description: >
-      C3 Rubisco and C4 PEP carboxylation capacity and the protein-fraction
-      partitioning that sets them. Grant-1989 kinetics; two-compartment C4.
-    mechanisms:
-      - Grant_Rubisco_C3_Kinetics
-      - PEP_C4_Refixation
-    key_outputs:
-      - CAN_GPP_pft
-      - NPP_pft
-    _source: "human"
+    full_name: Photosynthesis (Rubisco / PEP kinetics)
+    description: 'C3 Rubisco and C4 PEP carboxylation capacity and the protein-fraction partitioning that
+      sets them. Grant-1989 kinetics; two-compartment C4.
 
+      '
+    mechanisms:
+    - Grant_Rubisco_C3_Kinetics
+    - PEP_C4_Refixation
+    key_outputs:
+    - CAN_GPP_pft
+    - NPP_pft
+    _source: human
   stomatal:
-    full_name: "Stomatal conductance"
-    description: >
-      Turgor-based stomatal response; conductance solved from the CO2 diffusion
-      equation, not Ball-Berry/Medlyn. Cuticular resistance sets the closed bound.
-    mechanisms:
-      - Turgor_Based_Stomatal_Stress
-    key_outputs:
-      - CAN_GPP_pft
-      - dCAN_GPP_CLIM_pft
-    _source: "human"
+    full_name: Stomatal conductance
+    description: 'Turgor-based stomatal response; conductance solved from the CO2 diffusion equation,
+      not Ball-Berry/Medlyn. Cuticular resistance sets the closed bound.
 
+      '
+    mechanisms:
+    - Turgor_Based_Stomatal_Stress
+    key_outputs:
+    - CAN_GPP_pft
+    - dCAN_GPP_CLIM_pft
+    _source: human
   radiation:
-    full_name: "Leaf optical / radiation"
-    description: "Leaf PAR/NIR albedo, transmission, clumping, inclination distribution."
+    full_name: Leaf optical / radiation
+    description: Leaf PAR/NIR albedo, transmission, clumping, inclination distribution.
     mechanisms:
-      - Canopy_Radiative_Transfer
+    - Canopy_Radiative_Transfer
     key_outputs:
-      - ECO_LAI_col
-      - CanopyLAIZ_plyr
-    _source: "human"
-
+    - ECO_LAI_col
+    - CanopyLAIZ_plyr
+    _source: human
   phenology:
-    full_name: "Phenology"
-    description: >
-      Node initiation, leaf appearance, chilling/photoperiod control of
-      phenological progress. 11-stage per-branch plant calendar.
-    mechanisms:
-      - Node_Leaf_Phenology
-    key_outputs:
-      - LEAF_C_pft
-      - LAI_xstk_pft
-    _source: "human"
+    full_name: Phenology
+    description: 'Node initiation, leaf appearance, chilling/photoperiod control of phenological progress.
+      11-stage per-branch plant calendar.
 
+      '
+    mechanisms:
+    - Node_Leaf_Phenology
+    key_outputs:
+    - LEAF_C_pft
+    - LAI_xstk_pft
+    _source: human
   allocation:
-    full_name: "Allocation (stage-prescribed)"
-    description: >
-      Hard-coded partition fractions across 5 growth stages (CalcPartitionCoeff);
-      dry-matter production ratios per organ. NOT sink-source PARTEH.
-    mechanisms:
-      - Stage_Prescribed_Allocation
-    key_outputs:
-      - LEAF_C_pft
-      - Plant_C_pft
-      - GRAIN_C_pft
-    _source: "human"
+    full_name: Allocation (stage-prescribed)
+    description: 'Hard-coded partition fractions across 5 growth stages (CalcPartitionCoeff); dry-matter
+      production ratios per organ. NOT sink-source PARTEH.
 
+      '
+    mechanisms:
+    - Stage_Prescribed_Allocation
+    key_outputs:
+    - LEAF_C_pft
+    - Plant_C_pft
+    - GRAIN_C_pft
+    _source: human
   nutrient:
-    full_name: "Nutrient acquisition (uptake / N2 fix / mycorrhizae)"
-    description: >
-      Michaelis-Menten root uptake of NH4/NO3/H2PO4 (Km, max rate, minimum
-      concentration), symbiotic N2 fixation, mycorrhizal infection. Feeds the
-      microbially-explicit soil nutrient competition.
-    mechanisms:
-      - MichaelisMenten_Nutrient_Uptake
-      - Symbiotic_N2_Fixation
-    key_outputs:
-      - Plant_N_pft
-      - Plant_P_pft
-      - NODULE_N_pft
-    _source: "human"
+    full_name: Nutrient acquisition (uptake / N2 fix / mycorrhizae)
+    description: 'Michaelis-Menten root uptake of NH4/NO3/H2PO4 (Km, max rate, minimum concentration),
+      symbiotic N2 fixation, mycorrhizal infection. Feeds the microbially-explicit soil nutrient competition.
 
+      '
+    mechanisms:
+    - MichaelisMenten_Nutrient_Uptake
+    - Symbiotic_N2_Fixation
+    key_outputs:
+    - Plant_N_pft
+    - Plant_P_pft
+    - RootNodule_N_pft
+    _source: human
   roots:
-    full_name: "Root architecture / hydraulics / growth"
-    description: >
-      Calibratable root controls: root radii + porosity, radial/axial hydraulic
-      resistivity, branching frequency, and the shoot-root nonstructural-C economy.
-      NOTE: the root VERTICAL profile (Jackson-1997 beta) is NOT here — it is a
-      hard-coded 10-biome table indexed by a discrete biome type, no per-PFT knob
-      (see the Root_Vertical_Profile mechanism, documented as non-calibratable).
-    mechanisms:
-      - Root_Hydraulic_Architecture
-      - Root_Growth_Allocation
-      - Root_Vertical_Profile
-    key_outputs:
-      - Root_C_pft
-      - Plant_P_pft
-      - EXUD_CumYr_C_FLX_pft
-    _source: "human"
+    full_name: Root architecture / hydraulics / growth
+    description: 'Calibratable root controls: root radii + porosity, radial/axial hydraulic resistivity,
+      branching frequency, and the shoot-root nonstructural-C economy. NOTE: the root VERTICAL profile
+      (Jackson-1997 beta) is NOT here — it is a hard-coded 10-biome table indexed by a discrete biome
+      type, no per-PFT knob (see the Root_Vertical_Profile mechanism, documented as non-calibratable).
 
+      '
+    mechanisms:
+    - Root_Hydraulic_Architecture
+    - Root_Growth_Allocation
+    - Root_Vertical_Profile
+    key_outputs:
+    - Root_C_pft
+    - Plant_P_pft
+    - EXUD_CumYr_C_FLX_pft
+    _source: human
   stoichiometry:
-    full_name: "Tissue C:N:P stoichiometry"
-    description: >
-      Prescribed N:C and P:C ratios per organ (leaf, petiole, stalk, reserve,
-      grain, husk, ear, nodule). Set tissue nutrient demand and litter quality.
-    mechanisms:
-      - Prescribed_Tissue_Stoichiometry
-    key_outputs:
-      - LEAF_N_pft
-      - LEAF_P_pft
-      - LITRf_N_FLX_pft
-    _source: "human"
+    full_name: Tissue C:N:P stoichiometry
+    description: 'Prescribed N:C and P:C ratios per organ (leaf, petiole, stalk, reserve, grain, husk,
+      ear, nodule). Set tissue nutrient demand and litter quality.
 
+      '
+    mechanisms:
+    - Prescribed_Tissue_Stoichiometry
+    key_outputs:
+    - LEAF_N_pft
+    - LEAF_P_pft
+    - LITRf_N_FLX_pft
+    _source: human
   pfts:
-    full_name: "PFT type flags"
-    description: "Integer switches: photosynthesis type (C3/C4), growth habit, turnover, phenology, N2-fix, mycorrhizal, thermal-adaptation zone."
+    full_name: PFT type flags
+    description: 'Integer switches: photosynthesis type (C3/C4), growth habit, turnover, phenology, N2-fix,
+      mycorrhizal, thermal-adaptation zone.'
     mechanisms:
-      - Plant_Functional_Type_Switches
+    - Plant_Functional_Type_Switches
     key_outputs:
-      - NPP_pft
-    _source: "human"
-
+    - NPP_pft
+    _source: human
   microbial_decomposition:
-    full_name: "Microbial-explicit SOM decomposition and soil respiration"
-    description: >
-      Heterotrophic catabolism, maintenance respiration, mortality/recycling,
-      and SOM/necromass/sorbed-OM hydrolysis kinetics that together determine
-      soil-surface CO2 flux (CO2_SEMIS_FLX_col). Source-verified 2026-08-11/12
-      via a full Fs equation trace, a 23-parameter Morris sensitivity screen,
-      and a runtime debug print of the mortality-recycling equation. Distinct
-      from the plant-side categories above: EcoSIM is second-generation
-      microbial-explicit (living biomass state variables drive decomposition
+    full_name: Microbial-explicit SOM decomposition and soil respiration
+    description: 'Heterotrophic catabolism, maintenance respiration, mortality/recycling, and SOM/necromass/sorbed-OM
+      hydrolysis kinetics that together determine soil-surface CO2 flux (CO2_SEMIS_FLX_col). Source-verified
+      2026-08-11/12 via a full Fs equation trace, a 23-parameter Morris sensitivity screen, and a runtime
+      debug print of the mortality-recycling equation. Distinct from the plant-side categories above:
+      EcoSIM is second-generation microbial-explicit (living biomass state variables drive decomposition
       linearly), not a CENTURY-style first-order cascade.
+
+      '
     mechanisms:
-      - Heterotroph_Aerobic_Catabolism
-      - Microbial_Maintenance_Respiration
-      - Microbial_Mortality_Recycling
-      - Growth_Efficiency_Energetics
-      - SOM_Hydrolysis
-      - Necromass_Hydrolysis
-      - DOM_Sorption_Desorption
+    - Heterotroph_Aerobic_Catabolism
+    - Microbial_Maintenance_Respiration
+    - Microbial_Mortality_Recycling
+    - Growth_Efficiency_Energetics
+    - SOM_Hydrolysis
+    - Necromass_Hydrolysis
+    - DOM_Sorption_Desorption
     key_outputs:
-      - CO2_SEMIS_FLX_col
-    _source: "human"
-
-
-# -----------------------------------------------------------------------------
-# Mechanisms — named processes, each with a source citation into the EcoSIM tree
-# at commit 2dea74d9 (findings #1-15 in 20260424g).
-# -----------------------------------------------------------------------------
+    - CO2_SEMIS_FLX_col
+    _source: human
 mechanisms:
   Grant_Rubisco_C3_Kinetics:
-    description: "C3 gross CO2 fixation from Grant-1989 Rubisco kinetics with Arrhenius low/high-T inactivation; Ci solved by fixed-point iteration."
-    code_reference: "f90src/Plant_bgc/photosynthesis_and_respiration (GrowPlants chain); wiki plant_bgc/photosynthesis_and_respiration.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/photosynthesis_and_respiration.md"
+    description: C3 gross CO2 fixation from Grant-1989 Rubisco kinetics with Arrhenius low/high-T inactivation;
+      Ci solved by fixed-point iteration.
+    code_reference: f90src/Plant_bgc/photosynthesis_and_respiration (GrowPlants chain); wiki plant_bgc/photosynthesis_and_respiration.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/photosynthesis_and_respiration.md
     parameters:
-      - VCMX
-      - VOMX
-      - RUBP
-      - XKCO2
-      - XKO2
-      - ETMX
-      - CHL
+    - VCMX
+    - VOMX
+    - RUBP
+    - XKCO2
+    - XKO2
+    - ETMX
+    - CHL
     affects:
-      - CAN_GPP_pft
-      - NPP_pft
-    notes: |
-      Finding #7. EcoSIM photosynthesis is a Farquhar-TYPE biochemical C3 model
+    - CAN_GPP_pft
+    - NPP_pft
+    - ECO_GPP_col
+    notes: 'Finding #7. EcoSIM photosynthesis is a Farquhar-TYPE biochemical C3 model
+
       (per wiki plant_bgc/photosynthesis_and_respiration.md:9): it computes a
+
       Vcmax25 from leaf Rubisco/protein pools rather than prescribing it. VCMX is
+
       the *specific* rubisco carboxylase activity feeding that derived capacity —
+
       the primary C3 knob; VOMX (oxygenase) sets photorespiration; XKCO2/XKO2 are
-      the Km's; RUBP/CHL are the leaf-protein fractions that scale it. Expect
+
+      the Km''s; RUBP/CHL are the leaf-protein fractions that scale it. Expect
+
       CAN_GPP_pft/NPP_pft most sensitive to VCMX. Do NOT port a FATES fates_vcmax25
+
       value directly: EcoSIM derives capacity from protein pools (coupling to
-      RUBP/CHL differs). Farquhar-type in STRUCTURE, but the source's cited
+
+      RUBP/CHL differs). Farquhar-type in STRUCTURE, but the source''s cited
+
       reference is Grant (1989), not Farquhar (1980), and there is no Ball-Berry/
+
       Medlyn stomatal closure — the distinctive parts are the protein-pool Vcmax
+
       derivation and the turgor-based stomata (see Turgor_Based_Stomatal_Stress).
-    _source: "human"
 
+      '
+    _source: human
   PEP_C4_Refixation:
-    description: "Two-compartment C4 pathway: PEP carboxylation in mesophyll then bundle-sheath re-fixation."
-    code_reference: "f90src/Plant_bgc/PhotoSynsMod.F90 (ComputeGPP_C4, :213-434) + StomatesMod.F90; wiki plant_bgc/photosynthesis_and_respiration.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/photosynthesis_and_respiration.md"
+    description: 'Two-compartment C4 pathway: PEP carboxylation in mesophyll then bundle-sheath re-fixation.'
+    code_reference: f90src/Plant_bgc/PhotoSynsMod.F90 (ComputeGPP_C4, :213-434) + StomatesMod.F90; wiki
+      plant_bgc/photosynthesis_and_respiration.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/photosynthesis_and_respiration.md
     parameters:
-      - VCMX4
-      - XKCO24
-      - PEPC
+    - VCMX4
+    - XKCO24
+    - PEPC
     affects:
-      - CAN_GPP_pft
-    notes: |
-      Finding #7. Only active for C4 PFTs (ICTYP). VCMX4 = specific PEP
-      carboxylase activity; PEPC = fraction of total leaf protein that is PEP
-      carboxylase enzyme (MESOPHYLL compartment, LeafPEP2Protein_pft) — PEP
-      carboxylation is the mesophyll step; the bundle sheath re-fixes via Rubisco.
-      (CHL4 is NOT read by the model — dropped; a bundle-sheath chlorophyll knob
-      would be fCHLMESO/fMesophyllChlProtein_pft.) For the arctic BioCON PFTs
-      (likely C3) these are inactive — verify ICTYP per PFT before calibrating.
-    _source: "human"
+    - CAN_GPP_pft
+    - ECO_GPP_col
+    - ECO_RA_col
+    notes: 'Finding #7. Only active for C4 PFTs (ICTYP). VCMX4 = specific PEP carboxylase activity; PEPC
+      = fraction of total leaf protein that is PEP carboxylase enzyme (MESOPHYLL compartment, LeafPEP2Protein_pft)
+      — PEP carboxylation is the mesophyll step; the bundle sheath re-fixes via Rubisco. (CHL4 is NOT
+      read by the model — dropped; a bundle-sheath chlorophyll knob would be fCHLMESO/fMesophyllChlProtein_pft.)
+      These are INACTIVE for any C3 PFT — verify ICTYP per PFT before calibrating.
 
+      '
+    _source: human
   Turgor_Based_Stomatal_Stress:
-    description: "Stomatal stress = exp(-PSICanopyTurg/RCS) — turgor-driven, solved via CO2 diffusion; not Ball-Berry/Medlyn."
-    code_reference: "f90src/Plant_bgc/photosynthesis_and_respiration; wiki plant_bgc/photosynthesis_and_respiration.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/photosynthesis_and_respiration.md"
+    description: Stomatal stress = exp(-PSICanopyTurg/RCS) — turgor-driven, solved via CO2 diffusion;
+      not Ball-Berry/Medlyn.
+    code_reference: f90src/Plant_bgc/photosynthesis_and_respiration; wiki plant_bgc/photosynthesis_and_respiration.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/photosynthesis_and_respiration.md
     parameters:
-      - RSMX
-      - OSMO
-      - FCO2
+    - RSMX
+    - OSMO
+    - FCO2
     affects:
-      - CAN_GPP_pft
-      - dCAN_GPP_CLIM_pft
-    notes: |
-      Finding #7. RSMX = cuticular resistance (closed-stomata bound); OSMO =
+    - CAN_GPP_pft
+    - dCAN_GPP_CLIM_pft
+    - ECO_GPP_col
+    - ECO_ET_col
+    notes: 'Finding #7. RSMX = cuticular resistance (closed-stomata bound); OSMO =
+
       leaf osmotic potential at zero water potential (sets turgor loss point);
+
       FCO2 = the intercellular:atmospheric CO2 ratio (Ci/Ca, CanopyCi2CaRatio_pft),
+
       read from the PFT file and applied as a FIXED fraction to set the daylight
+
       stomatal-resistance target (wiki :127-134; StomatesMod.F90:260 — no Ball-Berry
+
       iteration). No slope/intercept conductance parameter exists — do not map a
+
       Ball-Berry g1. Water stress enters through canopy turgor, coupling to the hydraulics.
-    _source: "human"
 
+      '
+    _source: human
   Canopy_Radiative_Transfer:
-    description: "Leaf optical properties + clumping + inclination set canopy light interception."
-    code_reference: "f90src/Plant_bgc (PlantCanopyRadsModel); wiki plant_bgc/index.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/index.md"
+    description: Leaf optical properties + clumping + inclination set canopy light interception.
+    code_reference: f90src/Plant_bgc (PlantCanopyRadsModel); wiki plant_bgc/index.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/index.md
     parameters:
-      - ALBP
-      - CFI
-      - CLASS
-      - WDLF
+    - ALBP
+    - CFI
+    - CLASS
+    - WDLF
     affects:
-      - ECO_LAI_col
-      - CanopyLAIZ_plyr
-    notes: |
-      ALBP = leaf PAR albedo; CFI = initial clumping factor; CLASS = leaf-area
+    - ECO_LAI_col
+    - CanopyLAIZ_plyr
+    - ECO_GPP_col
+    notes: 'ALBP = leaf PAR albedo; CFI = initial clumping factor; CLASS = leaf-area
+
       fraction across inclination bins; WDLF = leaf length:width. Second-order
+
       for biomass targets but affects light-limited GPP (dCAN_GPP_eLIM_pft).
-    _source: "human"
 
+      '
+    _source: human
   Node_Leaf_Phenology:
-    description: "Node initiation + leaf appearance rates with chilling/photoperiod gating across an 11-stage plant calendar."
-    code_reference: "f90src/Plant_bgc/phenology; wiki plant_bgc/phenology.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/phenology.md"
+    description: Node initiation + leaf appearance rates with chilling/photoperiod gating across an 11-stage
+      plant calendar.
+    code_reference: f90src/Plant_bgc/phenology; wiki plant_bgc/phenology.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/phenology.md
     parameters:
-      - XRNI
-      - XRLA
-      - XPPD
-      - XDL
-      - CTC
-      - VRNLI
-      - VRNXI
+    - XRNI
+    - XRLA
+    - XPPD
+    - XDL
+    - CTC
+    - VRNLI
+    - VRNXI
     affects:
-      - LEAF_C_pft
-      - LAI_xstk_pft
-    notes: |
-      Findings #7 driver-triplet (TFNP,WFNG,OFNG). XRNI/XRLA = node-initiation /
+    - LEAF_C_pft
+    - LAI_xstk_pft
+    notes: 'Findings #7 driver-triplet (TFNP,WFNG,OFNG). XRNI/XRLA = node-initiation /
+
       leaf-appearance rates at 25C; XPPD/XDL = photoperiod sensitivity / critical
+
       daylength; VRNLI/VRNXI = spring-leafout / autumn-leafoff hour requirements.
+
       For arctic tundra the daylength/chilling controls are first-order for the
+
       short growing season — high-priority calibration axis.
-    _source: "human"
 
+      '
+    _source: human
   Stage_Prescribed_Allocation:
-    description: "Hard-coded partition fractions across 5 growth stages (e.g. 0.725 leaf / 0.275 petiole pre-floral-init) in CalcPartitionCoeff."
-    code_reference: "f90src/Plant_bgc/growth_and_allocation (CalcPartitionCoeff, BranchBiomAllocate); wiki plant_bgc/growth_and_allocation.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/growth_and_allocation.md"
+    description: Hard-coded partition fractions across 5 growth stages (e.g. 0.725 leaf / 0.275 petiole
+      pre-floral-init) in CalcPartitionCoeff.
+    code_reference: f90src/Plant_bgc/growth_and_allocation (CalcPartitionCoeff, BranchBiomAllocate); wiki
+      plant_bgc/growth_and_allocation.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/growth_and_allocation.md
     parameters:
-      - DMLF
-      - DMSHE
-      - DMSTK
-      - DMRSV
-      - DMRT
-      - SLA1
-      - SNL1
-      - SSL1
+    - DMLF
+    - DMSHE
+    - DMSTK
+    - DMRSV
+    - DMRT
+    - SLA1
+    - SNL1
+    - SSL1
     affects:
-      - LEAF_C_pft
-      - PETIOLE_C_pft
-      - Plant_C_pft
-      - Root_C_pft
-    notes: |
-      Finding #8. Allocation is STAGE-PRESCRIBED, the opposite of FATES PARTEH
+    - LEAF_C_pft
+    - PetolSheth_C_pft
+    - Plant_C_pft
+    - Root_C_pft
+    - ECO_RA_col
+    notes: 'Finding #8. Allocation is STAGE-PRESCRIBED, the opposite of FATES PARTEH
+
       sink-source. DM* = organ dry-matter C production vs nonstructural C
+
       consumption (DMLF leaf / DMSHE petiole / DMSTK stalk / DMRSV reserve /
+
       DMRT root — RootBiomGrosYld_pft, PlantInfoMod.F90:618); SLA1/SNL1/SSL1 =
+
       growth in leaf area / internode length / petiole length vs mass. Maintenance
+
       respiration scales with STRUCTURAL N (ShootStructN) — nonstructural reserves
-      don't pay maintenance. Do not port a FATES leaf/fineroot allocation prior.
-    _source: "human"
 
+      don''t pay maintenance. Do not port a FATES leaf/fineroot allocation prior.
+
+      '
+    _source: human
   MichaelisMenten_Nutrient_Uptake:
-    description: "Root uptake of NH4/NO3/H2PO4 by Michaelis-Menten (max rate, half-saturation Km, minimum concentration)."
-    code_reference: "f90src/Plant_bgc (soil-plant nutrient interface); wiki plant_bgc/index.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/index.md"
+    description: Root uptake of NH4/NO3/H2PO4 by Michaelis-Menten (max rate, half-saturation Km, minimum
+      concentration).
+    code_reference: f90src/Plant_bgc (soil-plant nutrient interface); wiki plant_bgc/index.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/index.md
     parameters:
-      - UPMXZH
-      - UPKMZH
-      - UPMNZH
-      - UPMXZO
-      - UPKMZO
-      - UPMNZO
-      - UPMXPO
-      - UPKMPO
-      - UPMNPO
+    - UPMXZH
+    - UPKMZH
+    - UPMNZH
+    - UPMXZO
+    - UPKMZO
+    - UPMNZO
+    - UPMXPO
+    - UPKMPO
+    - UPMNPO
     affects:
-      - Plant_N_pft
-      - Plant_P_pft
-    notes: |
-      UPMX*/UPKM*/UPMN* = max uptake / Km / minimum concentration for NH4 (ZH),
-      NO3 (ZO), H2PO4 (PO). For Kougarok-style P-limitation the H2PO4 set
-      (UPMXPO/UPKMPO/UPMNPO) is the priority. Uptake competes against the
-      microbially-explicit soil solver — plant params alone don't set uptake.
-    _source: "human"
-
+    - Plant_N_pft
+    - Plant_P_pft
+    notes: "NOT a plain Michaelis-Menten saturation, and this is the thing to get right before tuning\
+      \ any uptake parameter. Root solute uptake is the SMALLER ROOT OF A QUADRATIC that couples MM demand\
+      \ to soil transport (SoluteUptakeByPlantRoots, PlantMathFuncMod.F90:219-233):\n  X = (SolDifusFlx\
+      \ + SolAdvFlx) * SoluteConc      supply by diffusion + mass flow to the root\n  Y = SolDifusFlx\
+      \ * SoluteConcMin                  the CMin threshold, itself scaled by diffusion\n  B = -max(0,\
+      \ Vmax_Ol + X - Y + SolDifusFlx*Km)\n  C = max(0, X - Y) * Vmax_Ol\n  Uptake = max(0, -B - sqrt(B*B\
+      \ - 4C)) / 2         (0 if the discriminant is negative)\nTHREE CONSEQUENCES FOR CALIBRATION. (a)\
+      \ Km enters ONLY as SolDifusFlx*Km, so where diffusion to the root is slow the kinetic constants\
+      \ lose influence and uptake is set by TRANSPORT, not by the parameters -- raising Vmax or lowering\
+      \ Km can then do nothing. (b) Vmax is oxygen-scaled before use: Vmax_Ol = UptakeRateMax * O2Stress\
+      \ (PlantMathFuncMod.F90:216), so in wet or anoxic soil the effective maximum collapses regardless\
+      \ of the parameter value. (c) CMin is subtracted from supply rather than acting as a simple floor\
+      \ on concentration. Downstream the result is multiplied by PlantPopulation and capped by SoluteMassMax\
+      \ (the available pool) and by CAvailStress (carbon availability), so four independent limiters sit\
+      \ between the parameter and the realized flux.\nPARAMETER TRIPLET per solute, read from the PFT\
+      \ file at PlantInfoMod.F90:599-603 for NH4 (ZH), NO3 (ZO) and H2PO4 (PO): UPMX* -> Vmax*Root_pft,\
+      \ UPKM* -> Km*Root_pft, UPMN* -> CMin*Root_pft.\nUNITS: the param file's own attributes are WRONG\
+      \ for two of the three. UPKMPO and UPMNPO carry units='uM' in the netCDF while the source declares\
+      \ and consumes them as [g m-3] (RootDataType.F90:47-48), alongside SoluteConc = trc_solcl_vr which\
+      \ is g m-3. UPMXPO's 'gP m-2 h-1' is correct. A source comment at StartqMod.F90:489 repeats the\
+      \ uM error, and RootDataType.F90:48 mislabels the PO4 minimum as being 'for root NH4 uptake' --\
+      \ a copy-paste slip. Trust the usage, not the attribute.\nMYCORRHIZAE INHERIT THE ROOT VALUES: index\
+      \ 2 (imycorrhz) is assigned index 1's Vmax/Km/CMin (StartqMod.F90:523, InitPlantMod.F90:594), so\
+      \ one parameter sets both compartments and they cannot be tuned apart.\nUptake also competes against\
+      \ the microbially-explicit soil solver for the same solute pool, so plant parameters alone do not\
+      \ set uptake.\n"
+    _source: human
   Symbiotic_N2_Fixation:
-    description: "Symbiotic N2 fixation gated by the INTYP flag; supplies nodule N."
-    code_reference: "f90src/Plant_bgc; wiki plant_bgc/index.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/index.md"
+    description: Symbiotic N2 fixation gated by the INTYP flag; supplies nodule N.
+    code_reference: f90src/Plant_bgc; wiki plant_bgc/index.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/index.md
     parameters:
-      - INTYP
-      - CNND
-      - CPND
+    - INTYP
+    - CNND
+    - CPND
     affects:
-      - NODULE_N_pft
-      - Plant_N_pft
-    notes: |
-      INTYP switches N2 fixation on/off per PFT; CNND/CPND set nodule N:C / P:C.
+    - RootNodule_N_pft
+    - Plant_N_pft
+    - ECO_RA_col
+    notes: 'INTYP switches N2 fixation on/off per PFT; CNND/CPND set nodule N:C / P:C.
+
       Only relevant for fixing PFTs — check INTYP before calibrating.
-    _source: "human"
 
+      '
+    _source: human
   Prescribed_Tissue_Stoichiometry:
-    description: "Prescribed organ N:C and P:C ratios setting tissue nutrient demand and litter quality."
-    code_reference: "f90src/Ecosim_datatype (plant trait tables); wiki data_types/index.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/data_types/index.md"
+    description: Prescribed organ N:C and P:C ratios setting tissue nutrient demand and litter quality.
+    code_reference: f90src/Ecosim_datatype (plant trait tables); wiki data_types/index.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/data_types/index.md
     parameters:
-      - CNLF
-      - CPLF
-      - CNSHE
-      - CPSHE
-      - CNSTK
-      - CPSTK
-      - CNRSV
-      - CPRSV
-      - CNRT
-      - CPRT
+    - CNLF
+    - CPLF
+    - CNSHE
+    - CPSHE
+    - CNSTK
+    - CPSTK
+    - CNRSV
+    - CPRSV
+    - CNRT
+    - CPRT
     affects:
-      - LEAF_N_pft
-      - LEAF_P_pft
-      - Petiole_N_pft
-      - Root_N_pft
-      - Root_P_pft
-    notes: |
-      CN*/CP* = N:C / P:C ratios per organ (LF leaf, SHE petiole, STK stalk,
+    - LEAF_N_pft
+    - LEAF_P_pft
+    - PetolSheth_N_pft
+    - Root_N_pft
+    - Root_P_pft
+    notes: 'CN*/CP* = N:C / P:C ratios per organ (LF leaf, SHE petiole, STK stalk,
+
       RSV reserve, RT root — rNCRoot_pft/rPCRootr_pft, PlantInfoMod.F90:633,644).
+
       These set tissue nutrient content directly — LEAF_N_pft / LEAF_P_pft targets
+
       map almost 1:1 to CNLF/CPLF, and Root_N_pft / Root_P_pft to CNRT/CPRT.
+
       Strong, near-linear levers.
-    _source: "human"
 
+      '
+    _source: human
   Root_Hydraulic_Architecture:
-    description: "Root radii, porosity, and radial/axial hydraulic resistivity — set root water/nutrient transport and the root water-potential profile."
-    code_reference: "f90src/IOutils/PlantInfoMod.F90:584-591 (Root1stMaxRadius/Root2ndMaxRadius/RootPorosity/RootRadialResist/RootAxialResist); consumed in the root water-uptake solver."
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/index.md"
+    description: Root radii, porosity, and radial/axial hydraulic resistivity — set root water/nutrient
+      transport and the root water-potential profile.
+    code_reference: f90src/IOutils/PlantInfoMod.F90:584-591 (Root1stMaxRadius/Root2ndMaxRadius/RootPorosity/RootRadialResist/RootAxialResist);
+      consumed in the root water-uptake solver.
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/index.md
     parameters:
-      - RRAD1M
-      - RRAD2M
-      - PORT
-      - RSRR
-      - RSRA
+    - RRAD1M
+    - RRAD2M
+    - PORT
+    - RSRR
+    - RSRA
     affects:
-      - CAN_GPP_pft
-      - Plant_P_pft
-      - Plant_N_pft
-    notes: |
-      RRAD1M/RRAD2M = primary/secondary root radii (m); PORT = root porosity
+    - CAN_GPP_pft
+    - Plant_P_pft
+    - Plant_N_pft
+    - ECO_ET_col
+    notes: 'RRAD1M/RRAD2M = primary/secondary root radii (m); PORT = root porosity
+
       (m3 m-3, aerenchyma → O2 supply to roots, matters in wet/anoxic arctic soils);
+
       RSRR/RSRA = radial/axial root resistivity (m2 MPa-1 h-1) — the hydraulic
+
       resistances that gate root water uptake (RootH2OUptkStress_pvr → turgor →
+
       the turgor-based stomatal stress) and, with radii, the surface area for
+
       nutrient uptake. For a P-limited arctic site these govern how well roots
+
       reach soil water + PO4 — first-order for the water-stress/uptake coupling,
+
       not the vertical distribution. EcoSIM = Campbell hydraulics (not van Genuchten).
-    _source: "human"
 
-  Root_Growth_Allocation:
-    description: "Root branching frequency and the shoot-root nonstructural-C economy that funds new root growth."
-    code_reference: "f90src/IOutils/PlantInfoMod.F90:589,592,593 (RootBranchFreq/ShootRootNonstElmConduts/NonstCMinCon2InitRoot); root dry-matter yield DMRT at :618."
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/growth_and_allocation.md"
+      '
+    _source: human
+  Leaf_Protein_Colimitation:
+    description: 'Leaf protein, which carries the photosynthetic machinery, accumulates at the
+      LESSER of what the available nitrogen and the available phosphorus allow. Leaf protein per
+      unit leaf area then sets mesophyll Rubisco surface density, which sets Vmax, which sets the
+      CO2-limited carboxylation rate. So the two leaf stoichiometric CEILINGS, CNLF and CPLF, are
+      two branches of ONE min(), and only the branch that is currently smaller has any leverage.'
+    code_reference: 'PlantBranchMod.F90:3547 (LeafProteinC_node += AMIN1(GrowthElms(ielmn)*rProteinC2LeafN_pft,
+      GrowthElms(ielmp)*rProteinC2LeafP_pft)); StomatesMod.F90:414 (MesophyllRubiscoSurfDensity =
+      LeafRubisco2Protein_pft*ProteinCLeafAreaDensity); StomatesMod.F90:433-435 (Vmax4RubiscoCarboxy_node);
+      StomatesMod.F90:439 (CO2lmtRubiscoCarboxyRate_node). Leaf P supplied by
+      PlantBranchMod.F90:392, Growth_brch(ielmp,leaf) = Growth_brch(ielmc,leaf)*fPCLFW_brch.'
     parameters:
-      - RTFQ
-      - PR
-      - PTSHT
+    - CNLF
+    - CPLF
     affects:
-      - Root_C_pft
-      - Plant_P_pft
+    - NPP_pft
+    - LEAF_C_pft
     notes: |
-      RTFQ = root branching frequency (m-1); PR = nonstructural-C concentration
-      threshold to initiate a new root (gC gC-1); PTSHT = rate constant equilibrating
-      shoot vs root nonstructural-C (h-1) — sets how fast photosynthate reaches the
-      root tips. Together they size the root system (Root_C_pft) and thus the uptake
-      surface. Root dry-matter production ratio DMRT is the root member of the DM*
-      family — documented under Stage_Prescribed_Allocation with DMLF/DMSTK.
-    _source: "human"
+      LEVER SHAPE, and this is the calibration-relevant part. A parameter that feeds only the
+      SLACK branch of this min() is INERT: moving it changes leaf protein by nothing, and the only
+      effect that reaches production is the opposite, second-order one, since the same parameter is
+      also the leaf nutrient COST in the growth-respiration denominator
+      (RFP1 = PPOOLB*YCO2Gro/(CPSHX + CPLFM + CPLFX*CNPG), PlantBranchMod.F90:508-510), where
+      LOWERING it RELAXES the constraint. Push it far enough to make its branch the smaller one and
+      it becomes the rate-setter: photosynthetic capacity then tracks it almost linearly and the
+      stand collapses. So the dose response is inert-then-cliff with NO usable interior, and that is
+      a property of the STRUCTURE rather than of any one base.
 
+      MEASURED, EcoSIM_TeRaCON R1 cycle 8: a four-rung CPLF ladder from a configuration holding two
+      of three targets returned NPP +0.4% at 38% of the lever's available range, a 95.3% collapse
+      (723.4 gC m-2 yr-1) between 38% and 70%, and a dead stand at the sampled floor. The +0.4% is
+      the cost-relaxation term, with the sign OPPOSITE to what a reading of CPLF as a growth-
+      throttling ceiling predicts. Full trace: use_cases/EcoSIM_TeRaCON/memory/logs/
+      20260906s_phase3_diagnosis_r01_c09_iter01_*.md
+
+      NOT to be confused with fPCLFW_pft / fNCLFW_pft, the PFT-level realized leaf ratios: those are
+      DIAGNOSTIC ONLY, read across the whole source tree solely by PlantAPI.F90:157 and
+      HistDataType.F90:4761 (a history tape). The DRIVER is the branch-level fPCLFW_brch /
+      fNCLFW_brch. Near-identical names, opposite roles, one line apart.
+    _source: human
+  Root_Growth_Allocation:
+    description: Root branching frequency and the shoot-root nonstructural-C economy that funds new root
+      growth.
+    code_reference: f90src/IOutils/PlantInfoMod.F90:589,592,593 (RootBranchFreq/ShootRootNonstElmConduts/NonstCMinCon2InitRoot);
+      root dry-matter yield DMRT at :618.
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/growth_and_allocation.md
+    parameters:
+    - RTFQ
+    - PR
+    - PTSHT
+    affects:
+    - Root_C_pft
+    - Plant_P_pft
+    - ECO_RA_col
+    notes: 'RTFQ = root branching frequency (m-1); PR = nonstructural-C concentration
+
+      threshold to initiate a new root (gC gC-1); PTSHT = rate constant equilibrating
+
+      shoot vs root nonstructural-C (h-1) — sets how fast photosynthate reaches the
+
+      root tips. Together they size the root system (Root_C_pft) and thus the uptake
+
+      surface. Root dry-matter production ratio DMRT is the root member of the DM*
+
+      family — documented under Stage_Prescribed_Allocation with DMLF/DMSTK.
+
+      '
+    _source: human
   Root_Vertical_Profile:
-    description: "NON-CALIBRATABLE. Root vertical distribution is a hard-coded Jackson-1997 beta table indexed by a discrete biome type — there is no per-PFT continuous knob."
-    code_reference: "f90src/Prescribed_pheno/PrescribePhenolMod.F90:320-363 (SetRootProfileZ: real,parameter :: beta(10) at :343, indexed by irootType); irootType from ATS coupling or hard-coded=1 at :209."
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/plant_bgc/phenology.md"
+    description: NON-CALIBRATABLE. Root vertical distribution is a hard-coded Jackson-1997 beta table
+      indexed by a discrete biome type — there is no per-PFT continuous knob.
+    code_reference: 'f90src/Prescribed_pheno/PrescribePhenolMod.F90:320-363 (SetRootProfileZ: real,parameter
+      :: beta(10) at :343, indexed by irootType); irootType from ATS coupling or hard-coded=1 at :209.'
+    doc_reference: ecosim-codebase-wiki-2dea74d9/plant_bgc/phenology.md
     parameters: []
     affects:
-      - RootC_vr
-    notes: |
-      DOCUMENTED FOR THE REASONING AGENT — do NOT sample. The beta-CDF root-depth
+    - RootC_vr
+    notes: 'DOCUMENTED FOR THE REASONING AGENT — do NOT sample. The beta-CDF root-depth
+
       profile (Jackson et al. 1997) uses a hard-coded 10-biome `beta(10)` table
+
       selected by the discrete `irootType` index (from the ATS coupling, else 1),
+
       not by any pft-file parameter. The pft-file variable IGTYP (long_name "root
+
       profile") is NOT this — it is read into iPlantRootProfile_pft, a discrete
+
       GROWTH-TYPE switch (0=bryophyte, 1=graminoid, 2=shrub/tree; PlantInfoMod.F90:524,
+
       def at LitterFallMod.F90:730) used for is_plant_woody_vascular / is_root_bryophyte
+
       gates — documented under Plant_Functional_Type_Switches, excluded from sampling.
+
       So the vertical profile shape cannot be calibrated in this configuration.
-    _source: "human"
 
+      '
+    _source: human
   Plant_Functional_Type_Switches:
-    description: "Integer PFT switches that select whole pathways (C3/C4, growth habit, turnover, phenology type, thermal zone)."
-    code_reference: "f90src/Ecosim_datatype; wiki data_types/index.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/data_types/index.md"
+    description: Integer PFT switches that select whole pathways (C3/C4, growth habit, turnover, phenology
+      type, thermal zone).
+    code_reference: f90src/Ecosim_datatype; wiki data_types/index.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/data_types/index.md
     parameters:
-      - ICTYP
-      - ISTYP
-      - IDTYP
-      - IWTYP
-      - IPTYP
-      - IBTYP
-      - IRTYP
-      - IGTYP
+    - ICTYP
+    - ISTYP
+    - IDTYP
+    - IWTYP
+    - IPTYP
+    - IBTYP
+    - IRTYP
+    - IGTYP
     affects:
-      - NPP_pft
-    notes: |
-      These are the 8 DISCRETE integer type switches, not continuous parameters —
+    - NPP_pft
+    notes: 'These are the 8 DISCRETE integer type switches, not continuous parameters —
+
       exclude them from Morris continuous sampling. ICTYP (C3/C4) gates which
+
       photosynthesis mechanism is active; IWTYP the phenology type. IGTYP (pft-file
+
       long_name "root profile") is the plant GROWTH-TYPE switch →
+
       iPlantRootProfile_pft (0=bryophyte, 1=graminoid, 2=shrub/tree;
+
       PlantInfoMod.F90:524, def LitterFallMod.F90:730), driving is_plant_woody_vascular
+
       / is_root_bryophyte gates — it is NOT the Jackson-beta root-depth profile
+
       (that is a hard-coded biome table; see Root_Vertical_Profile). Set per PFT
+
       from the site definition, do not calibrate.
+
       NOTE — ZTYPI is NOT a discrete switch (removed here): source shows it is a
+
       real(r8) thermal-adaptation trait (PlantInitThermoAdaptZone_pft) that
+
       linearly offsets temperature thresholds (TempOffset_pft, HighTempLimitSeed_pft).
+
       It is a legitimate CONTINUOUS calibration candidate — documented, but not yet
+
       added to the sampling set (a calibration-surface decision, like the priority
+
       subset).
-    _source: "human"
 
+      '
+    _source: human
   Heterotroph_Aerobic_Catabolism:
-    description: "Monod DOC/acetate uptake by aerobic bacteria/fungi, O2-limited, aggregated into net soil-microbial CO2 production."
-    code_reference: "f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90 (AerobicHeteroBactCatabolism :2648-2816, AerobicFungiCatabolism :2819-2955, GatherHetertrophRespiration :4040-4129, AggregateTransfOMBioResdue :2122-2262); wiki microbial_bgc/decomposition_and_som.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#from-catabolism-to-net-co2-flux-the-pathway-to-co2_semis_flx_col"
+    description: Monod DOC/acetate uptake by aerobic bacteria/fungi, O2-limited, aggregated into net soil-microbial
+      CO2 production.
+    code_reference: f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90 (AerobicHeteroBactCatabolism :2648-2816,
+      AerobicFungiCatabolism :2819-2955, GatherHetertrophRespiration :4040-4129, AggregateTransfOMBioResdue
+      :2122-2262); wiki microbial_bgc/decomposition_and_som.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#from-catabolism-to-net-co2-flux-the-pathway-to-co2_semis_flx_col
     parameters:
-      - VMXO
-      - VMXF
-      - OQKM
-      - OQKA
+    - VMXO
+    - VMXF
+    - OQKM
+    - OQKA
     affects:
-      - CO2_SEMIS_FLX_col
-    notes: |
-      FSBSTC=CDOC/(CDOC+OQKM), RGOCY=FBiomStoiScalarHeter*OMActHeter*VMXO*GrowthEnvScalHeter,
-      RGOCP=min(RGOCX,RGOCZ) (whichever binds: enzyme/biomass-potential vs. substrate-supply),
-      RCO2ProdHeter=RespGrossHeter=RGOMP*OxyLimterHeter. VMXO (bacteria) and VMXF (fungi,
-      fermenters -- only 1/3 of fermented C becomes CO2) are the direct oxidation-rate knobs;
-      OQKM/OQKA gate whether the system is substrate-supply-limited (sensitive to standing DOC
-      pool size, hence to SOM_Hydrolysis's output) or biomass-limited (insensitive to it) --
-      empirically this is WHY SPOSC (SOM_Hydrolysis's rate constant) shows zero effect on
-      CO2_SEMIS_FLX_col at the BioCON site: the system sits in the biomass-limited regime.
-      Source-verified end-to-end 2026-08-11 (memory/logs/20260811a_*.md on adapter-kit).
-      VMXO ranks in the Morris top-6 for CO2_SEMIS_FLX_col at BioCON (positive sign, mu*=2.37 --
-      memory/logs/20260812a_*.md).
-    _source: "human"
+    - CO2_SEMIS_FLX_col
+    - ECO_RH_col
+    notes: 'FSBSTC=CDOC/(CDOC+OQKM), RGOCY=FBiomStoiScalarHeter*OMActHeter*VMXO*GrowthEnvScalHeter, RGOCP=min(RGOCX,RGOCZ)
+      (whichever binds: enzyme/biomass-potential vs. substrate-supply), RCO2ProdHeter=RespGrossHeter=RGOMP*OxyLimterHeter.
+      VMXO (bacteria) and VMXF (fungi, fermenters -- only 1/3 of fermented C becomes CO2) are the direct
+      oxidation-rate knobs. MODEL STRUCTURE, and it decides whether upstream SOM supply matters at all:
+      OQKM/OQKA gate whether the system is SUBSTRATE-SUPPLY-limited (sensitive to the standing DOC pool,
+      hence to SOM_Hydrolysis''s output) or BIOMASS-limited (insensitive to it). Which regime a given
+      site sits in must be established per site. Source-verified end-to-end 2026-08-11. Site-derived empirics
+      (mu*, Morris ranks, measured thresholds and null results) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   Microbial_Maintenance_Respiration:
-    description: "Baseline biomass-proportional CO2 'tax' independent of growth, Arrhenius temperature-scaled."
-    code_reference: "f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:4040-4129 (GatherHetertrophRespiration); wiki microbial_bgc/decomposition_and_som.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#from-catabolism-to-net-co2-flux-the-pathway-to-co2_semis_flx_col"
+    description: Baseline biomass-proportional CO2 'tax' independent of growth, Arrhenius temperature-scaled.
+    code_reference: f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:4040-4129 (GatherHetertrophRespiration);
+      wiki microbial_bgc/decomposition_and_som.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#from-catabolism-to-net-co2-flux-the-pathway-to-co2_semis_flx_col
     parameters:
-      - RMOM
+    - RMOM
     affects:
-      - CO2_SEMIS_FLX_col
-    notes: |
-      RMaintRespHeter = mBiomeHeter * RMOM * TempMaintRHeter * F_pH * RMOMK. A diagnostic
-      decomposition of the SAME total CO2 flux Heterotroph_Aerobic_Catabolism produces, not a
-      second stream. RMOM ranks in the Morris top-6 for CO2_SEMIS_FLX_col at BioCON (positive
-      sign, mu*=3.24 -- memory/logs/20260812a_*.md on adapter-kit).
-    _source: "human"
+    - CO2_SEMIS_FLX_col
+    - ECO_RH_col
+    notes: 'RMaintRespHeter = mBiomeHeter * RMOM * TempMaintRHeter * F_pH * RMOMK. A diagnostic decomposition
+      of the SAME total CO2 flux Heterotroph_Aerobic_Catabolism produces, not a second stream. RMOM''s
+      sign on CO2_SEMIS_FLX_col is positive by construction: it is a biomass-proportional CO2 tax independent
+      of growth. Site-derived empirics (mu*, Morris ranks, measured thresholds and null results) were
+      moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on 2026-09-06: they are
+      EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   Microbial_Mortality_Recycling:
-    description: "Dead-biomass flux splits between recycled-into-biomass (stays out of the CO2 pathway) and litterfall/humus (re-enters decomposition, eventually respired)."
-    code_reference: "f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:4132-4340 (GatherHetertrophAnabolicFlux); wiki microbial_bgc/decomposition_and_som.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#mortality-routing-recycled-back-into-biomass-or-lost-to-litterfallhumus"
+    description: Dead-biomass flux splits between recycled-into-biomass (stays out of the CO2 pathway)
+      and litterfall/humus (re-enters decomposition, eventually respired).
+    code_reference: f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:4132-4340 (GatherHetertrophAnabolicFlux);
+      wiki microbial_bgc/decomposition_and_som.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#mortality-routing-recycled-back-into-biomass-or-lost-to-litterfallhumus
     parameters:
-      - SPOMC
-      - RCCZ
-      - RCCY
-      - CKC
+    - SPOMC
+    - RCCZ
+    - RCCY
+    - CKC
     affects:
-      - CO2_SEMIS_FLX_col
-    notes: |
-      SPOMX=sqrt(GrowthEnvScalHeter)*SPOMC*SPOMK; RKillOMHeter=mBiomeHeter*SPOMX (EXPLICIT,
-      UNCLAMPED -- no cap against the standing pool, see the numerical-hazards note under
-      DOM_Sorption_Desorption). RCCC=RCCZ+max(CCC,C3C)*RCCY splits it: RCCC fraction recycled
-      back into biomass (out of the CO2 pathway), (1-RCCC) routed to litterfall/humus (re-enters
-      SOM_Hydrolysis, eventually respired). C3C=1/(1+CXC/CKC) is a reserve-availability scalar;
-      CXC=reserve:kinetic biomass ratio. RUNTIME-VERIFIED at BioCON (default CKC scale, 2026-08-12
-      debug print, memory/logs/20260812b_*.md): CCC (stoichiometric N/P sufficiency, ~0.5) is
-      80-400x larger than C3C (~0.001-0.006) in every sampled state, so max(CCC,C3C) picks CCC,
-      NEVER C3C -- CKC has essentially no effect on the realized recycling fraction at this
-      site/parameter scale. Do not assume CKC is an effective independent lever without checking
-      which term of max(CCC,C3C) binds at the target site first.
-      RCCZ (negative sign: more recycling = less CO2 reaches the respiration pathway) has the
-      SINGLE LARGEST elementary effect on CO2_SEMIS_FLX_col of all 23 soil-BGC parameters tested
-      in a Morris screen at BioCON (mu*=9.55, but sigma=23.25 >> mu* -- strongly
-      interaction-dominated, not a stable additive effect; memory/logs/20260811h_*.md,
-      20260812a_*.md). SPOMC ranks lower (mu*=1.43, positive sign) but shares the same equation
-      and the same numerical-hazard class as RCCZ (see DOM_Sorption_Desorption notes).
-    _source: "human"
+    - CO2_SEMIS_FLX_col
+    - ECO_RH_col
+    notes: 'SPOMX=sqrt(GrowthEnvScalHeter)*SPOMC*SPOMK; RKillOMHeter=mBiomeHeter*SPOMX (EXPLICIT, UNCLAMPED
+      -- no cap against the standing pool, see the numerical-hazards note under DOM_Sorption_Desorption).
+      RCCC=RCCZ+max(CCC,C3C)*RCCY splits it: RCCC fraction recycled back into biomass (out of the CO2
+      pathway), (1-RCCC) routed to litterfall/humus (re-enters SOM_Hydrolysis, eventually respired). C3C=1/(1+CXC/CKC)
+      is a reserve-availability scalar; CXC=reserve:kinetic biomass ratio. RCCZ''s sign is negative by
+      construction: more recycling means less carbon reaches the respiration pathway. Do not assume CKC
+      is an effective independent lever without checking which term of max(CCC,C3C) binds at the target
+      site first -- where CCC (stoichiometric N/P sufficiency) dominates, CKC is inert. SPOMC shares this
+      equation and the same numerical-hazard class as RCCZ. Site-derived empirics (mu*, Morris ranks,
+      measured thresholds and null results) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   Growth_Efficiency_Energetics:
-    description: "Empirical free-energy yields set microbial carbon-use efficiency (fraction of catabolized C lost to CO2 vs. retained for growth)."
-    code_reference: "f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:2764 (EO2X=1/(1+GO2X/EOMC) etc.); NitroPars.F90:214-220; wiki microbial_bgc/decomposition_and_som.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md"
+    description: Empirical free-energy yields set microbial carbon-use efficiency (fraction of catabolized
+      C lost to CO2 vs. retained for growth).
+    code_reference: f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:2764 (EO2X=1/(1+GO2X/EOMC) etc.);
+      NitroPars.F90:214-220; wiki microbial_bgc/decomposition_and_som.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md
     parameters:
-      - GO2X
-      - EOMC
-      - EOMG
+    - GO2X
+    - EOMC
+    - EOMG
     affects:
-      - CO2_SEMIS_FLX_col
-    notes: |
-      EO2X=1/(1+GO2X/EOMC) for aerobic bacteria (EOMC=25 kJ/gC), EO2G=1/(1+GO2X/EOMG) for fungi
-      (EOMG=37.5). GO2X is the free-energy yield of the DOC->CO2 redox reaction; a HIGHER yield
-      per unit C oxidized corresponds to higher microbial carbon-use efficiency, so LESS carbon
-      needs to be burned as CO2 to support the same growth flux -- GO2X has a NEGATIVE sign on
-      CO2_SEMIS_FLX_col (mu*=3.15, sigma=8.91 -- interaction-dominated; memory/logs/20260812a_*.md
-      on adapter-kit, thermodynamic-CUE interpretation source-verified against this equation).
-    _source: "human"
+    - CO2_SEMIS_FLX_col
+    - ECO_RH_col
+    notes: 'EO2X=1/(1+GO2X/EOMC) for aerobic bacteria (EOMC=25 kJ/gC), EO2G=1/(1+GO2X/EOMG) for fungi
+      (EOMG=37.5). GO2X is the free-energy yield of the DOC->CO2 redox reaction; a HIGHER yield per unit
+      C oxidized corresponds to higher microbial carbon-use efficiency, so LESS carbon needs to be burned
+      as CO2 to support the same growth flux -- GO2X has a NEGATIVE sign on CO2_SEMIS_FLX_col by construction
+      (the thermodynamic-CUE interpretation is source-verified against this equation). It is also interaction-dominated
+      in screens, so it is not a clean linear lever. Site-derived empirics (mu*, Morris ranks, measured
+      thresholds) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on 2026-09-06:
+      they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   SOM_Hydrolysis:
-    description: "Rate-limited breakdown of solid SOM (litter/POM/humus) into DOC, gated by a DOC-inhibited Monod saturation on bulk SOC."
-    code_reference: "f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:1308-1595 (SolidOMDecomposition); wiki microbial_bgc/decomposition_and_som.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#som-hydrolysis-rate-law"
+    description: Rate-limited breakdown of solid SOM (litter/POM/humus) into DOC, gated by a DOC-inhibited
+      Monod saturation on bulk SOC.
+    code_reference: f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:1308-1595 (SolidOMDecomposition);
+      wiki microbial_bgc/decomposition_and_som.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#som-hydrolysis-rate-law
     parameters:
-      - SPOSC
-      - DCKM0
-      - DCKML
-      - DCKI
+    - SPOSC
+    - DCKM0
+    - DCKML
+    - DCKI
     affects:
-      - CO2_SEMIS_FLX_col
-    notes: |
-      RHydlysSolidOM = SolidOMAct * min(0.5, SPOSC*RHydrolysisScalCmpK) -- capped, safe.
-      CONFIRMED NULL FINDING at BioCON (six independent HPC probes + a runtime debug print,
-      2026-08-10/11, use_cases/EcoSIM_BioCON/reports/20260811a_SPOSC_Investigation_Summary/ on
-      adapter-kit): SPOSC has ZERO measurable effect on CO2_SEMIS_FLX_col across a 32x tested
-      range, in four different soil-BGC regimes. Root cause: RHydrolysisScalCmpK (the term SPOSC
-      multiplies) is itself ~1e-6 at this site, for reasons unrelated to SPOSC -- SPOSC's product
-      never rises above ~1e-4 below the 0.5 cap even at 16x default. This is a site-specific
-      magnitude finding, not evidence SPOSC is universally ineffective -- re-verify
-      RHydrolysisScalCmpK's magnitude before excluding SPOSC at a different site.
-    _source: "human"
+    - CO2_SEMIS_FLX_col
+    - ECO_RH_col
+    notes: 'RHydlysSolidOM = SolidOMAct * min(0.5, SPOSC*RHydrolysisScalCmpK) -- capped, safe. MODEL STRUCTURE
+      governing whether SPOSC is a live lever anywhere: SPOSC multiplies RHydrolysisScalCmpK, which is
+      set by DFNS/OQCI/BulkSOMC and can be vanishingly small at a given site for reasons unrelated to
+      SPOSC, in which case the product stays far below the 0.5 cap however large SPOSC is. ALWAYS re-verify
+      RHydrolysisScalCmpK''s magnitude at the target site before concluding anything about SPOSC''s leverage;
+      a magnitude finding at one site is never a universal claim about the parameter. Site-derived empirics
+      (mu*, Morris ranks, measured thresholds and null results) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   Necromass_Hydrolysis:
-    description: "Breakdown of dead microbial residue (necromass) into DOC, same DOC-inhibited Monod scalar as SOM hydrolysis."
-    code_reference: "f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:1516-1531; wiki microbial_bgc/decomposition_and_som.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#microbial-necromass-hydrolysis"
+    description: Breakdown of dead microbial residue (necromass) into DOC, same DOC-inhibited Monod scalar
+      as SOM hydrolysis.
+    code_reference: f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:1516-1531; wiki microbial_bgc/decomposition_and_som.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#microbial-necromass-hydrolysis
     parameters:
-      - SPORC
+    - SPORC
     affects:
-      - CO2_SEMIS_FLX_col
-    notes: |
-      dHyd=min(1, SPORC*RHydrolysisScalCmpK); flux=min(pool*dHyd, pool) -- DOUBLE-clamped, cannot
-      overshoot the residue pool. Ranks #1 by mu* (4.82, positive sign) on CO2_SEMIS_FLX_col in
-      the BioCON Morris screen, but VERIFIED SAFE numerically (not implicated in any residual
-      screen failure despite co-occurring with unsafe RCCZ/SPOMC combinations in the same failing
-      trajectories -- very likely an innocent trajectory-geometry bystander, not causal; see
-      Microbial_Mortality_Recycling and DOM_Sorption_Desorption notes). memory/logs/20260811h_*.md,
-      20260812a_*.md on adapter-kit.
-    _source: "human"
+    - CO2_SEMIS_FLX_col
+    - ECO_RH_col
+    notes: 'dHyd=min(1, SPORC*RHydrolysisScalCmpK); flux=min(pool*dHyd, pool) -- DOUBLE-clamped, cannot
+      overshoot the residue pool. MODEL PROPERTY: this makes SPORC numerically SAFE, unlike SPOMC/TSORP,
+      so when it co-occurs with unsafe RCCZ/SPOMC combinations in failing screen trajectories it is very
+      likely an innocent trajectory-geometry bystander rather than the cause (see Microbial_Mortality_Recycling
+      and DOM_Sorption_Desorption). Site-derived empirics (mu*, Morris ranks, measured thresholds and
+      null results) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on
+      2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   DOM_Sorption_Desorption:
-    description: "Linear (Henry-type) sorption-desorption exchange between dissolved and sorbed OM."
-    code_reference: "f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:1218-1305 (RDOMSorption); wiki microbial_bgc/decomposition_and_som.md"
-    doc_reference: "ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#dom-sorption"
+    description: Linear (Henry-type) sorption-desorption exchange between dissolved and sorbed OM.
+    code_reference: f90src/Microbial_bgc/Box_Micmodel/MicBGCFGMod.F90:1218-1305 (RDOMSorption); wiki microbial_bgc/decomposition_and_som.md
+    doc_reference: ecosim-codebase-wiki-2dea74d9/microbial_bgc/decomposition_and_som.md#dom-sorption
     parameters:
-      - TSORP
-      - HSORP
+    - TSORP
+    - HSORP
     affects:
-      - CO2_SEMIS_FLX_col
-    notes: |
-      RDOMSorption ~ TSORP*(DOM/VLWatMicP - HSORP*SorbedOM/BulkSOMC). NUMERICAL HAZARD, CONFIRMED
-      EMPIRICALLY: this is an EXPLICIT, UNCLAMPED update (DOM -= flux; SorbedOM += flux, no flux
-      limiter) -- structurally the same class as Microbial_Mortality_Recycling's RKillOMHeter. A
-      23-parameter Morris screen at BioCON (memory/logs/20260811g,h_*.md on adapter-kit) found
-      raising TSORP alone above ~1.5x default produces a sharp stability cliff: 87-91% simulation
-      success at <=1.5x, 0% success at >=2.75x -- the signature of numerical, not physical,
-      failure. TSORP was tightened to [0.25,1.5]x for the v2 screen; residual failures after that
-      fix were traced to the SAME numerical-hazard class in RCCZ/SPOMC (Microbial_Mortality_Recycling),
-      not to TSORP itself. Before widening TSORP or RCCZ/SPOMC beyond this range in any future
-      ensemble, expect a nonlinear JOINT failure boundary, not independent per-parameter bounds.
-    _source: "human"
+    - CO2_SEMIS_FLX_col
+    - ECO_RH_col
+    notes: 'RDOMSorption ~ TSORP*(DOM/VLWatMicP - HSORP*SorbedOM/BulkSOMC). NUMERICAL HAZARD, and this
+      is a MODEL property applying to every case: an EXPLICIT, UNCLAMPED update (DOM -= flux; SorbedOM
+      += flux, no flux limiter), structurally the same class as Microbial_Mortality_Recycling''s RKillOMHeter.
+      Raising TSORP sufficiently above default produces a sharp simulation-stability CLIFF rather than
+      graceful degradation -- the signature of numerical, not physical, failure. Residual failures after
+      tightening TSORP trace to the SAME hazard class in RCCZ/SPOMC. Before widening TSORP or RCCZ/SPOMC
+      in any future ensemble, expect a nonlinear JOINT failure boundary, not independent per-parameter
+      safe ranges. Site-derived empirics (mu*, Morris ranks, measured thresholds and null results) were
+      moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on 2026-09-06: they are
+      EcoSIM_BioCON measurements, not model properties.
 
-
-# -----------------------------------------------------------------------------
-# Outputs — calibration-relevant history variables and their drivers.
-# (Names verified present in the reference tape; 516 total, subset here.)
-# -----------------------------------------------------------------------------
+      '
+    _source: human
 outputs:
   NPP_pft:
-    description: "Plant net primary productivity, per PFT (time, pft)."
+    description: Plant net primary productivity, per PFT (time, pft).
     direct_drivers:
-      - VCMX
-      - DMLF
+    - VCMX
+    - DMLF
     indirect_drivers:
-      - VOMX
-      - UPMXZH
-      - UPMXPO
-    diagnostic_value: |
-      Integrated growth signal. Too low → check VCMX (C3 capacity) and nutrient
+    - VOMX
+    - UPMXZH
+    - UPMXPO
+    diagnostic_value: 'Integrated growth signal. Too low → check VCMX (C3 capacity) and nutrient
+
       uptake ceilings (P-limited arctic: UPMX*PO). Too high with low LEAF_N →
+
       stoichiometry (CNLF) too lean.
-    _source: "human"
 
+      '
+    _source: human
   CAN_GPP_pft:
-    description: "Plant canopy gross CO2 fixation, per PFT."
+    description: Plant canopy gross CO2 fixation, per PFT.
     direct_drivers:
-      - VCMX
-      - VCMX4
+    - VCMX
+    - VCMX4
     indirect_drivers:
-      - RSMX
-      - OSMO
-      - ALBP
-    diagnostic_value: |
-      Compare dCAN_GPP_CLIM_pft (CO2-limited) vs dCAN_GPP_eLIM_pft (light-limited)
+    - RSMX
+    - OSMO
+    - ALBP
+    diagnostic_value: 'Compare dCAN_GPP_CLIM_pft (CO2-limited) vs dCAN_GPP_eLIM_pft (light-limited)
+
       to see which limb binds: CO2-limited → VCMX/stomatal; light-limited →
+
       radiation (ALBP/CFI) or LAI.
-    _source: "human"
 
+      '
+    _source: human
   LEAF_C_pft:
-    description: "Canopy leaf carbon, per PFT."
+    description: Canopy leaf carbon, per PFT.
     direct_drivers:
-      - DMLF
-      - SLA1
+    - DMLF
+    - SLA1
     indirect_drivers:
-      - XRLA
-      - XRNI
-    diagnostic_value: "Primary aboveground biomass target. Low → allocation (DMLF) or phenology (short leaf duration via XRLA/daylength)."
-    _source: "human"
-
+    - XRLA
+    - XRNI
+    diagnostic_value: Primary aboveground biomass target. Low → allocation (DMLF) or phenology (short
+      leaf duration via XRLA/daylength).
+    _source: human
   LEAF_N_pft:
-    description: "Canopy leaf nitrogen, per PFT."
+    description: Canopy leaf nitrogen, per PFT.
     direct_drivers:
-      - CNLF
+    - CNLF
     indirect_drivers:
-      - UPMXZH
-      - INTYP
-    diagnostic_value: "Near-linear in CNLF (leaf N:C). Mismatch with LEAF_C → adjust CNLF before uptake params."
-    _source: "human"
-
+    - UPMXZH
+    - INTYP
+    diagnostic_value: Near-linear in CNLF (leaf N:C). Mismatch with LEAF_C → adjust CNLF before uptake
+      params.
+    _source: human
   LEAF_P_pft:
-    description: "Canopy leaf phosphorus, per PFT."
+    description: Canopy leaf phosphorus, per PFT.
     direct_drivers:
-      - CPLF
+    - CPLF
     indirect_drivers:
-      - UPMXPO
-      - UPKMPO
-    diagnostic_value: "Near-linear in CPLF. For P-limited sites low LEAF_P may be uptake-limited (UPMX*PO) rather than stoichiometry — check soil PO4."
-    _source: "human"
-
+    - UPMXPO
+    - UPKMPO
+    diagnostic_value: Near-linear in CPLF. For P-limited sites low LEAF_P may be uptake-limited (UPMX*PO)
+      rather than stoichiometry — check soil PO4.
+    _source: human
   LAI_xstk_pft:
-    description: "Whole-plant leaf area index excluding stalk, per PFT."
+    description: Whole-plant leaf area index excluding stalk, per PFT.
     direct_drivers:
-      - SLA1
-      - DMLF
+    - SLA1
+    - DMLF
     indirect_drivers:
-      - XRLA
-      - CLASS
-    diagnostic_value: "Couples leaf C to light interception. Compare to ECO_LAI_col for the ecosystem sum."
-    _source: "human"
-
+    - XRLA
+    - CLASS
+    diagnostic_value: Couples leaf C to light interception. Compare to ECO_LAI_col for the ecosystem sum.
+    _source: human
   Plant_C_pft:
-    description: "Total plant carbon, per PFT."
+    description: Total plant carbon, per PFT.
     direct_drivers:
-      - DMLF
-      - DMSTK
-      - DMRSV
+    - DMLF
+    - DMSTK
+    - DMRSV
     indirect_drivers:
-      - VCMX
-    diagnostic_value: "Whole-plant C. Partition mismatch (leaf vs stalk vs reserve) points at the DM* allocation ratios."
-    _source: "human"
-
+    - VCMX
+    diagnostic_value: Whole-plant C. Partition mismatch (leaf vs stalk vs reserve) points at the DM* allocation
+      ratios.
+    _source: human
   Plant_N_pft:
-    description: "Total plant nitrogen, per PFT."
+    description: Total plant nitrogen, per PFT.
     direct_drivers:
-      - UPMXZH
-      - UPMXZO
-      - CNLF
+    - UPMXZH
+    - UPMXZO
+    - CNLF
     indirect_drivers:
-      - INTYP
-    diagnostic_value: "Whole-plant N. If N-limited (low Plant_N, high demand) raise UPMX*Z* or check N2 fixation (INTYP)."
-    _source: "human"
-
+    - INTYP
+    diagnostic_value: Whole-plant N. If N-limited (low Plant_N, high demand) raise UPMX*Z* or check N2
+      fixation (INTYP).
+    _source: human
   Plant_P_pft:
-    description: "Total plant phosphorus, per PFT."
+    description: Total plant phosphorus, per PFT.
     direct_drivers:
-      - UPMXPO
-      - UPKMPO
-      - CPLF
+    - UPMXPO
+    - UPKMPO
+    - CPLF
     indirect_drivers:
-      - RSRA
-      - RRAD1M
-      - RTFQ
-    diagnostic_value: "Whole-plant P — the key lever for Kougarok-style P limitation. Low despite high soil PO4 → uptake kinetics (UPKMPO too high / UPMXPO too low) OR poor root access (high RSRA/RSRR, thin roots, low branching RTFQ)."
-    _source: "human"
+    - RSRA
+    - RRAD1M
+    - RTFQ
+    diagnostic_value: 'Whole-plant P (gP m-2). Low plant P despite adequate soil PO4 has FOUR candidate
+      causes and the uptake quadratic says which are likely: kinetics (UPMXPO too low / UPKMPO too high),
+      TRANSPORT (low diffusive conductance to the root surface, driven by soil moisture, tortuosity and
+      root geometry -- RSRA/RSRR, root radius, branching RTFQ), OXYGEN (Vmax is multiplied by O2Stress,
+      so anoxia suppresses uptake at any parameter value), or CARBON (CAvailStress). Because Km enters
+      the solution only multiplied by the diffusive flux, a transport- or oxygen-limited system will not
+      respond to the kinetic parameters at all -- diagnose which limiter binds before tuning. See mechanisms.MichaelisMenten_Nutrient_Uptake.
 
+      '
+    _source: human
   Root_C_pft:
-    description: "Plant root C, per PFT."
+    description: Plant root C, per PFT.
     direct_drivers:
-      - DMRT
-      - RTFQ
+    - DMRT
+    - RTFQ
     indirect_drivers:
-      - PTSHT
-      - PR
-    diagnostic_value: "Root system size. Low → weak root allocation (DMRT) or branching (RTFQ); throttles the uptake surface for N/P. Cross-check RootST_C_pft (structural) vs Root_NONSTC_pft (reserves)."
-    _source: "human"
-
+    - PTSHT
+    - PR
+    diagnostic_value: Root system size. Low → weak root allocation (DMRT) or branching (RTFQ); throttles
+      the uptake surface for N/P. Cross-check RootST_C_pft (structural) vs Root_NONSTC_pft (reserves).
+    _source: human
   Root_N_pft:
-    description: "Root nitrogen, per PFT."
+    description: Root nitrogen, per PFT.
     direct_drivers:
-      - CNRT
+    - CNRT
     indirect_drivers:
-      - UPMXZH
-      - DMRT
-    diagnostic_value: "Near-linear in CNRT (root N:C). Mismatch with Root_C → adjust CNRT before N-uptake params."
-    _source: "human"
-
+    - UPMXZH
+    - DMRT
+    diagnostic_value: Near-linear in CNRT (root N:C). Mismatch with Root_C → adjust CNRT before N-uptake
+      params.
+    _source: human
   Root_P_pft:
-    description: "Plant root P, per PFT."
+    description: Plant root P, per PFT.
     direct_drivers:
-      - CPRT
+    - CPRT
     indirect_drivers:
-      - UPMXPO
-      - DMRT
-    diagnostic_value: "Near-linear in CPRT (root P:C). For P-limited sites low Root_P may be uptake-limited (UPMX*PO) or access-limited (root hydraulics) rather than stoichiometry."
-    _source: "human"
-
+    - UPMXPO
+    - DMRT
+    diagnostic_value: Near-linear in CPRT (root P:C). For P-limited sites low Root_P may be uptake-limited
+      (UPMX*PO) or access-limited (root hydraulics) rather than stoichiometry.
+    _source: human
   ECO_NPP_col:
-    description: "Cumulative ecosystem NPP (column-integrated)."
+    description: Cumulative ecosystem NPP (column-integrated).
     direct_drivers:
-      - VCMX
+    - VCMX
     indirect_drivers:
-      - UPMXPO
-    diagnostic_value: "Ecosystem-scale check; sums PFT NPP plus below-ground. Use for whole-column C balance sanity."
-    _source: "human"
-
-  NODULE_N_pft:
-    description: "Root total nodule nitrogen (N2-fixation product), per PFT."
-    direct_drivers:
-      - INTYP
-      - CNND
-    indirect_drivers: []
-    diagnostic_value: "Nonzero only for fixing PFTs (INTYP on). Zero everywhere → no fixer in the PFT set, expected for most tundra."
-    _source: "human"
-
+    - UPMXPO
+    diagnostic_value: Ecosystem-scale check; sums PFT NPP plus below-ground. Use for whole-column C balance
+      sanity.
+    _source: human
   ECO_LAI_col:
-    description: "Ecosystem leaf area index (column)."
+    description: Ecosystem leaf area index (column).
     direct_drivers:
-      - SLA1
+    - SLA1
     indirect_drivers:
-      - ALBP
-      - CFI
-    diagnostic_value: "Ecosystem light interception. Cross-check against summed LAI_xstk_pft."
-    _source: "human"
-
+    - ALBP
+    - CFI
+    diagnostic_value: Ecosystem light interception. Cross-check against summed LAI_xstk_pft.
+    _source: human
   CO2_SEMIS_FLX_col:
-    description: "Soil surface CO2 flux (column), umol CO2 m-2 s-1 -- the soil-respiration (Fs) calibration target."
+    description: Soil surface CO2 flux (column), umol CO2 m-2 s-1 -- the soil-respiration (Fs) calibration
+      target.
     direct_drivers:
-      - RCCZ
-      - VMXO
-      - RMOM
-      - GO2X
-      - SPORC
-      - SPOMC
+    - RCCZ
+    - VMXO
+    - RMOM
+    - GO2X
+    - SPORC
+    - SPOMC
     indirect_drivers:
-      - OQKM
-      - OQKA
-      - DCKM0
-      - DCKML
-      - TSORP
-      - CKC
-      - RCCY
-    diagnostic_value: |
-      Production side (Microbial_bgc heterotrophic catabolism + mortality-recycling losses,
-      Plant_bgc root/rhizosphere respiration) sets how much CO2 there is; transport side
-      (diffusion/ebullition/wet-deposition, all hardcoded constants or site/soil physical
-      properties -- see wiki transport/gas_transport.md) sets how fast it leaves. All
-      calibration leverage lives on the production side. HistDataType.F90:4243 defines this as
-      SurfGasEmiss_all_flx_col(CO2)/AREA_3D * GramPerHr2umolPerSec(CO2) -- a unit conversion of
-      SurfGasEmiss_flx_col, since the disturbance-loss adjustment is unconditionally skipped in
-      undisturbed runs. `direct_drivers` above are the Morris top-6 at BioCON (23-parameter
-      screen, memory/logs/20260811h_*.md, 20260812a_*.md on adapter-kit); all six show
-      sigma>mu* (interaction-dominated -- no single parameter, or this screen's tested
-      combinations, closed the gap to observed at BioCON). SPOSC (SOM_Hydrolysis's rate
-      constant) is a confirmed NULL driver at this site despite its documented role as
-      "the largest decomposition constant" -- see SOM_Hydrolysis mechanism notes. CORGC (the
-      soil-carbon pool, a grid input not a PFT parameter) is a measured, prescribed quantity
-      with observational error bars, not a free calibration knob -- see
-      use_cases/EcoSIM_BioCON/memory/logs/20260807a_*.md.
-    _source: "human"
-
-
-# -----------------------------------------------------------------------------
-# Parameters — per-parameter calibration notes (the calibratable continuous
-# subset; discrete I*TYP switches are documented under mechanisms but excluded
-# from sampling). Names are EcoSIM Fortran identifiers from ds_input__pft_test.
-# -----------------------------------------------------------------------------
+    - OQKM
+    - OQKA
+    - DCKM0
+    - DCKML
+    - TSORP
+    - CKC
+    - RCCY
+    diagnostic_value: 'Production side (Microbial_bgc heterotrophic catabolism + mortality-recycling losses,
+      Plant_bgc root/rhizosphere respiration) sets how much CO2 there is; transport side (diffusion/ebullition/wet-deposition,
+      all hardcoded constants or site/soil physical properties -- see wiki transport/gas_transport.md)
+      sets how fast it leaves. All calibration leverage lives on the production side. HistDataType.F90:4243
+      defines this as SurfGasEmiss_all_flx_col(CO2)/AREA_3D * GramPerHr2umolPerSec(CO2) -- a unit conversion
+      of SurfGasEmiss_flx_col, since the disturbance-loss adjustment is unconditionally skipped in undisturbed
+      runs. `direct_drivers` above were ranked by a Morris screen at EcoSIM_BioCON; that ranking is a
+      PRIOR for any other site, not a model property, and lives in that case''s knowledge store (23-parameter
+      screen, memory/logs/20260811h_*.md, 20260812a_*.md on adapter-kit); all six show sigma>mu* (interaction-dominated
+      -- no single parameter, or this screen''s tested combinations, closed the gap to observed at BioCON).
+      SPOSC (SOM_Hydrolysis''s rate constant) is a confirmed NULL driver at this site despite its documented
+      role as "the largest decomposition constant" -- see SOM_Hydrolysis mechanism notes. CORGC (the soil-carbon
+      pool, a grid input not a PFT parameter) is a measured, prescribed quantity with observational error
+      bars, not a free calibration knob -- see use_cases/EcoSIM_BioCON/memory/logs/20260807a_*.md. Site-derived
+      empirics (mu*, Morris ranks, measured thresholds and null results) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.'
+    _source: human
+  RootNodule_N_pft:
+    description: Root total nodule nitrogen (N2-fixation product), per PFT.
+    direct_drivers:
+    - INTYP
+    - CNND
+    indirect_drivers: []
+    diagnostic_value: Nonzero only for fixing PFTs (INTYP on). Zero everywhere → no fixer in the PFT set,
+      expected for most tundra.
+    _source: human
+  ECO_GPP_col:
+    description: 'Cumulative ecosystem gross primary production, column-integrated, gC/m2. POSITIVE. Registered
+      HistDataType.F90:1815-1816 from Eco_GPP_CumYr_col. CUMULATIVE WITHIN-YEAR, not a rate: the tape
+      resets each 1 January and rises monotonically, so a value must be DIFFERENCED within its own calendar
+      year to become a flux. Reading it directly yields a series whose December value is the annual maximum,
+      which is how this trap presents. The scored reduce is `year_end`, which takes the last record of
+      each COMPLETE calendar year (leap-aware) as that year''s total.'
+    direct_drivers:
+    - VCMX
+    - VCMX4
+    - FCO2
+    indirect_drivers:
+    - RSMX
+    - OSMO
+    - SLA1
+    - ALBP
+    - XKCO2
+    diagnostic_value: 'The column-level counterpart of CAN_GPP_pft and the carbon-uptake calibration target
+      where a site is scored against tower GPP rather than per-PFT. Identity worth using as a balance
+      check: RedistMod.F90:225 sets Eco_NPP_CumYr_col = Eco_GPP_CumYr_col + Eco_AutoR_CumYr_col, and because
+      RA is stored NEGATIVE this is GPP minus autotrophic respiration. A tape where GPP + RA does not
+      equal NPP is not a calibration finding, it is a broken read.'
+    _source: human
+  ECO_RA_col:
+    description: 'Cumulative ecosystem AUTOTROPHIC respiration, column-integrated, gC/m2. **STORED NEGATIVE**
+      (respiration as a loss). Registered HistDataType.F90:1818-1820 from Eco_AutoR_CumYr_col. CUMULATIVE
+      WITHIN-YEAR, not a rate: the tape resets each 1 January and rises monotonically, so a value must
+      be DIFFERENCED within its own calendar year to become a flux. Reading it directly yields a series
+      whose December value is the annual maximum, which is how this trap presents. The scored reduce is
+      `year_end`, which takes the last record of each COMPLETE calendar year (leap-aware) as that year''s
+      total.'
+    direct_drivers:
+    - DMRT
+    - DMLF
+    - DMSTK
+    - ZTYPI
+    indirect_drivers:
+    - DMSHE
+    - DMRSV
+    - RTFQ
+    - PR
+    - PTSHT
+    - CNND
+    diagnostic_value: 'PLANT-SIDE, not soil-side: it is accumulated inside the plant BGC modules and reaches
+      the column through plt_bgcr (PlantAPI.F90:67, :1049), so it responds to allocation yields and plant
+      maintenance respiration rather than to the microbial parameters. It is decremented by several distinct
+      costs, which is why no single parameter dominates it: nodule respiration under symbiotic N2 fixation
+      (NoduleBGCMod.F90:317, `Eco_AutoR_CumYr_col = Eco_AutoR_CumYr_col - RCO2T`) and C4 bundle-sheath
+      CO2 leak (PlantBranchMod.F90:969) both enter here. Growth respiration is the complement of the dry-matter
+      yields: (1 - DMRT) gC respired per gC nonstructural for roots (RootMod.F90:1009), so LOWERING a
+      DM* yield RAISES this term.'
+    _source: human
+  ECO_RH_col:
+    description: 'Cumulative ecosystem HETEROTROPHIC respiration, column-integrated, gC/m2. **STORED NEGATIVE**
+      -- source long_name is ''Cumulative ecosystem heterotrophic respiration (<0 into atmosphere)'' (HistDataType.F90:1826-1829).
+      NOTE the generated CDL registry carries NO long_name for this variable, because the declaration
+      wraps onto a continuation line; the sign convention is recoverable only from source. CUMULATIVE
+      WITHIN-YEAR, not a rate: the tape resets each 1 January and rises monotonically, so a value must
+      be DIFFERENCED within its own calendar year to become a flux. Reading it directly yields a series
+      whose December value is the annual maximum, which is how this trap presents. The scored reduce is
+      `year_end`, which takes the last record of each COMPLETE calendar year (leap-aware) as that year''s
+      total.'
+    direct_drivers:
+    - SPOSC
+    - SPOMC
+    - SPORC
+    - RMOM
+    - VMXO
+    - RCCZ
+    indirect_drivers:
+    - DCKM0
+    - DCKML
+    - DCKI
+    - OQKM
+    - OQKA
+    - TSORP
+    - CKC
+    - GO2X
+    diagnostic_value: 'It is the sum of the CO2 AND CH4 heterotrophic routes -- RedistMod.F90:233, `Eco_HR_CumYr_col
+      = Eco_HR_CumYr_col + ECO_HR_CO2_col + ECO_HR_CH4_col` -- so it is NOT interchangeable with ECO_HR_CO2_col
+      and a site with an anaerobic route will see the two diverge. It is also DISTINCT from CO2_SEMIS_FLX_col:
+      that is the soil-SURFACE CO2 flux and includes root and rhizosphere respiration, which is autotrophic
+      and belongs to ECO_RA_col. A case scoring soil respiration and a case scoring heterotrophic respiration
+      are not scoring the same quantity.'
+    _source: human
+  ECO_ET_col:
+    description: 'Cumulative total evapotranspiration, column-integrated, mm H2O/m2. POSITIVE. Registered
+      HistDataType.F90:1866-1868 as `m2mm * QEvap_CumYr_col / AREA`, so it is a unit-converted column
+      total and NOT a per-unit-area rate before that division. CUMULATIVE WITHIN-YEAR, not a rate: the
+      tape resets each 1 January and rises monotonically, so a value must be DIFFERENCED within its own
+      calendar year to become a flux. Reading it directly yields a series whose December value is the
+      annual maximum, which is how this trap presents. The scored reduce is `year_end`, which takes the
+      last record of each COMPLETE calendar year (leap-aware) as that year''s total.'
+    direct_drivers:
+    - FCO2
+    - OSMO
+    - RSMX
+    indirect_drivers:
+    - RRAD1M
+    - RRAD2M
+    - PORT
+    - RSRR
+    - RSRA
+    - SLA1
+    - ALBP
+    - CNWL
+    diagnostic_value: The water-flux calibration target. It aggregates canopy transpiration, which is
+      stomatally gated and therefore reachable through Turgor_Based_Stomatal_Stress, with soil and litter
+      evaporation, which is not -- so a lever that changes stomatal behaviour moves only part of it, and
+      the split is site- and season-dependent. Because the sward's transpiring surface is reset by each
+      cut at a managed site, the seasonal shape of this variable is not a smooth curve and an annual coefficient
+      can conceal a large month-to-month trade.
+    _source: human
 parameters:
   VCMX:
     category: photosynthesis
-    controls: [Grant_Rubisco_C3_Kinetics]
-    affects: [CAN_GPP_pft, NPP_pft]
-    related_to: [VOMX, RUBP, XKCO2]
-    calibration_notes: |
-      Specific C3 rubisco carboxylase activity — the dominant C3 capacity knob,
-      highest-priority continuous parameter for GPP/NPP. Feeds a Farquhar-type
-      Vcmax derived from leaf Rubisco/protein pools (couples to RUBP/CHL), so do
-      not port a fixed FATES fates_vcmax25 value. Cite wiki
-      plant_bgc/photosynthesis_and_respiration.md for the kinetic form.
-    _source: "human"
+    controls:
+    - Grant_Rubisco_C3_Kinetics
+    affects:
+    - CAN_GPP_pft
+    - NPP_pft
+    related_to:
+    - VOMX
+    - RUBP
+    - XKCO2
+    calibration_notes: 'Specific C3 rubisco carboxylase activity — the dominant C3 capacity knob,
 
+      highest-priority continuous parameter for GPP/NPP. Feeds a Farquhar-type
+
+      Vcmax derived from leaf Rubisco/protein pools (couples to RUBP/CHL), so do
+
+      not port a fixed FATES fates_vcmax25 value. Cite wiki
+
+      plant_bgc/photosynthesis_and_respiration.md for the kinetic form.
+
+      '
+    _source: human
   VOMX:
     category: photosynthesis
-    controls: [Grant_Rubisco_C3_Kinetics]
-    affects: [CAN_GPP_pft]
-    related_to: [VCMX, XKO2]
-    calibration_notes: "Specific rubisco oxygenase activity; sets photorespiration. Sample with VCMX (ratio matters)."
-    _source: "human"
-
+    controls:
+    - Grant_Rubisco_C3_Kinetics
+    affects:
+    - CAN_GPP_pft
+    related_to:
+    - VCMX
+    - XKO2
+    calibration_notes: Specific rubisco oxygenase activity; sets photorespiration. Sample with VCMX (ratio
+      matters).
+    _source: human
   RUBP:
     category: photosynthesis
-    controls: [Grant_Rubisco_C3_Kinetics]
-    affects: [CAN_GPP_pft]
-    related_to: [VCMX, CHL]
-    calibration_notes: "Fraction of leaf protein in rubisco — scales effective carboxylation capacity. Partially redundant with VCMX; watch for equifinality."
-    _source: "human"
-
+    controls:
+    - Grant_Rubisco_C3_Kinetics
+    affects:
+    - CAN_GPP_pft
+    related_to:
+    - VCMX
+    - CHL
+    calibration_notes: Fraction of leaf protein in rubisco — scales effective carboxylation capacity.
+      Partially redundant with VCMX; watch for equifinality.
+    _source: human
   XKCO2:
     category: photosynthesis
-    controls: [Grant_Rubisco_C3_Kinetics]
-    affects: [CAN_GPP_pft]
-    related_to: [VCMX]
-    calibration_notes: "Km for VCMX (CO2 half-saturation). Lower → higher affinity. Moderate sensitivity."
-    _source: "human"
-
+    controls:
+    - Grant_Rubisco_C3_Kinetics
+    affects:
+    - CAN_GPP_pft
+    related_to:
+    - VCMX
+    calibration_notes: Km for VCMX (CO2 half-saturation). Lower → higher affinity. Moderate sensitivity.
+    _source: human
   ETMX:
     category: photosynthesis
-    controls: [Grant_Rubisco_C3_Kinetics]
-    affects: [CAN_GPP_pft]
-    related_to: [CHL]
-    calibration_notes: "Specific chlorophyll activity (electron transport). Sets the light-limited GPP limb (dCAN_GPP_eLIM_pft)."
-    _source: "human"
-
+    controls:
+    - Grant_Rubisco_C3_Kinetics
+    affects:
+    - CAN_GPP_pft
+    related_to:
+    - CHL
+    calibration_notes: Specific chlorophyll activity (electron transport). Sets the light-limited GPP
+      limb (dCAN_GPP_eLIM_pft).
+    _source: human
   RSMX:
     category: stomatal
-    controls: [Turgor_Based_Stomatal_Stress]
-    affects: [CAN_GPP_pft]
-    related_to: [OSMO]
-    calibration_notes: "Cuticular resistance — the closed-stomata conductance bound. Higher → tighter water conservation, lower GPP under stress."
-    _source: "human"
-
+    controls:
+    - Turgor_Based_Stomatal_Stress
+    affects:
+    - CAN_GPP_pft
+    related_to:
+    - OSMO
+    calibration_notes: Cuticular resistance — the closed-stomata conductance bound. Higher → tighter water
+      conservation, lower GPP under stress.
+    _source: human
   OSMO:
     category: stomatal
-    controls: [Turgor_Based_Stomatal_Stress]
-    affects: [CAN_GPP_pft]
-    related_to: [RSMX]
-    calibration_notes: "Leaf osmotic potential at zero water potential — sets the turgor-loss point and thus drought down-regulation. No Ball-Berry analog."
-    _source: "human"
-
+    controls:
+    - Turgor_Based_Stomatal_Stress
+    affects:
+    - CAN_GPP_pft
+    related_to:
+    - RSMX
+    calibration_notes: Leaf osmotic potential at zero water potential — sets the turgor-loss point and
+      thus drought down-regulation. No Ball-Berry analog.
+    _source: human
   FCO2:
     category: stomatal
-    controls: [Turgor_Based_Stomatal_Stress]
-    affects: [CAN_GPP_pft]
-    related_to: [RSMX, OSMO]
-    calibration_notes: |
-      Intercellular:atmospheric CO2 ratio (Ci/Ca, CanopyCi2CaRatio_pft) — read
-      from the PFT file and applied as a FIXED fraction (no Ball-Berry iteration)
-      to set the daylight stomatal-resistance target. Higher Ci/Ca → smaller
-      Ca−Ci gradient → LOWER minimum stomatal-resistance target (RSX ∝
-      DiffCO2Atmos2Intracel; StomatesMod.F90:935,1052). Moderate GPP lever;
-      couples to VCMX via the carboxylation-rate match. Not a FATES analog
-      (FATES solves Ci). Cite wiki plant_bgc/photosynthesis_and_respiration.md:127.
-    _source: "human"
+    controls:
+    - Turgor_Based_Stomatal_Stress
+    affects:
+    - CAN_GPP_pft
+    related_to:
+    - RSMX
+    - OSMO
+    calibration_notes: 'Intercellular:atmospheric CO2 ratio (Ci/Ca, CanopyCi2CaRatio_pft) — read
 
+      from the PFT file and applied as a FIXED fraction (no Ball-Berry iteration)
+
+      to set the daylight stomatal-resistance target. Higher Ci/Ca → smaller
+
+      Ca−Ci gradient → LOWER minimum stomatal-resistance target (RSX ∝
+
+      DiffCO2Atmos2Intracel; StomatesMod.F90:935,1052). Moderate GPP lever;
+
+      couples to VCMX via the carboxylation-rate match. Not a FATES analog
+
+      (FATES solves Ci). Cite wiki plant_bgc/photosynthesis_and_respiration.md:127.
+
+      '
+    _source: human
   XRLA:
     category: phenology
-    controls: [Node_Leaf_Phenology]
-    affects: [LEAF_C_pft, LAI_xstk_pft]
-    related_to: [XRNI]
-    calibration_notes: "Rate of leaf appearance at 25C. First-order for arctic canopy development in a short season; pairs with XRNI (node initiation)."
-    _source: "human"
-
+    controls:
+    - Node_Leaf_Phenology
+    affects:
+    - LEAF_C_pft
+    - LAI_xstk_pft
+    related_to:
+    - XRNI
+    calibration_notes: Rate of leaf appearance at 25C. First-order for arctic canopy development in a
+      short season; pairs with XRNI (node initiation).
+    _source: human
   XRNI:
     category: phenology
-    controls: [Node_Leaf_Phenology]
-    affects: [LEAF_C_pft]
-    related_to: [XRLA]
-    calibration_notes: "Rate of node initiation at 25C. Sets branching/leaf-site supply upstream of leaf appearance."
-    _source: "human"
-
+    controls:
+    - Node_Leaf_Phenology
+    affects:
+    - LEAF_C_pft
+    related_to:
+    - XRLA
+    calibration_notes: Rate of node initiation at 25C. Sets branching/leaf-site supply upstream of leaf
+      appearance.
+    _source: human
   XDL:
     category: phenology
-    controls: [Node_Leaf_Phenology]
-    affects: [LEAF_C_pft]
-    related_to: [XPPD]
-    calibration_notes: "Critical daylength (h) for phenological progress. SENTINEL: the default -1 means DISABLED (source-verified; constrained to [0, DayLenthMax_col]) — do NOT sample a negative value; EXCLUDE from Morris unless activated with a positive daylength, then arctic critical-photoperiod literature applies. High-latitude sensitive."
-    _source: "human"
-
+    controls:
+    - Node_Leaf_Phenology
+    affects:
+    - LEAF_C_pft
+    related_to:
+    - XPPD
+    calibration_notes: 'Critical daylength (h) for phenological progress. SENTINEL: the default -1 means
+      DISABLED (source-verified; constrained to [0, DayLenthMax_col]) — do NOT sample a negative value;
+      EXCLUDE from Morris unless activated with a positive daylength, then arctic critical-photoperiod
+      literature applies. High-latitude sensitive.'
+    _source: human
   DMLF:
     category: allocation
-    controls: [Stage_Prescribed_Allocation]
-    affects: [LEAF_C_pft, Plant_C_pft]
-    related_to: [DMSHE, DMSTK, SLA1]
-    calibration_notes: "Leaf dry-matter C production vs nonstructural C consumption — the leaf allocation strength. Primary lever for LEAF_C. Trades off against DMSTK/DMRSV (partition sums)."
-    _source: "human"
-
+    controls:
+    - Stage_Prescribed_Allocation
+    affects:
+    - LEAF_C_pft
+    - Plant_C_pft
+    related_to:
+    - DMSHE
+    - DMSTK
+    - SLA1
+    calibration_notes: Leaf dry-matter C production vs nonstructural C consumption — the leaf allocation
+      strength. Primary lever for LEAF_C. Trades off against DMSTK/DMRSV (partition sums).
+    _source: human
   DMSTK:
     category: allocation
-    controls: [Stage_Prescribed_Allocation]
-    affects: [Plant_C_pft]
-    related_to: [DMLF]
-    calibration_notes: "Stalk dry-matter production ratio. For graminoid/forb tundra PFTs stalk is small — expect low sensitivity."
-    _source: "human"
-
+    controls:
+    - Stage_Prescribed_Allocation
+    affects:
+    - Plant_C_pft
+    related_to:
+    - DMLF
+    calibration_notes: Stalk dry-matter production ratio. For graminoid/forb tundra PFTs stalk is small
+      — expect low sensitivity.
+    _source: human
   SLA1:
     category: allocation
-    controls: [Stage_Prescribed_Allocation, Node_Leaf_Phenology]
-    affects: [LAI_xstk_pft, LEAF_C_pft]
-    related_to: [DMLF]
-    calibration_notes: "NOT bulk SLA — the COEFFICIENT of the Grant&Hesketh-1992 power law: leaf-area growth = SLA1*dMC^SLA2 (SLA2~-0.33), true units m2 gC^-0.67 (source-verified). Operative specific area >> SLA1 because per-node dMC is sub-gram (dMC^-0.33 >> 1), so do NOT compare SLA1 to measured SLA (m2/gC) directly. Couples LEAF_C→LAI→GPP."
-    _source: "human"
-
+    controls:
+    - Stage_Prescribed_Allocation
+    - Node_Leaf_Phenology
+    affects:
+    - LAI_xstk_pft
+    - LEAF_C_pft
+    related_to:
+    - DMLF
+    calibration_notes: 'NOT bulk SLA — the COEFFICIENT of the Grant&Hesketh-1992 power law: leaf-area
+      growth = SLA1*dMC^SLA2 (SLA2~-0.33), true units m2 gC^-0.67 (source-verified). Operative specific
+      area >> SLA1 because per-node dMC is sub-gram (dMC^-0.33 >> 1), so do NOT compare SLA1 to measured
+      SLA (m2/gC) directly. Couples LEAF_C→LAI→GPP.'
+    _source: human
   CNLF:
     category: stoichiometry
-    controls: [Prescribed_Tissue_Stoichiometry]
-    affects: [LEAF_N_pft]
-    related_to: [CPLF, CNSHE]
-    calibration_notes: "MAXIMUM (ceiling) leaf N:C, NOT the operative value (source-verified: rNCLeaf_pft, declared 'maximum leaf N:C', PlantInfoMod.F90:625). Realized leaf N:C = CNLF*(0.33+0.67*CNPG) (PlantBranchMod.F90:371), so measured leaf N:C (~0.02-0.08) describes the model OUTPUT, not this input — do NOT clamp CNLF to the measured range; calibrate as a ceiling (~0.08-0.20 gN/gC)."
-    _source: "human"
-
+    controls:
+    - Prescribed_Tissue_Stoichiometry
+    - Leaf_Protein_Colimitation
+    affects:
+    - LEAF_N_pft
+    - NPP_pft
+    - LEAF_C_pft
+    related_to:
+    - CPLF
+    - CNSHE
+    depends_on:
+    - CPLF
+    calibration_notes: 'MAXIMUM (ceiling) leaf N:C, NOT the operative value (source-verified: rNCLeaf_pft,
+      declared ''maximum leaf N:C'', PlantInfoMod.F90:625). Realized leaf N:C = CNLF*(0.33+0.67*CNPG)
+      (PlantBranchMod.F90:371), so measured leaf N:C (~0.02-0.08) describes the model OUTPUT, not this
+      input — do NOT clamp CNLF to the measured range; calibrate as a ceiling (~0.08-0.20 gN/gC).
+      LEVER SHAPE: CNLF is the NITROGEN branch of the AMIN1 that sets leaf protein
+      (PlantBranchMod.F90:3547) -- see mechanism Leaf_Protein_Colimitation. It and CPLF are two
+      branches of ONE min(), so `related_to: CPLF` understates the coupling: only the SMALLER branch
+      has leverage on photosynthetic capacity, and whichever it is, the other is inert. If nitrogen
+      is currently binding then CNLF is the one with leverage, which is a different claim from any
+      level-based argument about it.'
+    _source: human
   CPLF:
     category: stoichiometry
-    controls: [Prescribed_Tissue_Stoichiometry]
-    affects: [LEAF_P_pft]
-    related_to: [CNLF]
-    calibration_notes: "MAXIMUM (P-replete ceiling) leaf P:C, NOT the operative value (source-verified: rPCLeaf_pft, 'maximum leaf P:C'). Realized leaf P:C = CPLF*(0.33..1) (PlantBranchMod.F90:380). Measured leaf P:C (0.0015-0.006) maps to the realized window, not to CPLF — set CPLF so 0.33*CPLF..CPLF overlaps it (~0.005-0.02 gP/gC). Key P-limitation lever."
-    _source: "human"
-
+    controls:
+    - Prescribed_Tissue_Stoichiometry
+    - Leaf_Protein_Colimitation
+    affects:
+    - LEAF_P_pft
+    - NPP_pft
+    - LEAF_C_pft
+    related_to:
+    - CNLF
+    depends_on:
+    - CNLF
+    calibration_notes: 'MAXIMUM (P-replete ceiling) leaf P:C, NOT the operative value (source-verified:
+      rPCLeaf_pft, ''maximum leaf P:C''). Realized leaf P:C = CPLF*(0.33..1) (PlantBranchMod.F90:380).
+      Measured leaf P:C (0.0015-0.006) maps to the realized window, not to CPLF — set CPLF so 0.33*CPLF..CPLF
+      overlaps it (~0.005-0.02 gP/gC).
+      LEVER SHAPE: inert then lethal, NO usable interior dose -- see mechanism
+      Leaf_Protein_Colimitation. CPLF is the PHOSPHORUS branch of the AMIN1 that sets leaf protein
+      (PlantBranchMod.F90:3547); while NITROGEN is the smaller branch this parameter has no effect on
+      photosynthetic capacity at all. Measured R1 c08: NPP +0.4% at 38% of range, 95.3% collapse by
+      70%, dead at the floor. Do not design a dose ladder on it without first checking which branch
+      binds. Depends on CNLF: its leverage is conditional on the nitrogen branch being the larger one.'
+    _source: human
   UPMXPO:
     category: nutrient
-    controls: [MichaelisMenten_Nutrient_Uptake]
-    affects: [Plant_P_pft, LEAF_P_pft]
-    related_to: [UPKMPO, UPMNPO]
-    calibration_notes: "Max H2PO4 uptake rate. Top-priority for Kougarok P limitation. Low → P-starved plants even with available soil PO4."
-    _source: "human"
+    controls:
+    - MichaelisMenten_Nutrient_Uptake
+    affects:
+    - Plant_P_pft
+    - LEAF_P_pft
+    related_to:
+    - UPKMPO
+    - UPMNPO
+    calibration_notes: 'Maximum root H2PO4 uptake rate, read into VmaxPO4Root_pft at PlantInfoMod.F90:601.
+      Units [g m-2 h-1] per the source declaration (RootDataType.F90:46); the param file''s ''gP m-2 h-1''
+      agrees, unlike its sibling UPKMPO/UPMNPO whose ''uM'' attributes are wrong. It is the UptakeRateMax
+      term of the uptake quadratic and is OXYGEN-SCALED before use (Vmax_Ol = UptakeRateMax * O2Stress),
+      so its effective value collapses under anoxia. The mycorrhizal compartment inherits this same value
+      (StartqMod.F90:523), so it cannot be tuned separately from the root. A low value starves the plant
+      of P even where soil PO4 is available -- but the converse does not follow: raising it does nothing
+      when transport, oxygen or carbon is the binding limiter. See mechanisms.MichaelisMenten_Nutrient_Uptake.
 
+      '
+    _source: human
   UPKMPO:
     category: nutrient
-    controls: [MichaelisMenten_Nutrient_Uptake]
-    affects: [Plant_P_pft]
-    related_to: [UPMXPO, UPMNPO]
-    calibration_notes: "Half-saturation Km for H2PO4 uptake. UNITS ARE g P m-3, NOT uM — the netCDF units attribute is WRONG (source-verified: model consumes it solution-phase in g P m-3, KmPO4Root_pft; 0.05 g P m-3 = 1.6 uM). Higher → weaker uptake at low soil P. Sample with UPMXPO."
-    _source: "human"
-
+    controls:
+    - MichaelisMenten_Nutrient_Uptake
+    affects:
+    - Plant_P_pft
+    related_to:
+    - UPMXPO
+    - UPMNPO
+    calibration_notes: 'Half-saturation Km for H2PO4 uptake. UNITS ARE g P m-3, NOT uM — the netCDF units
+      attribute is WRONG (source-verified: model consumes it solution-phase in g P m-3, KmPO4Root_pft;
+      0.05 g P m-3 = 1.6 uM). Higher → weaker uptake at low soil P. Sample with UPMXPO.'
+    _source: human
   UPMXZH:
     category: nutrient
-    controls: [MichaelisMenten_Nutrient_Uptake]
-    affects: [Plant_N_pft, LEAF_N_pft]
-    related_to: [UPKMZH, UPMXZO]
-    calibration_notes: "Max NH4 uptake rate. Primary N-acquisition lever (NH4 usually dominant over NO3 in cold soils)."
-    _source: "human"
-
+    controls:
+    - MichaelisMenten_Nutrient_Uptake
+    affects:
+    - Plant_N_pft
+    - LEAF_N_pft
+    related_to:
+    - UPKMZH
+    - UPMXZO
+    calibration_notes: Max NH4 uptake rate. Primary N-acquisition lever (NH4 usually dominant over NO3
+      in cold soils).
+    _source: human
   UPMXZO:
     category: nutrient
-    controls: [MichaelisMenten_Nutrient_Uptake]
-    affects: [Plant_N_pft]
-    related_to: [UPMXZH]
-    calibration_notes: "Max NO3 uptake rate. Secondary to NH4 in tundra; keep in the sample for completeness."
-    _source: "human"
-
+    controls:
+    - MichaelisMenten_Nutrient_Uptake
+    affects:
+    - Plant_N_pft
+    related_to:
+    - UPMXZH
+    calibration_notes: Max NO3 uptake rate. Secondary to NH4 in tundra; keep in the sample for completeness.
+    _source: human
   CNSTK:
     category: stoichiometry
-    controls: [Prescribed_Tissue_Stoichiometry]
-    affects: [Plant_N_pft]
-    related_to: [CNLF]
-    calibration_notes: "Stalk/culm+sapwood N:C ratio — REALIZED (a direct C→N multiplier, NOT a max like CNLF; source-verified rNCStalk_pft, PlantBranchMod.F90:374). Default 0.1 sits ABOVE the measured whole-tissue range (woody sapwood ~0.003-0.01, herbaceous culm ~0.01-0.05 gN/gC; Kerkhoff 2005) — likely too N-rich for a structural pool. Low sensitivity for low-stalk PFTs."
-    _source: "human"
-
-  # --- Root architecture / hydraulics / growth (added in the v0.1 root reframe) ---
+    controls:
+    - Prescribed_Tissue_Stoichiometry
+    affects:
+    - Plant_N_pft
+    related_to:
+    - CNLF
+    calibration_notes: Stalk/culm+sapwood N:C ratio — REALIZED (a direct C→N multiplier, NOT a max like
+      CNLF; source-verified rNCStalk_pft, PlantBranchMod.F90:374). Default 0.1 sits ABOVE the measured
+      whole-tissue range (woody sapwood ~0.003-0.01, herbaceous culm ~0.01-0.05 gN/gC; Kerkhoff 2005)
+      — likely too N-rich for a structural pool. Low sensitivity for low-stalk PFTs.
+    _source: human
   RRAD1M:
     category: roots
-    controls: [Root_Hydraulic_Architecture]
-    affects: [Plant_P_pft, Plant_N_pft, CAN_GPP_pft]
-    related_to: [RRAD2M, RSRR]
-    calibration_notes: "Primary root radius (m, Root1stMaxRadius_pft). With RRAD2M sets root surface area per unit C → the uptake/exchange surface and, with RSRR, radial water conductance. Thinner roots → more surface per C but higher radial resistance."
-    _source: "human"
-
+    controls:
+    - Root_Hydraulic_Architecture
+    affects:
+    - Plant_P_pft
+    - Plant_N_pft
+    - CAN_GPP_pft
+    related_to:
+    - RRAD2M
+    - RSRR
+    calibration_notes: Primary root radius (m, Root1stMaxRadius_pft). With RRAD2M sets root surface area
+      per unit C → the uptake/exchange surface and, with RSRR, radial water conductance. Thinner roots
+      → more surface per C but higher radial resistance.
+    _source: human
   RRAD2M:
     category: roots
-    controls: [Root_Hydraulic_Architecture]
-    affects: [Plant_P_pft, Plant_N_pft]
-    related_to: [RRAD1M]
-    calibration_notes: "Secondary (lateral) root radius (m, Root2ndMaxRadius_pft). Laterals do most fine-scale foraging — relevant to nutrient access on a heterogeneous soil."
-    _source: "human"
-
+    controls:
+    - Root_Hydraulic_Architecture
+    affects:
+    - Plant_P_pft
+    - Plant_N_pft
+    related_to:
+    - RRAD1M
+    calibration_notes: Secondary (lateral) root radius (m, Root2ndMaxRadius_pft). Laterals do most fine-scale
+      foraging — relevant to nutrient access on a heterogeneous soil.
+    _source: human
   PORT:
     category: roots
-    controls: [Root_Hydraulic_Architecture]
-    affects: [Plant_N_pft, Plant_P_pft]
-    related_to: [RSRA]
-    calibration_notes: "Root porosity (m3 m-3, RootPorosity_pft) — aerenchyma fraction setting internal O2 transport to roots. Matters in wet/anoxic arctic soils where root O2 stress (OXY_STRESS_pft) limits uptake and respiration."
-    _source: "human"
-
+    controls:
+    - Root_Hydraulic_Architecture
+    affects:
+    - Plant_N_pft
+    - Plant_P_pft
+    related_to:
+    - RSRA
+    calibration_notes: Root porosity (m3 m-3, RootPorosity_pft) — aerenchyma fraction setting internal
+      O2 transport to roots. Matters in wet/anoxic arctic soils where root O2 stress (OXY_STRESS_pft)
+      limits uptake and respiration.
+    _source: human
   RSRR:
     category: roots
-    controls: [Root_Hydraulic_Architecture]
-    affects: [CAN_GPP_pft, Plant_P_pft]
-    related_to: [RSRA, RRAD1M]
-    calibration_notes: "Radial root resistivity (MPa h m-1, per m2 root surface area, RootRadialResist_pft) — resistance to water entering the root. High → root water-uptake stress (RootH2OUptkStress_pvr) → lower turgor → tighter stomata (couples to Turgor_Based_Stomatal_Stress). Key hydraulic lever."
-    _source: "human"
-
+    controls:
+    - Root_Hydraulic_Architecture
+    affects:
+    - CAN_GPP_pft
+    - Plant_P_pft
+    related_to:
+    - RSRA
+    - RRAD1M
+    calibration_notes: Radial root resistivity (MPa h m-1, per m2 root surface area, RootRadialResist_pft)
+      — resistance to water entering the root. High → root water-uptake stress (RootH2OUptkStress_pvr)
+      → lower turgor → tighter stomata (couples to Turgor_Based_Stomatal_Stress). Key hydraulic lever.
+    _source: human
   RSRA:
     category: roots
-    controls: [Root_Hydraulic_Architecture]
-    affects: [CAN_GPP_pft, Plant_P_pft]
-    related_to: [RSRR]
-    calibration_notes: "Axial root resistivity (MPa h m-4, per m root length defined at RRAD2M, RootAxialResist_pft) — resistance to water moving UP the root xylem. Governs how deep roots can supply water to the canopy; pairs with RSRR for the whole root hydraulic path."
-    _source: "human"
-
+    controls:
+    - Root_Hydraulic_Architecture
+    affects:
+    - CAN_GPP_pft
+    - Plant_P_pft
+    related_to:
+    - RSRR
+    calibration_notes: Axial root resistivity (MPa h m-4, per m root length defined at RRAD2M, RootAxialResist_pft)
+      — resistance to water moving UP the root xylem. Governs how deep roots can supply water to the canopy;
+      pairs with RSRR for the whole root hydraulic path.
+    _source: human
   RTFQ:
     category: roots
-    controls: [Root_Growth_Allocation]
-    affects: [Root_C_pft, Plant_P_pft]
-    related_to: [PR, DMRT]
-    calibration_notes: "Root branching frequency (m-1, RootBranchFreq_pft). Higher → denser root system → more uptake surface but higher construction/maintenance cost. Sizes the root network alongside DMRT."
-    _source: "human"
-
+    controls:
+    - Root_Growth_Allocation
+    affects:
+    - Root_C_pft
+    - Plant_P_pft
+    related_to:
+    - PR
+    - DMRT
+    calibration_notes: Root branching frequency (m-1, RootBranchFreq_pft). Higher → denser root system
+      → more uptake surface but higher construction/maintenance cost. Sizes the root network alongside
+      DMRT.
+    _source: human
   PR:
     category: roots
-    controls: [Root_Growth_Allocation]
-    affects: [Root_C_pft]
-    related_to: [RTFQ, PTSHT]
-    calibration_notes: "Nonstructural-C concentration threshold to initiate a new root (gC gC-1, NonstCMinCon2InitRoot_pft). Higher → roots grow only when C is abundant, damping root proliferation under C stress."
-    _source: "human"
-
+    controls:
+    - Root_Growth_Allocation
+    affects:
+    - Root_C_pft
+    related_to:
+    - RTFQ
+    - PTSHT
+    calibration_notes: Nonstructural-C concentration threshold to initiate a new root (gC gC-1, NonstCMinCon2InitRoot_pft).
+      Higher → roots grow only when C is abundant, damping root proliferation under C stress.
+    _source: human
   PTSHT:
     category: roots
-    controls: [Root_Growth_Allocation]
-    affects: [Root_C_pft]
-    related_to: [PR]
-    calibration_notes: "Rate constant equilibrating shoot vs root nonstructural-C (h-1, ShootRootNonstElmConduts_pft). Sets how fast photosynthate reaches root tips — throttles root growth when transport-limited."
-    _source: "human"
-
+    controls:
+    - Root_Growth_Allocation
+    affects:
+    - Root_C_pft
+    related_to:
+    - PR
+    calibration_notes: Rate constant equilibrating shoot vs root nonstructural-C (h-1, ShootRootNonstElmConduts_pft).
+      Sets how fast photosynthate reaches root tips — throttles root growth when transport-limited.
+    _source: human
   DMRT:
     category: allocation
-    controls: [Stage_Prescribed_Allocation]
-    affects: [Root_C_pft, Plant_C_pft]
-    related_to: [DMLF, RTFQ]
-    calibration_notes: "Root dry-matter C production vs nonstructural-C consumption (gC gC-1, RootBiomGrosYld_pft) — the root member of the DM* allocation family (with DMLF/DMSTK/DMRSV). Primary lever for Root_C; trades off against shoot DM* (partition sums)."
-    _source: "human"
-
+    controls:
+    - Stage_Prescribed_Allocation
+    affects:
+    - Root_C_pft
+    - Plant_C_pft
+    related_to:
+    - DMLF
+    - RTFQ
+    calibration_notes: Root dry-matter C production vs nonstructural-C consumption (gC gC-1, RootBiomGrosYld_pft)
+      — the root member of the DM* allocation family (with DMLF/DMSTK/DMRSV). Primary lever for Root_C;
+      trades off against shoot DM* (partition sums).
+    _source: human
   CNRT:
     category: stoichiometry
-    controls: [Prescribed_Tissue_Stoichiometry]
-    affects: [Root_N_pft]
-    related_to: [CNLF, CPRT]
-    calibration_notes: "Root N:C ratio (rNCRoot_pft). Near-linear control of Root_N; sets root litter N quality. Roots are a large N sink — nontrivial for whole-plant N balance."
-    _source: "human"
-
+    controls:
+    - Prescribed_Tissue_Stoichiometry
+    affects:
+    - Root_N_pft
+    related_to:
+    - CNLF
+    - CPRT
+    calibration_notes: Root N:C ratio (rNCRoot_pft). Near-linear control of Root_N; sets root litter N
+      quality. Roots are a large N sink — nontrivial for whole-plant N balance.
+    _source: human
   CPRT:
     category: stoichiometry
-    controls: [Prescribed_Tissue_Stoichiometry]
-    affects: [Root_P_pft]
-    related_to: [CPLF, CNRT]
-    calibration_notes: "Root P:C ratio (rPCRootr_pft). Near-linear control of Root_P — relevant for P-limited arctic sites where root P demand competes with leaf P."
-    _source: "human"
-
+    controls:
+    - Prescribed_Tissue_Stoichiometry
+    affects:
+    - Root_P_pft
+    related_to:
+    - CPLF
+    - CNRT
+    calibration_notes: Root P:C ratio (rPCRootr_pft). Near-linear control of Root_P — relevant for P-limited
+      arctic sites where root P demand competes with leaf P.
+    _source: human
   RCCZ:
     category: microbial_decomposition
-    controls: [Microbial_Mortality_Recycling]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [RCCY, CKC, SPOMC]
-    calibration_notes: |
-      Minimum fraction of microbial-turnover carbon recycled back into living biomass rather
-      than routed to litterfall/decomposition (default 0.167, NitroPars.F90:169). SINGLE LARGEST
-      elementary effect on CO2_SEMIS_FLX_col of all 23 soil-BGC parameters tested at BioCON
-      (mu*=9.55, negative sign: more recycling = less Fs) but sigma=23.25 >> mu* -- strongly
-      interaction-dominated, do not treat as a stable linear lever. Implicated (with SPOMC) in
-      every residual numerical failure of a Morris v2 screen after TSORP was tightened -- if
-      widening beyond a tested [0.25,4.0]x range, expect a nonlinear joint instability boundary
-      with SPOMC/SPORC, not an independently safe range. bound_source: empirical (Morris v1/v2
-      screen, memory/logs/20260811g,h_*.md, 20260812a,b_*.md on adapter-kit) -- no literature
-      pass done yet.
-    _source: "human"
+    controls:
+    - Microbial_Mortality_Recycling
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - RCCY
+    - CKC
+    - SPOMC
+    calibration_notes: 'Minimum fraction of microbial-turnover carbon recycled back into living biomass
+      rather than routed to litterfall/decomposition (default 0.167, NitroPars.F90:169). Enters the recycling
+      fraction as RCCC = RCCZ + max(CCC,C3C)*RCCY. MODEL PROPERTY: strongly interaction-dominated in screens,
+      so it is not a stable linear lever, and it participates in a nonlinear joint instability boundary
+      with SPOMC/SPORC rather than having an independently safe range. Site-derived empirics for this
+      parameter (mu*, Morris rank, measured thresholds) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   RCCY:
     category: microbial_decomposition
-    controls: [Microbial_Mortality_Recycling]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [RCCZ, CKC]
-    calibration_notes: |
-      The "maximum" partner to RCCZ's "minimum" in the same recycling-fraction equation
-      (RCCC=RCCZ+max(CCC,C3C)*RCCY, default 0.833, NitroPars.F90:170) -- NOT swept in the BioCON
-      Morris screen, held at default throughout. A candidate for a future screen given RCCZ's
-      outsized effect runs through this same equation.
-    _source: "human"
+    controls:
+    - Microbial_Mortality_Recycling
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - RCCZ
+    - CKC
+    calibration_notes: 'The ''maximum'' partner to RCCZ''s ''minimum'' in the same recycling-fraction
+      equation (RCCC = RCCZ + max(CCC,C3C)*RCCY, default 0.833, NitroPars.F90:170). Site-derived empirics
+      for this parameter (mu*, Morris rank, measured thresholds) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   CKC:
     category: microbial_decomposition
-    controls: [Microbial_Mortality_Recycling]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [RCCZ, RCCY]
-    calibration_notes: |
-      Half-saturation-like constant controlling C3C=1/(1+CXC/CKC), a reserve-availability scalar
-      in the mortality-recycling equation (default 0.001, NitroPars.F90:38). RUNTIME-VERIFIED at
-      BioCON (2026-08-12 debug print, memory/logs/20260812b_*.md on adapter-kit): at this
-      default scale, C3C is 80-400x smaller than the OTHER term (CCC, stoichiometric N/P
-      sufficiency) in max(CCC,C3C), so CKC has essentially NO effect on the realized recycling
-      fraction here -- do not assume CKC is an effective independent lever without first
-      checking which term of max(CCC,C3C) binds at the target site/state. Secondary destabilizer
-      alongside TSORP in the v1 Morris screen (tightened to [0.25,2.125]x for v2).
-    _source: "human"
+    controls:
+    - Microbial_Mortality_Recycling
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - RCCZ
+    - RCCY
+    calibration_notes: 'Half-saturation-like constant controlling C3C = 1/(1+CXC/CKC), a reserve-availability
+      scalar in the mortality-recycling equation (default 0.001, NitroPars.F90:38). MODEL PROPERTY, and
+      the one that governs whether it is a lever at all: C3C competes against CCC (stoichiometric N/P
+      sufficiency) inside max(CCC,C3C), so CKC only matters where C3C is the binding term. ALWAYS check
+      which term binds at the target site and state before treating CKC as an independent lever. Site-derived
+      empirics for this parameter (mu*, Morris rank, measured thresholds) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   SPOMC:
     category: microbial_decomposition
-    controls: [Microbial_Mortality_Recycling]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [SPORC, RCCZ, RCCY]
-    calibration_notes: |
-      Specific decomposition/mortality rate constant for live microbial biomass (default
-      (1.0e-2, 1.0e-3) h-1 for kinetic vs. structural components, NitroPars.F90:211). Feeds
-      RKillOMHeter=mBiomeHeter*SPOMX, an EXPLICIT, UNCLAMPED pool-times-rate update (no cap
-      against the standing biomass pool) -- structurally the same numerical-instability class as
-      TSORP. Positive sign on CO2_SEMIS_FLX_col (mu*=1.43; faster turnover feeds more material
-      into the decomposition/respiration pathway). Implicated (with RCCZ) in every residual
-      numerical failure of the Morris v2 screen. bound_source: empirical (Morris v1/v2 screen) --
-      no literature pass done yet.
-    _source: "human"
+    controls:
+    - Microbial_Mortality_Recycling
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - SPORC
+    - RCCZ
+    - RCCY
+    calibration_notes: 'Specific decomposition/mortality rate constant for live microbial biomass (default
+      (1.0e-2, 1.0e-3) h-1 for kinetic vs. structural components, NitroPars.F90:211). Feeds RKillOMHeter=mBiomeHeter*SPOMX,
+      an EXPLICIT, UNCLAMPED pool-times-rate update (no cap against the standing biomass pool) -- structurally
+      the same numerical-instability class as TSORP. Positive sign on CO2_SEMIS_FLX_col by construction:
+      faster turnover feeds more material into the decomposition/respiration pathway. Implicated (with
+      RCCZ) in every residual numerical failure of the Morris v2 screen. bound_source: empirical (Morris
+      v1/v2 screen) -- no literature pass done yet. Site-derived empirics (mu*, Morris ranks, measured
+      thresholds) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on 2026-09-06:
+      they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   SPORC:
     category: microbial_decomposition
-    controls: [Necromass_Hydrolysis]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [SPOMC]
-    calibration_notes: |
-      Specific decomposition rate constant for dead microbial residue (necromass), default
-      (7.5, 1.5) g C g-1 N h-1 (NitroPars.F90:210). Ranks #1 by mu* (4.82, positive sign) on
-      CO2_SEMIS_FLX_col at BioCON, but its pathway (dHyd=min(1,...), flux=min(pool*dHyd,pool))
-      is DOUBLE-clamped and numerically SAFE -- unlike SPOMC/TSORP, it cannot overshoot its
-      pool. Co-occurs with RCCZ/SPOMC in every failing Morris trajectory but is very likely an
-      innocent trajectory-geometry bystander, not causal (verified by reading its source
-      equation, memory/logs/20260811h_*.md 2026-08-12 update on adapter-kit).
-    _source: "human"
+    controls:
+    - Necromass_Hydrolysis
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - SPOMC
+    calibration_notes: 'Specific decomposition rate constant for dead microbial residue (necromass), default
+      (7.5, 1.5) gC gN-1 h-1 (NitroPars.F90:210). MODEL PROPERTY: its pathway (dHyd = min(1,...), flux
+      = min(pool*dHyd,pool)) is DOUBLE-clamped and numerically SAFE -- unlike SPOMC/TSORP it cannot overshoot
+      its pool, so co-occurrence with failing screen trajectories is likely bystander geometry rather
+      than cause. Site-derived empirics for this parameter (mu*, Morris rank, measured thresholds) were
+      moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on 2026-09-06: they are
+      EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   VMXO:
     category: microbial_decomposition
-    controls: [Heterotroph_Aerobic_Catabolism]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [VMXF, OQKM, OQKA]
-    calibration_notes: |
-      Specific oxidation rate for aerobic bacteria (default 0.125 g C g-1 C h-1,
-      NitroPars.F90:152). Direct, mechanistically clean CO2-production rate: more oxidation =
-      more CO2 (positive sign, mu*=2.37). Ranks in the Morris top-6 at BioCON. Part of the "b"
-      knob (with VMXF/DCKM0/DCKML) already empirically proven to move Fs in R2 prior to the
-      Morris screen (memory/logs/20260810c_*.md on adapter-kit).
-    _source: "human"
+    controls:
+    - Heterotroph_Aerobic_Catabolism
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - VMXF
+    - OQKM
+    - OQKA
+    calibration_notes: 'Specific oxidation rate for aerobic bacteria (default 0.125 gC gC-1 h-1, NitroPars.F90:152).
+      Direct, mechanistically clean CO2-production rate: more oxidation means more CO2, so the sign on
+      CO2_SEMIS_FLX_col is positive. One of the ''b'' knobs together with VMXF/DCKM0/DCKML. Site-derived
+      empirics for this parameter (mu*, Morris rank, measured thresholds) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   VMXF:
     category: microbial_decomposition
-    controls: [Heterotroph_Aerobic_Catabolism]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [VMXO]
-    calibration_notes: |
-      Specific oxidation rate for fungi and fermenters (default 0.125 g C g-1 C h-1,
-      NitroPars.F90:153). Same mechanism as VMXO but for the fungal/fermentative pathway; only
-      1/3 of fermented C becomes CO2 for fermenters specifically (the rest H2/acetate).
-    _source: "human"
+    controls:
+    - Heterotroph_Aerobic_Catabolism
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - VMXO
+    calibration_notes: 'Specific oxidation rate for fungi and fermenters (default 0.125 g C g-1 C h-1,
 
+      NitroPars.F90:153). Same mechanism as VMXO but for the fungal/fermentative pathway; only
+
+      1/3 of fermented C becomes CO2 for fermenters specifically (the rest H2/acetate).
+
+      '
+    _source: human
   RMOM:
     category: microbial_decomposition
-    controls: [Microbial_Maintenance_Respiration]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [VMXO]
-    calibration_notes: |
-      Specific maintenance-respiration rate constant (default 0.010 g C g-1 N h-1,
-      NitroPars.F90:209) -- the baseline biomass-proportional CO2 "tax" independent of growth.
-      Positive sign on CO2_SEMIS_FLX_col (mu*=3.24), ranks in the Morris top-6 at BioCON. Direct
-      mechanism, same interpretive family as VMXO (more respiration = more CO2), just via
-      maintenance rather than growth catabolism.
-    _source: "human"
+    controls:
+    - Microbial_Maintenance_Respiration
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - VMXO
+    calibration_notes: 'Specific maintenance-respiration rate constant (default 0.010 gC gN-1 h-1, NitroPars.F90:209)
+      -- the baseline biomass-proportional CO2 ''tax'', independent of growth. Consumed as RMOMK by every
+      microbial catabolism routine, so it produces CO2 directly and its sign on CO2_SEMIS_FLX_col is positive.
+      Same interpretive family as VMXO (more respiration means more CO2), via maintenance rather than
+      growth catabolism. Site-derived empirics for this parameter (mu*, Morris rank, measured thresholds)
+      were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on 2026-09-06: they
+      are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   GO2X:
     category: microbial_decomposition
-    controls: [Growth_Efficiency_Energetics]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [EOMC, EOMG]
-    calibration_notes: |
-      Free-energy yield of the DOC->CO2 redox reaction (default 37.5 kJ g-1 C, NitroPars.F90:230).
-      A THERMODYNAMIC/carbon-use-efficiency lever, not a rate constant: higher yield per unit C
-      oxidized means higher microbial CUE, so LESS carbon needs to be burned as CO2 to support
-      the same growth flux -- NEGATIVE sign on CO2_SEMIS_FLX_col (mu*=3.15). Ranks in the Morris
-      top-6 at BioCON. Do not confuse with a rate constant; it modulates the maintenance/growth
-      respiration split via EO2X=1/(1+GO2X/EOMC), EO2G=1/(1+GO2X/EOMG).
-    _source: "human"
+    controls:
+    - Growth_Efficiency_Energetics
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - EOMC
+    - EOMG
+    calibration_notes: 'Free-energy yield of the DOC->CO2 redox reaction (default 37.5 kJ gC-1, NitroPars.F90:230).
+      A THERMODYNAMIC / carbon-use-efficiency lever, NOT a rate constant: a higher yield per unit C oxidized
+      means higher microbial CUE, so LESS carbon is burned as CO2 to support the same growth flux, giving
+      a NEGATIVE sign on CO2_SEMIS_FLX_col. It modulates the maintenance/growth respiration split via
+      EO2X = 1/(1+GO2X/EOMC) and EO2G = 1/(1+GO2X/EOMG). Site-derived empirics for this parameter (mu*,
+      Morris rank, measured thresholds) were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json
+      on 2026-09-06: they are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   TSORP:
     category: microbial_decomposition
-    controls: [DOM_Sorption_Desorption]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [HSORP, RCCZ, SPOMC]
-    calibration_notes: |
-      DOM sorption-desorption rate constant (default 0.5 h-1, NitroPars.F90:110). NUMERICAL
-      HAZARD, CONFIRMED EMPIRICALLY: an explicit, unclamped exchange equation. A 23-parameter
-      Morris screen at BioCON found a sharp stability cliff -- 87-91% simulation success at
-      <=1.5x default, 0% at >=2.75x. Effect on Fs itself is otherwise small/indirect (via the
-      DOC pool sorption feeds). bound_source: empirical safety range [0.25,1.5]x, NOT literature
-      or a naive +/-50% guess (memory/logs/20260811h_*.md on adapter-kit) -- widen only after
-      mapping the failure boundary more precisely, and jointly with RCCZ/SPOMC.
-    _source: "human"
+    controls:
+    - DOM_Sorption_Desorption
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - HSORP
+    - RCCZ
+    - SPOMC
+    calibration_notes: 'DOM sorption-desorption rate constant (default 0.5 h-1, NitroPars.F90:110). NUMERICAL
+      HAZARD, and this half is a MODEL property that applies to every case: it is an EXPLICIT, UNCLAMPED
+      exchange equation, so large multiples of the default drive a sharp simulation-stability cliff rather
+      than a graceful degradation. Its effect on Fs itself is small and indirect (via the DOC pool the
+      sorption feeds). Treat any widening as a stability question first and a calibration question second,
+      jointly with RCCZ/SPOMC. Site-derived empirics for this parameter (mu*, Morris rank, measured thresholds)
+      were moved to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on 2026-09-06: they
+      are EcoSIM_BioCON measurements, not model properties.
 
+      '
+    _source: human
   HSORP:
     category: microbial_decomposition
-    controls: [DOM_Sorption_Desorption]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [TSORP]
-    calibration_notes: |
-      Linear sorption partition coefficient (default 1.0, NitroPars.F90:111). Not implicated in
-      the TSORP numerical-hazard finding on its own; swept in the same Morris screen without
-      distinct instability signature.
-    _source: "human"
+    controls:
+    - DOM_Sorption_Desorption
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - TSORP
+    calibration_notes: 'Linear sorption partition coefficient (default 1.0, NitroPars.F90:111). Not implicated
+      in
 
+      the TSORP numerical-hazard finding on its own; swept in the same Morris screen without
+
+      distinct instability signature.
+
+      '
+    _source: human
   SPOSC:
     category: microbial_decomposition
-    controls: [SOM_Hydrolysis]
-    affects: [CO2_SEMIS_FLX_col]
-    related_to: [DCKM0, DCKML, DCKI]
-    calibration_notes: |
-      Specific decomposition rate constant for solid SOM (litter/POM/humus), per kinetic
-      component per complex (MicBGCPars.F90:319-325). CONFIRMED NULL FINDING at BioCON despite
-      being documented as "the single biggest decomposition constant": ZERO measurable effect on
-      CO2_SEMIS_FLX_col across a 32x tested range, in four independent regimes, confirmed by a
-      runtime debug print (readv_SPOSC/SPOSC_in/SPOSC all exactly match file-scaled values at
-      every stage -- no wiring gap). Root cause: RHydrolysisScalCmpK (the term SPOSC multiplies)
-      is itself ~1e-6 at this site for reasons unrelated to SPOSC (set by DFNS/OQCI/BulkSOMC).
-      Site-specific magnitude finding, not a universal claim -- re-verify RHydrolysisScalCmpK's
-      magnitude before excluding SPOSC elsewhere. EXCLUDED from R3's BioCON parameter list on
-      this basis. use_cases/EcoSIM_BioCON/reports/20260811a_SPOSC_Investigation_Summary/ on
-      adapter-kit (full investigation, six probes + debug print).
-    _source: "human"
+    controls:
+    - SOM_Hydrolysis
+    affects:
+    - CO2_SEMIS_FLX_col
+    related_to:
+    - DCKM0
+    - DCKML
+    - DCKI
+    calibration_notes: 'Specific decomposition rate constant for solid SOM (litter/POM/humus), per kinetic
+      component per complex (MicBGCPars.F90:319-325). MODEL PROPERTY governing whether it is a live lever
+      anywhere: SPOSC multiplies RHydrolysisScalCmpK, which is set by DFNS/OQCI/BulkSOMC and can itself
+      be vanishingly small at a given site -- so ALWAYS check that term''s magnitude before concluding
+      anything about SPOSC''s leverage. A site-specific magnitude finding about SPOSC is never a universal
+      claim. Site-derived empirics for this parameter (mu*, Morris rank, measured thresholds) were moved
+      to use_cases/EcoSIM_TeRaCON/memory/gained_knowledge/parameters.json on 2026-09-06: they are EcoSIM_BioCON
+      measurements, not model properties.
+
+      '
+    _source: human

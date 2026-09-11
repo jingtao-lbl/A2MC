@@ -577,9 +577,18 @@ def main():
         fates_kb_path = kb_paths[0]
         if args.rebuild or not Path(g_path).exists():
             print("Building knowledge graph (two-layer construction)...\n")
+            # PASS THE RESOLVED CURATED YAML. Omitting it was a real defect, not a style
+            # question: `curated_yaml_path` defaults to None and `graph_builder.py` then loads
+            # DEFAULT_CURATED_RELATIONSHIPS_PATH, so every profile's graph was overlaid from the
+            # shared rag/data/curated_relationships.yaml while `resolve_curated_yaml()` above
+            # picked the per-milestone file, printed it, and handed it only to Phase-B chunk
+            # tagging. The two files differ in content, so the graph and the chunks disagreed
+            # about the model. Found 2026-09-08 by the coverage audit
+            # (dev_logs_adapterkit/20260908j); fixed on PI direction.
             kg = build_fates_graph(
                 knowledge_base_path=fates_kb_path,
                 include_pft_specific=True,
+                curated_yaml_path=curated_yaml,
                 param_cdl_path=fates_param_file,
                 output_cdl_path=output_var_file,
                 elm_output_cdl_path=elm_output_var_file,

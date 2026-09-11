@@ -146,9 +146,32 @@ $PY scripts/build_rag_index.py --rebuild --graph-only --test
 $PY -c "from rag import HybridRetriever; r=HybridRetriever(auto_build=False); print(r.get_targeted_context(param_names=['fates_rad_leaf_clumping_index'])[:1200])"
 ```
 
+> **THE COMMAND ABOVE IS FATES'S — route by model (`rebuild-rag` Step 0).** EcoSIM is
+> `$PY scripts/build_ecosim_rag.py --graph-only`; **PFLOTRAN has no `--graph-only`**, so a curated
+> edit there is a full `--rebuild`. The retrieval spot-check is FATES-shaped too: `HybridRetriever`
+> is the FATES plumbing, and an adapter profile is verified with
+> `$PY tools/check_ecosim_rag_queries.py --profile <profile>` — model-generic despite its filename,
+> and carrying both a count-regression check and the golden-query assertions.
+>
+> **And the file you edited is not in the same place for every model.** Adapters keep the curated
+> overlay at `models/<model>/curated_seed.yaml`; only the FATES profiles use
+> `rag/data/curated_relationships_<profile>.yaml`. Read the active profile's
+> `rag/metadata/<profile>.json`, which names the file its graph was built from, rather than guessing
+> — measured 2026-09-06: an adapter model's curated seed was declared missing on the strength of an
+> `ls rag/data/`, when it existed and was what had built that graph.
+>
+> **Verify the edit landed, by arithmetic.** The edge count should rise by exactly the number of
+> edges you authored. A smaller rise means an endpoint did not resolve and the edge was silently
+> dropped (`graph_builder.py:414`) — the build logs `skipped edge: endpoint not found` and then
+> succeeds.
+
 If you added or renamed YAML relationships, run **`validate-rag-chain`** Step 2
 (`yaml_wiki_validator`) — it catches phantom params (in YAML, not in the param file) and
-unresolved `code_reference`s.
+unresolved `code_reference`s — **and its Step 4b**,
+`$PY tools/validate_seed_coverage.py --seed <the file you edited>`, which asserts every category
+still has a mechanism and every calibratable parameter is still reachable. An injection that adds a
+mechanism without attaching it to a category leaves an orphan, which that gate reports and no other
+check does.
 
 ## Step 7 — record it
 
@@ -177,6 +200,8 @@ manuscript knowledge (CLAUDE.md Rule 3); the audit trail matters as much as for
   and which is why one case reached thirty experiment cycles with an empty store.
 
 ## Changelog
+
+- 2026-09-06: **Step 6 routes the rebuild and the verification BY MODEL, and names the seed-coverage gate.** PI-directed. The step hardcoded FATES's build command and a `HybridRetriever` spot-check, so on an adapter model both are wrong — EcoSIM uses its own builder and PFLOTRAN has no `--graph-only` at all, and adapter profiles are verified with the model-generic `tools/check_ecosim_rag_queries.py`. It also assumed the edited file lives in `rag/data/`, while adapters keep it at `models/<model>/curated_seed.yaml`; measured 2026-09-06, an adapter's curated seed was declared missing on the strength of an `ls rag/data/` when it existed and had built that graph. Adds the arithmetic check that the edge count must rise by exactly the number of edges authored, since a dropped edge logs one line and the build then succeeds, and points at `tools/validate_seed_coverage.py` (previously named by no skill) for the orphan-mechanism case no other check reports. No `description` changed.
 
 - 2026-07-08: Added a **repo-root path-anchoring note** to Step 0 — the KB files you edit are relative to the
   repo root; anchor via `A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel)}"` so you don't edit a stray

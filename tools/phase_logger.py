@@ -438,7 +438,54 @@ class PhaseLogger:
         letter = existing if existing else self._offline_letter(today)
         stem = f"{today}{letter}{suffix}"
         self._offline_stems[key] = stem
+        if not existing:
+            self._warn_if_slot_already_used(today, phase_tok, rr, loop, desc, stem)
         return stem
+
+    def _warn_if_slot_already_used(self, today, phase_tok, rr, loop, desc, stem):
+        """Warn when a SECOND stem is minted today for the same phase/round/cycle/iteration.
+
+        THE ORPHAN-FOLDER BUG, at its actual source. `topic_stem` keys the letter on the
+        DESCRIPTOR, so `topic_artifact_dir(4, descriptor)` and `log_hypothesis(title=...)` mint
+        two DIFFERENT stems whenever those two strings differ -- and they usually do, because one
+        reads like a folder name and the other like a title. The folder is then orphaned: it has
+        no `logs/{stem}.md`, and nothing notices until a checker runs later.
+
+        This is not hypothetical and it is not fixed by telling people to use
+        `topic_artifact_dir()`. On 2026-09-05 a session repaired one such orphan by hand, wrote a
+        checker for it, proposed pointing four skills at `topic_artifact_dir()` as the
+        prevention -- and then reproduced the identical bug an hour later while USING
+        `topic_artifact_dir()`, because the descriptor and the title differed. The advice was
+        incomplete: the contract is not "use the helper", it is "pass the helper and the log
+        method THE SAME STRING".
+
+        A warning rather than an error: writing two genuinely different logs for one phase and
+        iteration on one day is unusual but legitimate, and this cannot tell the two apart.
+        """
+        slot = f"_{phase_tok}_{rr}{loop}_"
+        try:
+            logs = {q.name[:-3] for q in self.log_dir.glob(f"{today}*{slot}*.md")}
+            folders = {q.name for q in
+                       (self.site_dir / "memory" / "phase_results").glob(f"{today}*{slot}*")
+                       if q.is_dir()}
+        except OSError:
+            return
+        # ONLY an ARTIFACT FOLDER THAT HAS NO LOG YET is the orphan-in-the-making. A prior stem
+        # that already owns its log is a legitimate second topic in the same slot -- two different
+        # screening questions on one day -- and warning about it is noise that teaches people to
+        # ignore the warning. Narrowed to this after the first version fired on exactly that
+        # legitimate case in the test suite.
+        prior = sorted(f for f in folders - logs if f != stem and not f.endswith(desc))
+        if not prior:
+            return
+        warnings.warn(
+            f"PhaseLogger is minting a SECOND stem today for the same slot ({phase_tok} {rr}"
+            f"{loop}).\n  already present: {prior[0]}\n  minting now:     {stem}\n"
+            f"If these are meant to be the same topic, the artifact folder and the log will NOT "
+            f"pair and the folder will be orphaned. topic_artifact_dir(phase, X) and "
+            f"log_*(title=Y) mint from X and Y, so PASS THE SAME STRING TO BOTH. If they really "
+            f"are two different topics, ignore this.",
+            stacklevel=3)
 
     def _existing_offline_letter(self, today: str, suffix: str):
         """Letter of an already-written log/artifact dir with this exact stem suffix, or None.
@@ -455,6 +502,27 @@ class PhaseLogger:
                 if name.endswith(suffix):
                     return self._offline_seq(name)
         return None
+
+    def _figure_rel_dir(self, phase: int, title: str) -> str:
+        """Relative directory a log should link its figures through.
+
+        OFFLINE the log is `memory/logs/{stem}.md` and its figures are in the PAIRED
+        `memory/phase_results/{stem}/`, so the link is `../phase_results/{stem}`. Before this
+        existed both figure blocks hardcoded `phase3_diagnosis`, so an offline PHASE-4 log embedded
+        its figure through `../../phase_results/phase3_diagnosis/`, a path that does not exist for
+        any offline log and resolves to nothing in every renderer. Measured 2026-09-08 on
+        EcoSIM_Lusignan R1b c13 iter09, where the body's own correctly-pathed embed sat 96 lines
+        above a broken duplicate of the same figure.
+
+        ONLINE the string is returned exactly as it was, deliberately: this branch only ever adds,
+        and the online layout is served by the FATES path that nothing here has evidence about.
+        """
+        if self._offline:
+            return f"../phase_results/{self.topic_stem(phase, title)}"
+        _session_id = os.environ.get('A2MC_SESSION_ID', '')
+        if _session_id:
+            return f"../../phase_results/{_session_id}/phase3_diagnosis"
+        return "../../phase_results/phase3_diagnosis"
 
     def topic_artifact_dir(self, phase: int, descriptor: str, create: bool = True) -> Path:
         """Offline per-topic artifact folder use_cases/{site}/memory/phase_results/{stem}/.
@@ -1205,8 +1273,14 @@ class PhaseLogger:
                 cause = rc.get('cause', '')
                 mechanism = rc.get('mechanism', '')
                 conf = rc.get('confidence', 0)
+                # A caller may express confidence qualitatively ("high"). Render it rather than
+                # crashing the whole log write on a format code, which is what `:.2f` did.
+                try:
+                    conf_s = f"{float(conf):.2f}"
+                except (TypeError, ValueError):
+                    conf_s = str(conf)
                 affected = ', '.join(rc.get('affected_targets', []))
-                content += f"| {rank} | {cause} | {mechanism} | {conf:.2f} | {affected} |\n"
+                content += f"| {rank} | {cause} | {mechanism} | {conf_s} | {affected} |\n"
             content += "\n"
 
         if key_insights:
@@ -1445,14 +1519,13 @@ class PhaseLogger:
                     elif isinstance(entry, str):
                         unmatched_analyses.append(entry)
 
-            _session_id = os.environ.get('A2MC_SESSION_ID', '')
-            if _session_id:
-                _fig_rel_dir = f"../../phase_results/{_session_id}/phase3_diagnosis"
-            else:
-                _fig_rel_dir = "../../phase_results/phase3_diagnosis"
+            _fig_rel_dir = self._figure_rel_dir(3, title)
             for fig_path in figure_paths:
                 fig_name = Path(fig_path).name
-                content += f"![{fig_name}]({_fig_rel_dir}/{fig_name})\n\n"
+                # EMPTY alt text plus a bold caption beneath is the house rule
+                # (feedback_report_figure_empty_alt_text); a filename as alt text is read aloud by
+                # a screen reader and printed by every renderer that cannot load the image.
+                content += f"![]({_fig_rel_dir}/{fig_name})\n\n"
 
                 # Find matching analysis by checking if any keyword is in the filename
                 fig_lower = fig_name.lower()
@@ -1561,8 +1634,8 @@ class PhaseLogger:
 
         for param in parameters_to_modify:
             name = _first(param, 'name', 'parameter', 'param')
-            current = _first(param, 'current', 'current_value', 'from', 'base')
-            proposed = _first(param, 'proposed', 'proposed_value', 'to', 'new')
+            current = _first(param, 'current', 'current_value', 'base_value', 'from', 'base')
+            proposed = _first(param, 'proposed', 'proposed_value', 'target_value', 'to', 'new')
             rationale = param.get('rationale', '')
             if name is None and current is None and proposed is None:
                 # Nothing recognised. Print the dict rather than three placeholders, so the
@@ -1648,14 +1721,10 @@ class PhaseLogger:
 ## Diagnostic Figures
 
 """
-            _session_id = os.environ.get('A2MC_SESSION_ID', '')
-            if _session_id:
-                _fig_rel_dir = f"../../phase_results/{_session_id}/phase3_diagnosis"
-            else:
-                _fig_rel_dir = "../../phase_results/phase3_diagnosis"
+            _fig_rel_dir = self._figure_rel_dir(4, title)
             for fig_path in figure_paths:
                 fig_name = Path(fig_path).name
-                content += f"![{fig_name}]({_fig_rel_dir}/{fig_name})\n\n"
+                content += f"![]({_fig_rel_dir}/{fig_name})\n\n"
 
         if metadata:
             content += f"""

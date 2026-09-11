@@ -42,8 +42,12 @@ When Claude Code starts in this repo, the skills are auto-discovered. The `descr
 
 Each skill declares a `modes:` block (see below) so the agent can check it against the active
 run configuration (`python tools/describe_mode.py`). Most skills are mode-agnostic (`any`); the
-FATES Morris-ensemble analysis skills (`summarize-`/`compare-calibration-rounds`,
-`offline-testing-workflow`) are `requires_fates: true` — the gate keeps them out of ELM-only mode.
+FATES Morris-ensemble analysis skill `offline-testing-workflow` is `requires_fates: true` — the
+gate keeps it out of ELM-only mode. `summarize-calibration-round` and `compare-calibration-rounds`
+were `requires_fates: true` until 2026-08-24 and are now generic: their CONTRACT is model-agnostic
+and only the figure/screen BACKEND is per model. This paragraph and the three other registry
+surfaces still said FATES for those two until 2026-09-05, so a reader had no way to learn from the
+docs that an adapter model could run them.
 
 | Skill | Modes | Triggers when |
 |---|---|---|
@@ -59,7 +63,7 @@ FATES Morris-ensemble analysis skills (`summarize-`/`compare-calibration-rounds`
 | [arm-hpc-monitoring](arm-hpc-monitoring/SKILL.md) | any (HPC) | Session starts (or resumes after compaction) while an HPC ensemble is in flight. |
 | [restart-failed-jobs](restart-failed-jobs/SKILL.md) | any (HPC) | Jobs failed in an ensemble/experiment and need restart (or archive if model failure). |
 | [restart-adapter-ensemble](restart-adapter-ensemble/SKILL.md) | any (HPC) | Recover failed cases in a NON-CIME adapter ensemble (EcoSIM/PFLOTRAN/ATS) — classify why they died, persist the case list, relaunch only what is missing. The non-CIME counterpart to `restart-failed-jobs`, whose scripts hardcode ELM's restart glob and CIME's submission path. |
-| [diagnose-forensics](diagnose-forensics/SKILL.md) | any | Investigate an anomaly/outlier/too-good "best" case — real or artifact? — then root-cause it. |
+| [diagnose-forensics](diagnose-forensics/SKILL.md) | any | Triage ONE anomaly/outlier/too-good "best" case — real or artifact? — then root-cause it. Reactive and single-case; a whole round's failing targets belong to `phase3-diagnosis`. |
 | [scientific-analysis](scientific-analysis/SKILL.md) | any | Manuscript-supporting investigation → figure → ana_log (question → data → statistic → figure → evidence). |
 | [markdown-to-pdf](markdown-to-pdf/SKILL.md) | any | Convert a markdown ana_log/report/note to a shareable PDF or Word `.docx` via pandoc. Prose, not slide decks (use Marp). |
 | [literature-review](literature-review/SKILL.md) | any | Cited literature review via `paper-search-mcp` (search → triage → extract → synthesis). PARAMETER-BOUNDS mode (published value ranges → refine a param list's `lower`/`upper`) or MANUSCRIPT topic review. Validated DOIs, no fabrication. NOT a single-citation lookup. |
@@ -71,14 +75,15 @@ FATES Morris-ensemble analysis skills (`summarize-`/`compare-calibration-rounds`
 | [write-report](write-report/SKILL.md) | any | Integrated, self-contained report for a zero-context human reader (facts-first, embedded figures, provenance). |
 | [build-rag-from-scratch](build-rag-from-scratch/SKILL.md) | any | Construct the RAG/GraphRAG knowledge layer from scratch (for a new model or a fresh build). |
 | [rebuild-rag](rebuild-rag/SKILL.md) | any | Rebuild/repair a model's RAG index — **one build script per model** (FATES/EcoSIM/PFLOTRAN), reindex, wiki bump, and how to actually COMMIT it. |
+| [wire-knowledge-graph](wire-knowledge-graph/SKILL.md) | any | Audit/fix WHICH curated relations reach a model's knowledge graph — one `build_graph()` per model reading its own seed field names, and a field nothing reads fails silently. |
 | [generate-codebase-wiki](generate-codebase-wiki/SKILL.md) | any | Generate a source-grounded codebase wiki for a model. |
 | [validate-rag-chain](validate-rag-chain/SKILL.md) | any | Validate the RAG chain with the three validators, in order. |
 | [inject-knowledge](inject-knowledge/SKILL.md) | any | Inject curated domain knowledge into the KB via the curated-YAML overlay. |
 | [port-param-file](port-param-file/SKILL.md) | any | Port a calibrated/tuned param file across model/API versions (e.g. api-31 `.nc` → api-43 `.json`) — remap PFT identity by functional type, transfer overlapping tuned values. Invoke on "port/migrate/convert params to api-XX". |
 | [add-skill](add-skill/SKILL.md) | any | Scaffold + register a new skill (frontmatter + ## Changelog + both registries + drift check). |
 | [refine-skill](refine-skill/SKILL.md) | any | Refine an existing skill from accumulated evidence, human-gated (propose → approve → apply). |
-| [summarize-calibration-round](summarize-calibration-round/SKILL.md) | FATES | One-round summary: ensemble figures + evaluation + Morris μ* sensitivity → markdown/PDF. |
-| [compare-calibration-rounds](compare-calibration-rounds/SKILL.md) | FATES | Compare rounds R1…RN + targets (top-N biomass + per-target Morris μ* overlays). |
+| [summarize-calibration-round](summarize-calibration-round/SKILL.md) | any | One-round summary: ensemble figures + evaluation + sensitivity + the round's MECHANISM inventory → markdown/PDF. |
+| [compare-calibration-rounds](compare-calibration-rounds/SKILL.md) | any | Cross-round PARAMETER and MECHANISM ledgers (R1…RN) + performance/sensitivity overlays; required from R1. |
 | [ecosim-run-workflow](ecosim-run-workflow/SKILL.md) | any | Run + test EcoSIM (non-CIME): three parameter surfaces, the 4096-byte namelist cliff, validate before submitting, score via the target's own reduce. The EcoSIM counterpart to offline-testing-workflow. |
 | [pflotran-run-workflow](pflotran-run-workflow/SKILL.md) | any | Run + test PFLOTRAN (deck-driven): the input deck IS the parameter file, case assembly around an already-written deck, scoring against `*-mas.dat` columns. |
 | [ats-run-workflow](ats-run-workflow/SKILL.md) | any | Run + test ATS (XML-deck): a nested Teuchos ParameterList addressed by path, targets injected into the deck's `observations` block; states which half of the adapter is still v0.1. |

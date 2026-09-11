@@ -58,7 +58,7 @@ def make_archive(tmp_path, label="R9_test_abc1234", content=b"fake-binary",
 def point_at(monkeypatch, tmp_path, root):
     monkeypatch.setitem(BAM.ARCHIVES, "ecosim", {
         "archive_root": str(root),
-        "manifest": tmp_path / "manifest.json",
+        "manifests": [tmp_path / "manifest.json"],
         "binary_name": "ecosim.f90.x",
     })
     return tmp_path / "manifest.json"
@@ -219,4 +219,99 @@ def test_M7_the_happy_path_actually_checks_something(tmp_path, monkeypatch):
     assert BAM.cmd_verify(["ecosim"]) == 0
     # and the same ledger with one character changed must FAIL, which is what makes it a control
     _ledger(man, "R9_test_abc1234", ("0" if sha[0] != "0" else "1") + sha[1:8])
+    assert BAM.cmd_verify(["ecosim"]) == 2
+
+
+# ------------------------------------------------------------------ runtime switches
+# A commit and a checksum say what is IN a binary and nothing about what must be SET to use it.
+# That gap is not hypothetical: EcoSIM's guard_floor_dying_stand shipped default-off, reached no
+# case template, and was therefore OFF for EcoSIM_TeRaCON R1, which lost 8 of its first 364 cases
+# to an abort the binary already knew how to suppress.
+
+def test_runtime_switches_are_carried_from_provenance(tmp_path, monkeypatch):
+    import json
+    root, _ = make_archive(tmp_path)
+    prov = root / "R9_test_abc1234" / "PROVENANCE.txt"
+    prov.write_text(prov.read_text()
+                    + "Runtime switches : guard_floor_dying_stand=.true. RECOMMENDED\n")
+    man = point_at(monkeypatch, tmp_path, root)
+    assert BAM.cmd_generate(["ecosim"], "2026-09-04") == 0
+    entry = json.loads(man.read_text())["archives"][0]
+    assert entry["runtime_switches"] == "guard_floor_dying_stand=.true. RECOMMENDED"
+
+
+def test_runtime_switches_default_to_empty_when_provenance_is_silent(tmp_path, monkeypatch):
+    """CONTROL: the field must not invent a value for an archive that declares none."""
+    import json
+    root, _ = make_archive(tmp_path)
+    man = point_at(monkeypatch, tmp_path, root)
+    assert BAM.cmd_generate(["ecosim"], "2026-09-04") == 0
+    assert json.loads(man.read_text())["archives"][0]["runtime_switches"] == ""
+
+
+# ------------------------------------------------------------------ symlink aliases
+
+def test_a_symlink_alias_is_not_counted_as_a_second_archive(tmp_path, monkeypatch):
+    """An alias for a renamed archive is one binary under two names, not two archives.
+
+    Counting it would publish a duplicate label, and M4 would then demand the alias be recorded --
+    entrenching a name that may exist only to be retired.
+    """
+    import json
+    root, _ = make_archive(tmp_path)
+    (root / "R9_alias_abc1234").symlink_to(root / "R9_test_abc1234")
+    man = point_at(monkeypatch, tmp_path, root)
+    assert BAM.cmd_generate(["ecosim"], "2026-09-04") == 0
+    labels = [e["label"] for e in json.loads(man.read_text())["archives"]]
+    assert labels == ["R9_test_abc1234"], labels
+    # and the alias must not raise an M4 "on disk but not in the manifest" warning either
+    assert BAM.cmd_verify(["ecosim"]) == 0
+
+
+def test_a_real_second_copy_IS_counted(tmp_path, monkeypatch):
+    """CONTROL for the test above: a deliberate second COPY is a real archive and is recorded.
+
+    This is how TeRaCONbase_forkmain_0366560a relates to R4base_forkmain_0366560a -- two real
+    directories holding identical bytes, each with its own PROVENANCE.txt, both in the manifest.
+    """
+    import json, shutil
+    root, _ = make_archive(tmp_path)
+    shutil.copytree(root / "R9_test_abc1234", root / "R9_copy_abc1234")
+    man = point_at(monkeypatch, tmp_path, root)
+    assert BAM.cmd_generate(["ecosim"], "2026-09-04") == 0
+    entries = json.loads(man.read_text())["archives"]
+    labels = sorted(e["label"] for e in entries)
+    assert labels == ["R9_copy_abc1234", "R9_test_abc1234"], labels
+    assert entries[0]["sha256"] == entries[1]["sha256"]        # same bytes, two labels
+
+
+# ------------------------------------------------------------------ multi-manifest
+
+def test_generate_writes_EVERY_manifest_and_verify_checks_EVERY_ledger(tmp_path, monkeypatch):
+    """One manifest per case whose ledger cites these binaries.
+
+    M7 resolves a ledger against the manifest BESIDE IT, so a single shared manifest left every
+    other case's provenance claims checked by nothing -- which is what happened to
+    EcoSIM_TeRaCON R1 until 2026-09-04.
+    """
+    import json
+    root, _ = make_archive(tmp_path)
+    a, b = tmp_path / "caseA" / "m.json", tmp_path / "caseB" / "m.json"
+    monkeypatch.setitem(BAM.ARCHIVES, "ecosim", {
+        "archive_root": str(root),
+        "manifests": [a, b],
+        "binary_name": "ecosim.f90.x",
+    })
+    assert BAM.cmd_generate(["ecosim"], "2026-09-04") == 0
+    assert a.is_file() and b.is_file()
+    assert json.loads(a.read_text())["archives"] == json.loads(b.read_text())["archives"]
+
+    sha = json.loads(a.read_text())["archives"][0]["sha256"]
+    _ledger(a, "R9_test_abc1234", sha[:8])          # caseA correct
+    _ledger(b, "R9_test_abc1234", sha[:8])          # caseB correct
+    assert BAM.cmd_verify(["ecosim"]) == 0
+
+    # A wrong claim in the SECOND case's ledger must still be caught -- the failure mode this
+    # change exists to end is a case whose ledger nothing looked at.
+    _ledger(b, "R9_test_abc1234", ("0" if sha[0] != "0" else "1") + sha[1:8])
     assert BAM.cmd_verify(["ecosim"]) == 2

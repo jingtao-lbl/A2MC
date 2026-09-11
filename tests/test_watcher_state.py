@@ -228,11 +228,20 @@ def _run_watcher_nonterminal(tmp_path, squeue_body, seconds=20):
         while _t.time() < deadline:
             if state.exists():
                 try:
-                    return json.loads(state.read_text())
+                    st = json.loads(state.read_text())
                 except json.JSONDecodeError:
-                    pass
+                    st = None
+                # SKIP THE STARTING RECORD. The watcher publishes `write_state "STARTING" 0 0 0 0`
+                # BEFORE its first poll, so returning on mere existence can hand back a record whose
+                # counts are all zero by construction -- and a test asserting pending==7 then fails
+                # or, worse, a test asserting pending==0 PASSES for the wrong reason. This helper
+                # wants the first POLL result, not the startup stamp. Measured 2026-09-04: the
+                # compact-array test failed once in five combined runs on exactly this race, having
+                # been passing on timing luck since it was written.
+                if st is not None and st.get("status") != "STARTING":
+                    return st
             _t.sleep(0.2)
-        raise AssertionError("watcher never published a state file")
+        raise AssertionError("watcher never published a POLL state (only STARTING, or nothing)")
     finally:
         proc.terminate()
         try:
@@ -275,3 +284,131 @@ def test_zero_pending_still_reads_as_zero(tmp_path):
         '#!/bin/bash\nif [[ "$*" == *"-t RUNNING"* ]]; then echo "9_1"; fi\nexit 0\n')
     assert st["pending"] == 0, st
     assert st["running"] == 1, st
+
+
+# =================================================================================================
+# HARDENING 1 (2026-09-04) -- a terminal status is CROSS-CHECKED, not trusted.
+#
+# The 2026-09-03 failure in one line: the state file read ENDED_UNACCOUNTED with complete=233 of
+# 4097 while 3,733 tasks were still live, and this checker exited 0 over it for 31 hours. The old
+# code printed "inspect the logs before treating this as a clean finish" and then RETURNED 0 --
+# a warning nothing reads, in the layer built to catch exactly this.
+# =================================================================================================
+
+def test_a_terminal_status_with_unaccounted_tasks_is_NOT_a_pass(tmp_path):
+    """The real 2026-09-03 shape, reduced: terminal, but the numbers do not add up."""
+    rc, out = _check(_state(tmp_path, status="ENDED_UNACCOUNTED", job="",
+                            complete=233, failed=5, total=4097))
+    assert rc == 1, f"233+5 of 4097 is not a finish; got rc={rc}:\n{out}"
+    assert "FALSE-TERMINAL" in out and "do not add up" in out, out
+
+
+def test_ENDED_that_actually_adds_up_still_passes(tmp_path):
+    """CONTROL. Without this, a checker that failed EVERY terminal state would pass the test
+    above while being useless -- the failure mode the check itself exists to prevent."""
+    rc, out = _check(_state(tmp_path, status="ENDED", job="",
+                            complete=95, failed=5, total=100))
+    assert rc == 0, f"a fully accounted ENDED is a clean finish; got rc={rc}:\n{out}"
+    assert "FALSE-TERMINAL" not in out, out
+
+
+def test_the_REAL_2026_09_03_state_file_is_rejected(tmp_path):
+    """Against the ACTUAL artifact, preserved when the watcher died. Reduced shapes can drift
+    from the thing they model; this one cannot, because it IS the thing."""
+    import json as _json
+    real = (REPO / "use_cases/EcoSIM_TeRaCON/memory/phase_results"
+                 / "20260901a_phase0_design_r01_r1_parameter_design_and_the_recovery_of_bounds_provenance"
+                 / "watch_state.json.false_terminal_20260903")
+    if not real.is_file():
+        pytest.skip("the preserved 2026-09-03 state file is not in this checkout")
+    st = _json.loads(real.read_text())
+    assert st["status"] == "ENDED_UNACCOUNTED" and st["complete"] + st["failed"] < st["total"], st
+    # Copy rather than point at it, so a stray write can never touch the preserved evidence.
+    copy = tmp_path / "state.json"
+    copy.write_text(real.read_text())
+    rc, out = _check(copy)
+    assert rc == 1, f"the state file that cost 31 h of blind runtime must not pass:\n{out}"
+
+
+def test_the_cross_check_reports_UNKNOWN_rather_than_assuming_fine(tmp_path):
+    """A checker that treats 'cannot tell' as a pass is the whole failure class. When the
+    scheduler cannot be consulted, the arithmetic still decides and the gap is stated."""
+    rc, out = _check(_state(tmp_path, status="ENDED", job="", complete=100, failed=0, total=100))
+    assert rc == 0, out
+    assert "UNKNOWN" in out, ("with no job id the scheduler leg cannot run, and that must be "
+                              f"SAID rather than silently skipped:\n{out}")
+
+
+# =================================================================================================
+# HARDENING 2 (2026-09-04) -- the watcher execs a RUN-SCOPED COPY of itself.
+#
+# Bash reads a script by byte offset as it executes, and parses the poll loop as ONE compound
+# command -- so an edit does not bite while the loop spins, it bites when the loop EXITS and bash
+# reads further into a file whose offsets have shifted. That is where the real watcher died:
+#   watch_slurm_array.sh: line 190: syntax error near unexpected token `)'
+# INSIDE the block the fix being deployed had just added.
+# =================================================================================================
+
+def _run_watcher_and_edit_it_mid_run(tmp_path, watcher_src):
+    """Launch a watcher, mutate its file while the loop spins, then let it fall out of the loop.
+
+    SEQUENCING IS THE TEST. A first version of this harness drove the watcher to its terminal
+    block within two seconds, so both arms finished BEFORE the edit and it proved nothing. The
+    squeue stub is therefore stateful: it reports a live task until the marker file is removed.
+    """
+    import os, shutil as _sh, subprocess as _sp, time as _t
+    work = tmp_path / "w"; (work / "bin").mkdir(parents=True)
+    marker = work / "KEEP_RUNNING"; marker.touch()
+    (work / "bin" / "squeue").write_text(
+        f'#!/bin/bash\n[ -f "{marker}" ] && echo "999999_1"\nexit 0\n')
+    (work / "bin" / "sacct").write_text('#!/bin/bash\nexit 0\n')
+    for b in ("squeue", "sacct"):
+        os.chmod(work / "bin" / b, 0o755)
+
+    under_test = work / "watcher_under_test.sh"
+    _sh.copy(watcher_src, under_test)
+    log = work / "watch.log"
+    env = dict(os.environ, PATH=f"{work / 'bin'}:{os.environ['PATH']}")
+    with open(log, "w") as fh:
+        proc = _sp.Popen(["bash", str(under_test), "-j", "999999", "-n", "4",
+                          "-s", str(work / "state.json"), "-i", "1"],
+                         stdout=fh, stderr=_sp.STDOUT, env=env)
+    try:
+        _t.sleep(3)                                    # get well into the loop
+        lines = under_test.read_text().split("\n")     # THE MUTATION: shift every offset below
+        under_test.write_text("\n".join(lines[:3] + ["# " + "x" * 70] * 20 + lines[3:]))
+        _t.sleep(3)
+        marker.unlink()                                # fall out of the loop, POST-mutation
+        _t.sleep(6)
+    finally:
+        proc.kill()
+    return log.read_text()
+
+
+@requires_gnu_timeout
+def test_editing_the_watcher_mid_run_no_longer_kills_it(tmp_path):
+    out = _run_watcher_and_edit_it_mid_run(tmp_path, WATCHER)
+    assert "run-scoped snapshot" in out, f"the watcher must exec its own copy:\n{out[-800:]}"
+    low = out.lower()
+    assert "syntax error" not in low and "unexpected token" not in low, \
+        f"an edit under the running watcher still killed it:\n{out[-800:]}"
+    assert "ARRAY ENDED" in out, f"it must still reach its terminal block:\n{out[-800:]}"
+
+
+@requires_gnu_timeout
+def test_the_harness_ACTUALLY_reproduces_the_death_without_the_fix(tmp_path):
+    """CONTROL, and the load-bearing one. Without it the test above could pass because the
+    harness never reproduces anything -- which is the same 'check that cannot fail' shape the
+    fix exists to close. Strips the snapshot block and asserts the death comes back."""
+    src = WATCHER.read_text()
+    marker = 'if [ -z "${A2MC_WATCHER_SNAPSHOT:-}" ]; then'
+    assert marker in src, "the snapshot block moved; this control needs updating"
+    start = src.index(marker)
+    end = src.index("EMPTY_STREAK=0", start)
+    unhardened = tmp_path / "unhardened.sh"
+    unhardened.write_text(src[:start] + src[end:])
+    out = _run_watcher_and_edit_it_mid_run(tmp_path / "ctl", unhardened)
+    low = out.lower()
+    assert "syntax error" in low or "unexpected token" in low, \
+        ("the harness did not reproduce the 2026-09-03 death, so the test above proves nothing:\n"
+         + out[-800:])

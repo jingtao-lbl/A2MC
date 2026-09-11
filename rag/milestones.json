@@ -77,10 +77,14 @@
       "model_wiki_subdir": "ecosim-codebase-wiki-2dea74d9",
       "output_cdl": "ecosim_output_info_2dea74d9.cdl",
       "param_file": "Offline/EcoSIM_sample_files/input/ds_input__pft_test__ex1.nc",
+      "param_files_extra": [
+        "Offline/EcoSIM_sample_files/input/MicrobePars_SB1_b1_SPOSC_base.nc"
+      ],
+      "param_files_extra_note": "REFERENCE surfaces for documentation only -- no run reads these. Runs resolve A2MC_BASE_PARAM_FILE / _SECONDARY_ / _3 from the SITE CONFIG, which points at the m5199 project space. DELIBERATE DISCREPANCY: the microbial file indexed here is the 77-variable SPOSC-bearing copy, whereas EcoSIM_BioCON R3's production base (R3_28Para_Sobol_base/MicrobePars_SB1_b1.nc) has 76 variables with SPOSC ABSENT. The 77-var copy is indexed so SPOSC is documented and reachable in the graph; it is NOT evidence that R3 could vary SPOSC -- R3 demonstrably could not, which is a separate finding. See use_cases/EcoSIM_BioCON/memory/gained_knowledge/discoveries.json -> sposc_is_a_large_live_lever_and_the_r3_probe_was_unattributable.",
       "expected_counts": {
-        "documents": 1935,
-        "nodes": 715,
-        "edges": 321
+        "documents": 2012,
+        "nodes": 791,
+        "edges": 573
       },
       "canonical": false,
       "legacy": false,

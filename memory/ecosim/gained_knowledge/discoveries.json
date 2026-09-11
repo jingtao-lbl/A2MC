@@ -51,7 +51,7 @@
       "confidence": 0.6,
       "source": "Geochem/equilibria_and_sorption",
       "actionable": true,
-      "action": "For P-limited sites (e.g. Kougarok analog), low plant P may be sorption-limited (soil PO4 unavailable) rather than uptake-kinetics-limited. Diagnose soil PO4 before tuning UPMXPO/UPKMPO."
+      "action": "For P-limited sites, low plant P may be sorption-limited (soil PO4 unavailable) rather than uptake-kinetics-limited. Diagnose soil PO4 before tuning UPMXPO/UPKMPO."
     },
     {
       "id": "ecosim_turgor_stomata",

@@ -18,7 +18,23 @@ matter of recollection. This reads the project's transcripts and compares.
     python3 tools/check_skill_claims.py <log.md> [more.md ...]
     python3 tools/check_skill_claims.py --staged
 
-EXIT 0 clean · 1 WARN (cannot verify) · 2 ERROR (a claimed skill was never invoked)
+EXIT 0 clean · 1 WARN (cannot verify) · 2 ERROR (a claimed skill was never invoked, OR was last
+invoked before this session's most recent COMPACTION -- see below)
+
+COMPACTION IS A SCOPE BOUNDARY (PI, 2026-09-06). Session scope alone was too loose in one specific
+way: a compaction discards a skill's TEXT from the agent's context while leaving its invocation in
+the transcript, so a claim stayed verifiable after the instructions it names were gone. The
+justification this file used to give -- "a skill invoked on its first day is still loaded and
+governing on its third" -- is exactly what compaction falsifies. Measured on the session that
+prompted this: SEVEN compaction boundaries, and only 6 of 23 distinct skills invoked after the last
+one; the agent then wrote a log into a retired stream because the governing skill had not been
+re-read since a boundary. So a claim whose last invocation precedes the newest `compact_boundary`
+is an ERROR: re-invoke the skill, or drop the claim.
+
+SCOPED TO LOGS BEING ADDED, for the same reason `staged_new_reports` is. A log's capability section
+describes the session that WROTE it; a later EDIT (a supersede banner, a corrected number) happens
+after further compactions and would fail every correct log, which would train people to strip true
+claims to get a commit through -- the exact inversion this check exists to prevent.
 
 DEGRADES LOUDLY, NEVER SILENTLY. With no transcripts available -- a different harness, a pruned
 directory -- this reports "cannot verify" and exits 1. It must never print a clean result it did
@@ -84,12 +100,23 @@ def invoked_skills() -> tuple[dict, int]:
     """
     files = sorted((f for d in transcript_dirs() for f in d.glob("*.jsonl")),
                    key=lambda p: p.stat().st_mtime, reverse=True)
-    found, n = {}, 0
+    found, pos, boundary, n = {}, {}, -1, 0
     for f in files[:1]:            # the current session only
             n += 1
             try:
                 with open(f, errors="ignore") as fh:
-                    for line in fh:
+                    for lineno, line in enumerate(fh):
+                        # A COMPACTION is a structured event, not a phrase: the transcript writes
+                        # {"subtype": "compact_boundary", "compactMetadata": {...}}. Matching prose
+                        # instead picks up the agent's own text about compaction, which is why an
+                        # earlier attempt at this located the boundary at the wrong line.
+                        if '"compact_boundary"' in line:
+                            try:
+                                if json.loads(line).get("subtype") == "compact_boundary":
+                                    boundary = lineno
+                            except Exception:
+                                pass
+                            continue
                         # Cheap prefilter: parsing 50 MB of JSON per file is not free.
                         if '"Skill"' not in line:
                             continue
@@ -110,9 +137,10 @@ def invoked_skills() -> tuple[dict, int]:
                                 day = (rec.get("timestamp") or "")[:10].replace("-", "")
                                 if day and (s not in found or day > found[s]):
                                     found[s] = day
+                                pos[s] = lineno       # LAST invocation position wins
             except OSError:
                 continue
-    return found, n
+    return found, pos, boundary, n
 
 
 #: The MEMORY claim bullet. Memories are surfaced by the harness rather than invoked as a tool,
@@ -173,7 +201,31 @@ def staged_logs() -> list[Path]:
         if ("/memory/logs/" in rel or "memory/dev_logs" in rel
                 or "memory/model_logs/" in rel or "memory/ana_logs/" in rel):
             keep.append(REPO / rel)
-    return keep
+    return keep + staged_new_reports()
+
+
+def staged_added_paths() -> set:
+    """Relpaths being ADDED in this commit. The compaction-staleness tier applies only to these:
+    an EDIT to an existing log happens in a later session, after further compactions, and holding
+    it to the same bar would make a supersede banner or a corrected number impossible to commit."""
+    out = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=A"],
+                         cwd=REPO, capture_output=True, text=True).stdout.split()
+    return set(out)
+
+
+def staged_new_reports() -> list[Path]:
+    """Reports being ADDED, never reports being MODIFIED.
+
+    A report's 'Skills and memory invoked' line describes the session that WROTE it. Verifying it
+    against the CURRENT session's transcript is only meaningful on the commit that creates the
+    file: a later edit -- a corrected number, a new figure, a renumbered section -- happens in a
+    different session that legitimately invoked different skills, and checking those edits would
+    fail every correct report and train people to strip true claims to get a commit through, which
+    is the exact inversion this check exists to prevent. So: --diff-filter=A only.
+    """
+    out = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=A"],
+                         cwd=REPO, capture_output=True, text=True).stdout.split()
+    return [REPO / rel for rel in out if rel.endswith(".md") and "/reports/" in rel]
 
 
 def main(argv: list[str]) -> int:
@@ -187,7 +239,9 @@ def main(argv: list[str]) -> int:
         return 0
 
     universe = known_skills()
-    invoked, ntr = invoked_skills()
+    invoked, inv_pos, boundary, ntr = invoked_skills()
+    # explicit-path mode: the caller asked, so apply the staleness tier to everything.
+    added = staged_added_paths() if argv[0] == "--staged" else None
 
     STEM_DATE = re.compile(r"(\d{8})")
 
@@ -211,24 +265,41 @@ def main(argv: list[str]) -> int:
         if not c:
             continue
         checked += 1
-        missing, stale, ok = [], [], []
+        missing, stale, ok, staleskill = [], [], [], []
+        try:
+            rel = str(f.relative_to(REPO))
+        except ValueError:
+            rel = f.name
+        # staleness applies to a log being ADDED (or to an explicit-path check), never to an edit
+        apply_stale = (added is None) or (rel in added)
         for s in sorted(c):
-            (ok if s in invoked else missing).append(s)
+            if s not in invoked:
+                missing.append(s)
+            elif apply_stale and boundary >= 0 and inv_pos.get(s, -1) < boundary:
+                staleskill.append(s)
+            else:
+                ok.append(s)
         # Memory names: existence only. Unresolvable citations are a separate, checkable error.
         mem_universe = known_memories()
         if mem_universe:
             ghosts = sorted(m for m in claimed_memories(text) if m not in mem_universe)
             if ghosts:
                 stale.extend(f"MEMORY does not exist: {g}" for g in ghosts)
-        if missing or stale:
-            errors.append((f.name, missing, stale, ok))
+        if missing or stale or staleskill:
+            errors.append((f.name, missing, stale, ok, staleskill))
 
     if errors:
         print(f"\n✘ check_skill_claims: {len(errors)} log(s) claim a skill not invoked for that log")
-        for name, missing, stale, ok in errors:
+        for name, missing, stale, ok, staleskill in errors:
             print(f"  - {name}")
             if missing:
                 print(f"      claimed but NEVER invoked : {', '.join(missing)}")
+            if staleskill:
+                print(f"      STALE, last invoked BEFORE this session's newest compaction:")
+                print(f"        {', '.join(staleskill)}")
+                print(f"        A compaction discards a skill's TEXT while leaving its invocation")
+                print(f"        in the transcript, so the claim outlived the instructions it names.")
+                print(f"        Re-invoke the skill (it may also have CHANGED), or drop the claim.")
             if stale:
                 for s in stale:
                     print(f"      {s}")

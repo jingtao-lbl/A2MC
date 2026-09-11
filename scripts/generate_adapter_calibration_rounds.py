@@ -100,7 +100,13 @@ def _model_blocks(model: str, root: Path) -> tuple:
     y1 = os.environ.get("A2MC_VALIDATION_END_YEAR", "TODO")
     if model == "ecosim":
         protocol = {
-            "run_type": "single_continuous",   # NOT FATES ADSP/RGSP/TRANS
+            # NOT FATES ADSP/RGSP/TRANS. Was HARDCODED to single_continuous, which the generic
+            # fallback below never was -- so an EcoSIM case running a recycled spin-up could not
+            # express it, and every --write silently reasserted the wrong description.
+            # EcoSIM_Lusignan ran a 10-yr recycled spin-up for weeks while its record said
+            # single_continuous. `protocol` is a RECORD, not a switch: this does not CAUSE a
+            # spin-up, it DESCRIBES the one configured in the namelist.
+            "run_type": os.environ.get("A2MC_RUN_TYPE", "single_continuous"),
             "sim_years": f"{y0}-{y1}",
             "parallelism": "SLURM job array (--array); each case a serial srun -n 1 (OMP=1, mpi=0)",
         }
@@ -261,6 +267,16 @@ def main() -> None:
     for k in ("rationale", "changes_from_previous", "outcome", "notes"):
         if prev.get(k) and str(prev.get(k)).strip() and "TODO" not in str(prev.get(k)):
             block[k] = prev[k]
+    # PROTOCOL sub-keys the generator does not itself emit are human-authored detail (e.g. an
+    # EcoSIM `spin_up` description of forc_periods and stop_n). Keep them: the generator refreshes
+    # what it derives and preserves what it cannot know. Without this, --write silently deleted a
+    # hand-written spin-up record on every regeneration, which is the same class of loss the
+    # narrative-field preservation above already guards against.
+    prev_proto = prev.get("protocol") or {}
+    if isinstance(prev_proto, dict) and isinstance(block.get("protocol"), dict):
+        for k, v in prev_proto.items():
+            if k not in block["protocol"] and str(v).strip() and "TODO" not in str(v):
+                block["protocol"][k] = v
     doc["rounds"][args.round] = block
     yaml_path.write_text((header if header.strip() else "") + yaml.safe_dump(doc, sort_keys=False))
     print(f"wrote round {args.round} -> {yaml_path}  (status={block['status']}, params={block['parameters']}, "

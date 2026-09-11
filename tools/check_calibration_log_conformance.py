@@ -435,9 +435,14 @@ def _check_phase(path, text, secs, hdrs, expected_sections):
     if "Sections not provided" in secs:
         blk = re.search(r"^## Sections not provided\s*$(.*?)(?=^## |\Z)", text, re.S | re.M)
         n = len(re.findall(r"^- ", blk.group(1), re.M)) if blk else 0
-        out.append(Finding(path, "C7", "warn",
-                           "PhaseLogger flagged %d section(s) as not provided — fill them or "
-                           "state why they do not apply" % n))
+        # Warn only when something is ACTUALLY outstanding. This previously fired on n == 0 too,
+        # so a log whose author had filled every section and replaced the generated list with a
+        # statement to that effect still got told to "fill them" -- a check that cannot pass, which
+        # is how a warning channel gets tuned out along with the warnings that mean something.
+        if n:
+            out.append(Finding(path, "C7", "warn",
+                               "PhaseLogger flagged %d section(s) as not provided — fill them or "
+                               "state why they do not apply" % n))
     return out
 
 

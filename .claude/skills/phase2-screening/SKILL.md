@@ -29,6 +29,8 @@ trade-offs, then set up what Phase 3 must explain.
 (RMSRE + targets satisfied), the best/lowest-cost/most-targets cases, error-pattern read, + the
 whole-ensemble biomass-vs-targets time-series comparison figure → routed to `phase3-diagnosis`.
 
+> **Before designing or interpreting anything here, hold the MECHANISM NETWORK, not one or two parameters.** At calibration stage the model KB is assumed well-built, so it is where you START and it usually hands you the citation -- it does NOT replace verifying in source: query ALL FIVE surfaces (codebase wiki, RAG index, **knowledge graph**, MODEL-level and SITE-level `gained_knowledge/`) plus the case's own parameter list, pull `parameter -> controls -> mechanism -> affects -> output` for the **scored** variables and the `depends_on` couplings among anything you intend to move together, and only then confirm in source. Needing source to LEARN rather than to CONFIRM means a KB gap, which is a build task. [[feedback_full_mechanism_picture_before_designing_an_experiment]]
+
 ## Step 1 — rank the ensemble (reads existing extracted outputs — no new simulations)
 
 `phases/phase2_screening/screen_ensemble.py --data-dir $A2MC_EXTRACTED_DATA --top-n 100`. Per-target
@@ -170,6 +172,8 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 - **Next:** `phase3-diagnosis`.
 
 ## Changelog
+
+- 2026-09-06: **"the KB is meant to be sufficient" removed -- it invited exactly the misreading it warns against.** PI-directed, and the signal is a measured misreading in the session that first followed this rule: the agent paraphrased the sentence as "the KB is assumed sufficient", which reads as permission to stop at the KB, and the PI corrected it -- *"KB is not sufficient, they just let you have a quick understanding, you still need to verify in the source code if needed"*. The sentence already said *and only then confirm in source*, so the instruction was right and one clause of it was pulling the other way. **Evidence that both halves are load-bearing, from the same session:** the wiki DID carry the model's respiration temperature functions with their constants and `file:line`, so one grep would have replaced six source reads of LEARNING -- and the finding that mattered was that NO calibratable array appears in either function body, a claim about ABSENCE that no wiki page can settle. The KB would have oriented in seconds and still not answered it. Replaced with "the KB is where you START and it usually hands you the citation; it does NOT replace verifying in source". Applied identically across nine skills. The five-surface requirement, the query order and every `description` are UNCHANGED, so when each skill fires is unaffected.
 
 - 2026-08-27: **Separates what dispatches for PFLOTRAN from what does not** (PI-directed, first
   PFLOTRAN campaign). The ranking does — `screen_ensemble.py` has a real backend branch. The Step-1b

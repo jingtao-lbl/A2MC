@@ -2271,7 +2271,7 @@
       "name": "fates_cnp_eca_alpha_ptase",
       "pft": null,
       "category": "cnp",
-      "description": "INACTIVE in api-43-1: validation at EDPftvarcon.F90:1044 aborts on non-zero.",
+      "description": "INACTIVE in api-43-1: FatesCheckParams (EDPftvarcon.F90:1044) calls endrun",
       "units": "g/m3",
       "bounds": null,
       "code_location": null,
@@ -3242,11 +3242,56 @@
       "name": "fates_cnp_eca_km_ptase",
       "pft": null,
       "category": "cnp",
-      "description": "half-saturation constant for biochemical P (ECA)",
+      "description": "Half-saturation constant for phosphatase P production (ACTIVE api-43 knob).",
       "units": "gP/m3",
       "bounds": null,
       "code_location": null,
-      "applies_universal": true,
+      "applies_in_bgc_mode_sp": true,
+      "applies_in_bgc_mode_cn": true,
+      "applies_in_bgc_mode_bgc": true,
+      "applies_in_bgc_mode_fates": true,
+      "applies_in_use_fates_true": true,
+      "applies_in_use_fates_false": false,
+      "applies_in_parteh_mode_1": false,
+      "applies_in_parteh_mode_2": true,
+      "applies_in_use_fates_nocomp_true": true,
+      "applies_in_use_fates_nocomp_false": true,
+      "applies_in_nutrient_empty": false,
+      "applies_in_nutrient_c": false,
+      "applies_in_nutrient_cn": false,
+      "applies_in_nutrient_cnp": true,
+      "applies_in_nutrient_comp_pathway_rd": false,
+      "applies_in_nutrient_comp_pathway_eca": true,
+      "applies_in_soil_decomp_empty": true,
+      "applies_in_soil_decomp_ctc": true,
+      "applies_in_soil_decomp_century": true,
+      "applies_in_fates_spitfire_mode_0": true,
+      "applies_in_fates_spitfire_mode_1": true,
+      "applies_in_fates_spitfire_mode_2": true,
+      "applies_in_use_fates_planthydro_true": true,
+      "applies_in_use_fates_planthydro_false": true,
+      "applies_in_use_fates_logging_true": true,
+      "applies_in_use_fates_logging_false": true,
+      "applies_in_use_fates_sp_true": true,
+      "applies_in_use_fates_sp_false": true,
+      "applies_in_use_fates_ed_prescribed_phys_true": true,
+      "applies_in_use_fates_ed_prescribed_phys_false": true,
+      "applies_in_use_fates_fixed_biogeog_true": true,
+      "applies_in_use_fates_fixed_biogeog_false": true,
+      "applies_in_crop_true": true,
+      "applies_in_crop_false": true,
+      "applies_in_dynamic_vegetation_true": true,
+      "applies_in_dynamic_vegetation_false": true,
+      "applies_in_methane_true": true,
+      "applies_in_methane_false": true,
+      "applies_in_hydrstress_true": true,
+      "applies_in_hydrstress_false": true,
+      "applies_in_topounit_true": true,
+      "applies_in_topounit_false": true,
+      "applies_in_irrig_true": true,
+      "applies_in_irrig_false": true,
+      "applies_in_solar_rad_scheme_empty": true,
+      "applies_in_solar_rad_scheme_top": true,
       "id": "parameter:fates_cnp_eca_km_ptase"
     },
     {
@@ -3258,7 +3303,52 @@
       "units": "gP/m3",
       "bounds": null,
       "code_location": null,
-      "applies_universal": true,
+      "applies_in_bgc_mode_sp": true,
+      "applies_in_bgc_mode_cn": true,
+      "applies_in_bgc_mode_bgc": true,
+      "applies_in_bgc_mode_fates": true,
+      "applies_in_use_fates_true": true,
+      "applies_in_use_fates_false": false,
+      "applies_in_parteh_mode_1": false,
+      "applies_in_parteh_mode_2": true,
+      "applies_in_use_fates_nocomp_true": true,
+      "applies_in_use_fates_nocomp_false": true,
+      "applies_in_nutrient_empty": false,
+      "applies_in_nutrient_c": false,
+      "applies_in_nutrient_cn": false,
+      "applies_in_nutrient_cnp": true,
+      "applies_in_nutrient_comp_pathway_rd": false,
+      "applies_in_nutrient_comp_pathway_eca": true,
+      "applies_in_soil_decomp_empty": true,
+      "applies_in_soil_decomp_ctc": true,
+      "applies_in_soil_decomp_century": true,
+      "applies_in_fates_spitfire_mode_0": true,
+      "applies_in_fates_spitfire_mode_1": true,
+      "applies_in_fates_spitfire_mode_2": true,
+      "applies_in_use_fates_planthydro_true": true,
+      "applies_in_use_fates_planthydro_false": true,
+      "applies_in_use_fates_logging_true": true,
+      "applies_in_use_fates_logging_false": true,
+      "applies_in_use_fates_sp_true": true,
+      "applies_in_use_fates_sp_false": true,
+      "applies_in_use_fates_ed_prescribed_phys_true": true,
+      "applies_in_use_fates_ed_prescribed_phys_false": true,
+      "applies_in_use_fates_fixed_biogeog_true": true,
+      "applies_in_use_fates_fixed_biogeog_false": true,
+      "applies_in_crop_true": true,
+      "applies_in_crop_false": true,
+      "applies_in_dynamic_vegetation_true": true,
+      "applies_in_dynamic_vegetation_false": true,
+      "applies_in_methane_true": true,
+      "applies_in_methane_false": true,
+      "applies_in_hydrstress_true": true,
+      "applies_in_hydrstress_false": true,
+      "applies_in_topounit_true": true,
+      "applies_in_topounit_false": true,
+      "applies_in_irrig_true": true,
+      "applies_in_irrig_false": true,
+      "applies_in_solar_rad_scheme_empty": true,
+      "applies_in_solar_rad_scheme_top": true,
       "id": "parameter:fates_cnp_eca_km_ptase:pft10"
     },
     {
@@ -3270,7 +3360,52 @@
       "units": "gP/m3",
       "bounds": null,
       "code_location": null,
-      "applies_universal": true,
+      "applies_in_bgc_mode_sp": true,
+      "applies_in_bgc_mode_cn": true,
+      "applies_in_bgc_mode_bgc": true,
+      "applies_in_bgc_mode_fates": true,
+      "applies_in_use_fates_true": true,
+      "applies_in_use_fates_false": false,
+      "applies_in_parteh_mode_1": false,
+      "applies_in_parteh_mode_2": true,
+      "applies_in_use_fates_nocomp_true": true,
+      "applies_in_use_fates_nocomp_false": true,
+      "applies_in_nutrient_empty": false,
+      "applies_in_nutrient_c": false,
+      "applies_in_nutrient_cn": false,
+      "applies_in_nutrient_cnp": true,
+      "applies_in_nutrient_comp_pathway_rd": false,
+      "applies_in_nutrient_comp_pathway_eca": true,
+      "applies_in_soil_decomp_empty": true,
+      "applies_in_soil_decomp_ctc": true,
+      "applies_in_soil_decomp_century": true,
+      "applies_in_fates_spitfire_mode_0": true,
+      "applies_in_fates_spitfire_mode_1": true,
+      "applies_in_fates_spitfire_mode_2": true,
+      "applies_in_use_fates_planthydro_true": true,
+      "applies_in_use_fates_planthydro_false": true,
+      "applies_in_use_fates_logging_true": true,
+      "applies_in_use_fates_logging_false": true,
+      "applies_in_use_fates_sp_true": true,
+      "applies_in_use_fates_sp_false": true,
+      "applies_in_use_fates_ed_prescribed_phys_true": true,
+      "applies_in_use_fates_ed_prescribed_phys_false": true,
+      "applies_in_use_fates_fixed_biogeog_true": true,
+      "applies_in_use_fates_fixed_biogeog_false": true,
+      "applies_in_crop_true": true,
+      "applies_in_crop_false": true,
+      "applies_in_dynamic_vegetation_true": true,
+      "applies_in_dynamic_vegetation_false": true,
+      "applies_in_methane_true": true,
+      "applies_in_methane_false": true,
+      "applies_in_hydrstress_true": true,
+      "applies_in_hydrstress_false": true,
+      "applies_in_topounit_true": true,
+      "applies_in_topounit_false": true,
+      "applies_in_irrig_true": true,
+      "applies_in_irrig_false": true,
+      "applies_in_solar_rad_scheme_empty": true,
+      "applies_in_solar_rad_scheme_top": true,
       "id": "parameter:fates_cnp_eca_km_ptase:pft11"
     },
     {
@@ -3282,7 +3417,52 @@
       "units": "gP/m3",
       "bounds": null,
       "code_location": null,
-      "applies_universal": true,
+      "applies_in_bgc_mode_sp": true,
+      "applies_in_bgc_mode_cn": true,
+      "applies_in_bgc_mode_bgc": true,
+      "applies_in_bgc_mode_fates": true,
+      "applies_in_use_fates_true": true,
+      "applies_in_use_fates_false": false,
+      "applies_in_parteh_mode_1": false,
+      "applies_in_parteh_mode_2": true,
+      "applies_in_use_fates_nocomp_true": true,
+      "applies_in_use_fates_nocomp_false": true,
+      "applies_in_nutrient_empty": false,
+      "applies_in_nutrient_c": false,
+      "applies_in_nutrient_cn": false,
+      "applies_in_nutrient_cnp": true,
+      "applies_in_nutrient_comp_pathway_rd": false,
+      "applies_in_nutrient_comp_pathway_eca": true,
+      "applies_in_soil_decomp_empty": true,
+      "applies_in_soil_decomp_ctc": true,
+      "applies_in_soil_decomp_century": true,
+      "applies_in_fates_spitfire_mode_0": true,
+      "applies_in_fates_spitfire_mode_1": true,
+      "applies_in_fates_spitfire_mode_2": true,
+      "applies_in_use_fates_planthydro_true": true,
+      "applies_in_use_fates_planthydro_false": true,
+      "applies_in_use_fates_logging_true": true,
+      "applies_in_use_fates_logging_false": true,
+      "applies_in_use_fates_sp_true": true,
+      "applies_in_use_fates_sp_false": true,
+      "applies_in_use_fates_ed_prescribed_phys_true": true,
+      "applies_in_use_fates_ed_prescribed_phys_false": true,
+      "applies_in_use_fates_fixed_biogeog_true": true,
+      "applies_in_use_fates_fixed_biogeog_false": true,
+      "applies_in_crop_true": true,
+      "applies_in_crop_false": true,
+      "applies_in_dynamic_vegetation_true": true,
+      "applies_in_dynamic_vegetation_false": true,
+      "applies_in_methane_true": true,
+      "applies_in_methane_false": true,
+      "applies_in_hydrstress_true": true,
+      "applies_in_hydrstress_false": true,
+      "applies_in_topounit_true": true,
+      "applies_in_topounit_false": true,
+      "applies_in_irrig_true": true,
+      "applies_in_irrig_false": true,
+      "applies_in_solar_rad_scheme_empty": true,
+      "applies_in_solar_rad_scheme_top": true,
       "id": "parameter:fates_cnp_eca_km_ptase:pft12"
     },
     {
@@ -3290,7 +3470,7 @@
       "name": "fates_cnp_eca_lambda_ptase",
       "pft": null,
       "category": "cnp",
-      "description": "INACTIVE in api-43-1: validation at EDPftvarcon.F90:1038 aborts on non-zero.",
+      "description": "INACTIVE in api-43-1: FatesCheckParams (EDPftvarcon.F90:1038) calls endrun",
       "units": "g/m3",
       "bounds": null,
       "code_location": null,
@@ -3342,7 +3522,7 @@
       "name": "fates_cnp_eca_vmax_ptase",
       "pft": null,
       "category": "cnp",
-      "description": "Maximum phosphatase production rate.",
+      "description": "Maximum phosphatase production rate (ACTIVE api-43 knob).",
       "units": "gP/m2/s",
       "bounds": null,
       "code_location": null,
@@ -34268,6 +34448,68 @@
       "path": null,
       "applies_universal": true,
       "id": "module:biogeochem/EDMortalityFunctionsMod.F90"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Biochemical_Phosphatase",
+      "description": "Enzymatic (phosphatase) mineralization of organic P to plant-available inorganic P",
+      "code_location": "main/EDPftvarcon.F90::FatesCheckParams",
+      "module": "main/EDPftvarcon.F90",
+      "applies_in_bgc_mode_sp": true,
+      "applies_in_bgc_mode_cn": true,
+      "applies_in_bgc_mode_bgc": true,
+      "applies_in_bgc_mode_fates": true,
+      "applies_in_use_fates_true": true,
+      "applies_in_use_fates_false": false,
+      "applies_in_parteh_mode_1": false,
+      "applies_in_parteh_mode_2": true,
+      "applies_in_use_fates_nocomp_true": true,
+      "applies_in_use_fates_nocomp_false": true,
+      "applies_in_nutrient_empty": false,
+      "applies_in_nutrient_c": false,
+      "applies_in_nutrient_cn": false,
+      "applies_in_nutrient_cnp": true,
+      "applies_in_nutrient_comp_pathway_rd": false,
+      "applies_in_nutrient_comp_pathway_eca": true,
+      "applies_in_soil_decomp_empty": true,
+      "applies_in_soil_decomp_ctc": true,
+      "applies_in_soil_decomp_century": true,
+      "applies_in_fates_spitfire_mode_0": true,
+      "applies_in_fates_spitfire_mode_1": true,
+      "applies_in_fates_spitfire_mode_2": true,
+      "applies_in_use_fates_planthydro_true": true,
+      "applies_in_use_fates_planthydro_false": true,
+      "applies_in_use_fates_logging_true": true,
+      "applies_in_use_fates_logging_false": true,
+      "applies_in_use_fates_sp_true": true,
+      "applies_in_use_fates_sp_false": true,
+      "applies_in_use_fates_ed_prescribed_phys_true": true,
+      "applies_in_use_fates_ed_prescribed_phys_false": true,
+      "applies_in_use_fates_fixed_biogeog_true": true,
+      "applies_in_use_fates_fixed_biogeog_false": true,
+      "applies_in_crop_true": true,
+      "applies_in_crop_false": true,
+      "applies_in_dynamic_vegetation_true": true,
+      "applies_in_dynamic_vegetation_false": true,
+      "applies_in_methane_true": true,
+      "applies_in_methane_false": true,
+      "applies_in_hydrstress_true": true,
+      "applies_in_hydrstress_false": true,
+      "applies_in_topounit_true": true,
+      "applies_in_topounit_false": true,
+      "applies_in_irrig_true": true,
+      "applies_in_irrig_false": true,
+      "applies_in_solar_rad_scheme_empty": true,
+      "applies_in_solar_rad_scheme_top": true,
+      "id": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "node_type": "Module",
+      "name": "main/EDPftvarcon.F90",
+      "description": null,
+      "path": null,
+      "applies_universal": true,
+      "id": "module:main/EDPftvarcon.F90"
     }
   ],
   "links": [
@@ -38064,6 +38306,60 @@
       "target": "parameter:fates_cnp_eca_plant_escalar"
     },
     {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "mechanism:PID_Controller"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "output:FATES_LEAFC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "output:FATES_FROOTC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "output:FATES_STOREC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "output:FATES_NH4UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "output:FATES_NO3UPTAKE_SZPF"
+    },
+    {
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_alpha_ptase:pft10",
@@ -38640,10 +38936,58 @@
       "target": "dimension:fates_pft"
     },
     {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase",
+      "target": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase",
+      "target": "parameter:fates_cnp_eca_vmax_ptase"
+    },
+    {
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_km_ptase:pft10",
       "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft10",
+      "target": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft10",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft10",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft10",
+      "target": "parameter:fates_cnp_eca_vmax_ptase"
     },
     {
       "relation_type": "belongs_to",
@@ -38652,12 +38996,60 @@
       "target": "pft:PFT11"
     },
     {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft11",
+      "target": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft11",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft11",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft11",
+      "target": "parameter:fates_cnp_eca_vmax_ptase"
+    },
+    {
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_km_ptase:pft12",
       "target": "pft:PFT12"
     },
     {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft12",
+      "target": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft12",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft12",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_km_ptase:pft12",
+      "target": "parameter:fates_cnp_eca_vmax_ptase"
+    },
+    {
       "relation_type": "has_dimension",
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_lambda_ptase",
@@ -38787,6 +39179,12 @@
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_vmax_ptase",
+      "target": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_vmax_ptase",
       "target": "mechanism:ECA_Competition"
     },
     {
@@ -38800,6 +39198,12 @@
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_vmax_ptase",
       "target": "parameter:fates_cnp_vmax_p"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_vmax_ptase",
+      "target": "parameter:fates_cnp_eca_km_ptase"
     },
     {
       "relation_type": "belongs_to",
@@ -38811,6 +39215,12 @@
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_vmax_ptase:pft10",
+      "target": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_vmax_ptase:pft10",
       "target": "mechanism:ECA_Competition"
     },
     {
@@ -38824,6 +39234,12 @@
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_vmax_ptase:pft10",
       "target": "parameter:fates_cnp_vmax_p"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_vmax_ptase:pft10",
+      "target": "parameter:fates_cnp_eca_km_ptase"
     },
     {
       "relation_type": "belongs_to",
@@ -38835,6 +39251,12 @@
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_vmax_ptase:pft11",
+      "target": "mechanism:Biochemical_Phosphatase"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_vmax_ptase:pft11",
       "target": "mechanism:ECA_Competition"
     },
     {
@@ -38850,10 +39272,22 @@
       "target": "parameter:fates_cnp_vmax_p"
     },
     {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_vmax_ptase:pft11",
+      "target": "parameter:fates_cnp_eca_km_ptase"
+    },
+    {
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_vmax_ptase:pft12",
       "target": "pft:PFT12"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_vmax_ptase:pft12",
+      "target": "mechanism:Biochemical_Phosphatase"
     },
     {
       "relation_type": "controls",
@@ -38872,6 +39306,12 @@
       "weight": 1.0,
       "source": "parameter:fates_cnp_eca_vmax_ptase:pft12",
       "target": "parameter:fates_cnp_vmax_p"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_eca_vmax_ptase:pft12",
+      "target": "parameter:fates_cnp_eca_km_ptase"
     },
     {
       "relation_type": "has_dimension",
@@ -47202,6 +47642,24 @@
       "target": "parameter:fates_turnover_senleaf_fdrought:pft12"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:turnover",
+      "target": "output:FATES_LEAFC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:turnover",
+      "target": "output:FATES_FROOTC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:turnover",
+      "target": "output:FATES_MORTALITY_PF"
+    },
+    {
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_turnover_branch:pft10",
@@ -50902,48 +51360,60 @@
       "weight": 1.0,
       "source": "mechanism:Carbon_Starvation",
       "target": "output:FATES_MORTALITY_CSTARV_CFLUX_PF"
+    },
+    {
+      "relation_type": "implemented_in",
+      "weight": 1.0,
+      "source": "mechanism:Biochemical_Phosphatase",
+      "target": "module:main/EDPftvarcon.F90"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Biochemical_Phosphatase",
+      "target": "output:FATES_PUPTAKE_SZPF"
     }
   ],
   "_metadata": {
     "metadata_schema_version": 1,
     "profile_name": "api-43-1",
-    "built_at": "2026-07-11T03:40:55+00:00",
+    "built_at": "2026-09-09T02:10:48+00:00",
     "a2mc_version": "v2.89-dev",
-    "model_path": "<A2MC_MODEL_PATH>",
+    "model_path": "/global/cfs/cdirs/m2467/jingtao/E3SM_FATES_api43",
     "elm": {
-      "commit_sha": "6565255bb60dd6404893fc4d3f756a8a97648a1a",
-      "commit_short": "6565255",
-      "describe": "v3.2.0-alpha-133-g6565255bb6",
+      "commit_sha": "938f765b5930d1a0847f1412ce3e12c1517f9242",
+      "commit_short": "938f765",
+      "describe": "v3.2.0-alpha-140-g938f765b59",
       "wiki_subdir": "elm-codebase-wiki-d40b843",
       "wiki_root": "docs/elm-knowledge-base"
     },
     "fates": {
-      "commit_sha": "57016c44cee9f3f1e30f4b2d95e911b174f6d19a",
-      "commit_short": "57016c4",
-      "describe": "sci.1.91.1_api.43.1.0-2-g57016c44",
+      "commit_sha": "6f61d4238e5c847120df2477eb459101c3d1affb",
+      "commit_short": "6f61d42",
+      "describe": "sci.1.91.1_api.43.1.0-8-g6f61d423",
       "nearest_tag": "sci.1.91.1_api.43.1.0",
-      "commits_past_tag": 2,
+      "commits_past_tag": 8,
       "api_epoch": "43.1",
       "wiki_subdir": "fates-codebase-wiki-e027a40",
       "wiki_root": "docs/fates-knowledge-base"
     },
     "param_files": {
-      "fates_param_file": "docs/fates-knowledge-base/fates_params_info_e027a40.json",
+      "fates_param_file": "/global/u1/j/jingtao/A2MC-adapter/docs/fates-knowledge-base/fates_params_info_e027a40.json",
       "fates_param_file_format": "json",
       "fates_param_file_sha": "8b199acaa1353b84e52389d8d69d1cad871b38be8292d96c4d8cbb879ba81c6f",
-      "output_var_file": "docs/fates-knowledge-base/elm_fates_output_info_e027a40.cdl",
+      "output_var_file": "/global/u1/j/jingtao/A2MC-adapter/docs/fates-knowledge-base/elm_fates_output_info_e027a40.cdl",
       "output_var_file_sha": "20a451e062defdefa18681876a854e121f6b1bbe66246550078ca265541b8ace",
       "elm_output_var_file": null,
       "elm_output_var_file_sha": null
     },
     "curated_yaml": {
-      "path": "rag/data/curated_relationships_api-43-1.yaml",
-      "sha": "0159aa03828f38e6e6ec31ab5da5b732d035b2400944fc6cf386466aa0f32b55"
+      "path": "/global/u1/j/jingtao/A2MC-adapter/rag/data/curated_relationships_api-43-1.yaml",
+      "sha": "202824b8e0b0d5e40b546dc953ae36f8af1d6bf45fc2b68afdddad15ca23e3eb"
     },
     "stats": {
       "chunk_count": 0,
-      "graph_nodes": 3178,
-      "graph_edges": 2772
+      "graph_nodes": 3180,
+      "graph_edges": 2810
     }
   }
 }

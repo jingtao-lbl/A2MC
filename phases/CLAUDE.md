@@ -100,7 +100,7 @@ Iteration Paths:
 | 1 | Exploration | Extract Y matrix, Morris analysis, interpret results | `extract_sensitivity_outputs.py`, `morris_sensitivity_analysis.py` | **Yes** |
 | 2 | Screening | Rank ensemble by targets | `screen_ensemble.py` | Yes |
 | 3 | Diagnosis | Root cause analysis, edge case detection, results analysis | `run_diagnosis.py` (+ 11 diagnostic tools) | Yes |
-| 4 | Hypothesis | Generate experiments OR test with existing data | `reasoning.py` | Yes |
+| 4 | Hypothesis | Generate testable hypotheses, then design experiments OR test them on existing data | `reasoning.py` | Yes |
 | 5 | Testing | Run experiments on HPC | `tools/submit_experiment.sh` | No |
 | 6 | Refinement | Evaluate results, extract lessons, check equifinality | `reasoning.py`, `memory/manager.py` | Yes |
 | 7 | Converged | Final configuration | - | - |

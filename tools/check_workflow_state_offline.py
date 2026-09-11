@@ -25,6 +25,7 @@ import argparse
 import glob
 import re
 import json
+import pathlib
 import subprocess
 import os
 import sys
@@ -42,6 +43,29 @@ _spec.loader.exec_module(_wso)
 WorkflowStateOffline, SCHEMA = _wso.WorkflowStateOffline, _wso.SCHEMA
 
 VALID_PHASES = set(WorkflowStateOffline.RUNNABLE_PHASES) | {"refinement"}
+
+#: The machine configs that EXPORT the loop limits. Both are read; a disagreement between them is
+#: reported rather than silently resolved, because "keep in sync" is a comment and not a mechanism.
+_CONFIG_FILES = ("a2mc_noncime_config.sh", "a2mc_config.sh")
+
+#: The directory those configs live in. A module attribute rather than an inline expression so a
+#: test can point it at a fixture: a disagreement between the two configs is the branch most likely
+#: to be wrong and the one hardest to reproduce against the real repo.
+_CONFIG_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _limit_from_config(var):
+    """-> (int_or_None, note). Thin wrapper over the ONE derivation, in workflow_state_offline.
+
+    The implementation moved there on 2026-09-07 because `set_phase6_decision` needed the same
+    lookup and was hardcoding 10, which is the drift a second copy always produces
+    ([[feedback_bind_derived_facts_to_their_source]]). The module-level `_CONFIG_FILES` and
+    `_CONFIG_ROOT` above are kept and PASSED IN, so a test can still point either at a fixture --
+    that disagreement branch is the one hardest to reproduce against the real repo.
+    """
+    return _wso.limit_from_config(var, files=_CONFIG_FILES, root=_CONFIG_ROOT)
+
+
 def _limit_from_env(var, fallback):
     """-> (int, note). The loop limits live in the MACHINE CONFIG, so read them from there.
 
@@ -66,14 +90,37 @@ def _limit_from_env(var, fallback):
     """
     raw = os.environ.get(var)
     if raw is None or str(raw).strip() == "":
+        # NOT SOURCED. Before falling back to a copy of the value, READ THE CONFIG THAT DEFINES IT.
+        # The built-in constants below are a second copy of a number the shipped configs export, and
+        # this docstring's own complaint applies to them: they agree by coincidence until someone
+        # changes the config, at which point a bare-environment run (a pre-commit hook) resolves a
+        # DIFFERENT limit from the agent that wrote the state. Measured 2026-09-06: a round raised
+        # the cap to 20, two live cases passed the limit, and the same state files validated in a
+        # sourced shell and failed in the hook. Stdlib regex only, so the no-A2MC-import rule holds.
+        v, note = _limit_from_config(var)
+        if v is not None:
+            return v, note
         return fallback, f"{var} unset (config not sourced) — using the built-in default {fallback}"
     try:
         v = int(str(raw).strip())
     except (TypeError, ValueError):
-        return fallback, f"{var}={raw!r} is not an integer — using the built-in default {fallback}"
+        return _config_or(fallback, var, f"{var}={raw!r} is not an integer")
     if v < 1:
-        return fallback, f"{var}={v} must be >= 1 — using the built-in default {fallback}"
+        return _config_or(fallback, var, f"{var}={v} must be >= 1")
     return v, None
+
+
+def _config_or(fallback, var, why):
+    """A malformed environment value falls back the SAME way an unset one does: config, then copy.
+
+    Splitting these two paths is how an inconsistency creeps in -- unset reading the source of truth
+    while junk reads a copy of it -- so both go through the config first and only then to the
+    built-in constant, with `why` preserved in the note either way.
+    """
+    v, note = _limit_from_config(var)
+    if v is not None:
+        return v, f"{why} — {note}"
+    return fallback, f"{why} — using the built-in default {fallback}"
 
 
 #: The built-in fallbacks, used ONLY when the machine config was not sourced. They must match the
@@ -277,6 +324,22 @@ PHASE_SKILL = {
 }
 
 
+def _case_of(path):
+    """`EcoSIM_TeRaCON` from a state path, for warnings that must NAME THEIR CASE.
+
+    This checker is REPO-WIDE. Its per-round messages said only "round 1", and the case name
+    appeared once, on the group header above them. A warning read out of that context -- pasted
+    into a review, quoted in a summary -- is attributed to whatever case the reader had in mind.
+    Measured 2026-09-05: a clean TeRaCON state was reported as carrying a housekeeping debt and an
+    empty knowledge base, both of which belong to other cases.
+    """
+    try:
+        parts = pathlib.Path(path).parts
+        return parts[parts.index("use_cases") + 1]
+    except (ValueError, IndexError):
+        return "?"
+
+
 def _check_round_close(path, d):
     """Return (errors, warnings): did a CLOSED round actually produce its deliverables?
 
@@ -325,16 +388,16 @@ def _check_round_close(path, d):
     if rc:
         rp = (rc.get("report_path") or "").strip()
         if not rp:
-            errors.append(f"round {rnd}: `round_close` recorded with an empty report_path -- "
+            errors.append(f"{_case_of(path)} round {rnd}: `round_close` recorded with an empty report_path -- "
                           f"that asserts a deliverable exists while naming nothing")
         elif not (ROOT / rp).exists() and not Path(rp).exists():
-            errors.append(f"round {rnd}: `round_close.report_path` does not resolve ({rp}). A "
+            errors.append(f"{_case_of(path)} round {rnd}: `round_close.report_path` does not resolve ({rp}). A "
                           f"pointer to nothing is worse than no pointer: it READS as evidence.")
         steps = rc.get("steps") or {}
         missing = [k for k in ("summarize", "compare", "report") if not steps.get(k)]
         if missing:
             warnings.append(
-                f"round {rnd}: round close recorded with step(s) not run: {', '.join(missing)}. "
+                f"{_case_of(path)} round {rnd}: round close recorded with step(s) not run: {', '.join(missing)}. "
                 f"The three are ordered and `compare-calibration-rounds` is the one that gets "
                 f"skipped -- which is how a round summary re-proposed two already-refuted "
                 f"parameters.")
@@ -343,17 +406,17 @@ def _check_round_close(path, d):
     if not rc:
         if is_active and hk:
             errors.append(
-                f"round {rnd}: `housekeeping` is recorded but `round_close` is NOT. The steps ran "
+                f"{_case_of(path)} round {rnd}: `housekeeping` is recorded but `round_close` is NOT. The steps ran "
                 f"out of order: the round report is `calibration-discipline` item 9 and is what "
                 f"the PI routes the round WITH, so it precedes the gate the housekeeping follows.")
         elif is_active and d.get("converged"):
             errors.append(
-                f"round {rnd}: `converged` with no `round_close`. Phase 7 was reached without a "
+                f"{_case_of(path)} round {rnd}: `converged` with no `round_close`. Phase 7 was reached without a "
                 f"round summary, cross-round ledger or ROUND report -- and a converged round is "
                 f"the CAMPAIGN's terminal, so nothing downstream will produce them.")
         elif closing:
             warnings.append(
-                f"round {rnd}: closed (converged / at the cycle limit / gate decided '{dec}') but "
+                f"{_case_of(path)} round {rnd}: closed (converged / at the cycle limit / gate decided '{dec}') but "
                 f"no `round_close` is recorded. Record it via "
                 f"`st.set_round_close(report_path=...)` once the three steps have run.")
 
@@ -364,7 +427,7 @@ def _check_round_close(path, d):
         fc = d.get("final_configuration")
         if not fc:
             errors.append(
-                f"round {rnd}: `converged` with no `final_configuration`. The campaign's actual "
+                f"{_case_of(path)} round {rnd}: `converged` with no `final_configuration`. The campaign's actual "
                 f"product -- parameter values, the base they modify, the case, the ARCHIVED binary, "
                 f"the reproduce command, and the residual -- has no record. Contract: "
                 f"`phase6-refinement`, 'The Phase-7 CONVERGED deliverable'. Record it via "
@@ -372,19 +435,19 @@ def _check_round_close(path, d):
         else:
             fp = (fc.get("path") or "").strip()
             if not fp:
-                errors.append(f"round {rnd}: `final_configuration` recorded with an empty path")
+                errors.append(f"{_case_of(path)} round {rnd}: `final_configuration` recorded with an empty path")
             elif not (ROOT / fp).exists() and not Path(fp).exists():
-                errors.append(f"round {rnd}: `final_configuration.path` does not resolve ({fp}). A "
+                errors.append(f"{_case_of(path)} round {rnd}: `final_configuration.path` does not resolve ({fp}). A "
                               f"pointer to nothing READS as evidence that the artifact exists.")
             if not (fc.get("reproduce_command") or "").strip():
-                warnings.append(f"round {rnd}: `final_configuration` carries no reproduce_command. "
+                warnings.append(f"{_case_of(path)} round {rnd}: `final_configuration` carries no reproduce_command. "
                                 f"A description of how to reproduce is not a reproduction.")
             ab = (fc.get("archived_binary") or "").strip()
             if not ab:
-                warnings.append(f"round {rnd}: `final_configuration` names no archived_binary -- "
+                warnings.append(f"{_case_of(path)} round {rnd}: `final_configuration` names no archived_binary -- "
                                 f"the result cannot be tied to the executable that produced it")
             elif "/bld/" in ab or ab.endswith("/e3sm.exe") and "archive" not in ab.lower():
-                warnings.append(f"round {rnd}: `final_configuration.archived_binary` looks like a "
+                warnings.append(f"{_case_of(path)} round {rnd}: `final_configuration.archived_binary` looks like a "
                                 f"LIVE BUILD path ({ab}). The build tree is shared and every build "
                                 f"overwrites it in place -- record the ARCHIVED copy "
                                 f"(feedback_bind_runs_to_archived_binaries).")
@@ -392,7 +455,7 @@ def _check_round_close(path, d):
     # ---- rule 4: the housekeeping debt. WARN everywhere -- see the docstring.
     if closing and not hk:
         warnings.append(
-            f"round {rnd}: closed but no `housekeeping` recorded. It runs AT or AFTER the gate, "
+            f"{_case_of(path)} round {rnd}: closed but no `housekeeping` recorded. It runs AT or AFTER the gate, "
             f"including on convergence with a FULLER checklist (PI 2026-08-25), because a "
             f"converged round hands work to nobody. Measured cost of skipping it: thirty "
             f"experiment cycles and an empty site knowledge base.")
@@ -440,7 +503,7 @@ def _check_site_kb_populated(path, d):
         return []
 
     if not gk.is_dir():
-        return [f"round {rnd} has closed but {gk.relative_to(ROOT) if str(gk).startswith(str(ROOT)) else gk}"
+        return [f"{_case_of(path)} round {rnd} has closed but {gk.relative_to(ROOT) if str(gk).startswith(str(ROOT)) else gk}"
                 f" does not exist. Every 'check Memory before proposing' instruction in the phase "
                 f"skills reads a store that is not there. `round-housekeeping` step 1 creates it."]
 
@@ -451,25 +514,60 @@ def _check_site_kb_populated(path, d):
         if f.is_file():
             try:
                 payload = json.loads(f.read_text())
-                inner = payload.get(name, payload)
-                n = len([k for k in inner if not str(k).startswith("_")]) if isinstance(inner, dict) \
-                    else (len(inner) if isinstance(inner, list) else 0)
+                n = _count_kb_entries(payload, name)
             except Exception:
                 n = -1
         counts[name] = n
         if n > 0:
             empty = False
     if empty:
-        return [f"round {rnd} has closed and the SITE knowledge base is EMPTY "
+        return [f"{_case_of(path)} round {rnd} has closed and the SITE knowledge base is EMPTY "
                 f"({', '.join(f'{k}={v}' for k, v in counts.items())}). A store nobody writes is a "
                 f"store nobody can read: the read obligation in `phase3-diagnosis` and "
                 f"`phase4-hypothesis` is satisfiable by opening an empty file. Run "
                 f"`round-housekeeping` (step 1 curates, step 6 asserts this)."]
     thin = [k for k, v in counts.items() if v == 0]
     if thin:
-        return [f"round {rnd} closed with empty site-KB store(s): {', '.join(thin)}. A round that "
+        return [f"{_case_of(path)} round {rnd} closed with empty site-KB store(s): {', '.join(thin)}. A round that "
                 f"refuted levers and recorded zero `failed_approaches` did not curate them."]
     return []
+
+
+
+def _count_kb_entries(payload, name):
+    """Count entries in a gained_knowledge store, supporting BOTH storage formats.
+
+    `MemoryManager._discovery_entries` documents that these files carry two formats and that
+    both may coexist in one file: an ARRAY under the store's own key (used by the model-level
+    store) and a FLAT map of top-level `name -> entry` dicts (used by the SITE stores, and what
+    `MemoryManager.add_discovery` writes). A seeded site file typically has both -- an empty
+    array left by its template, plus the real entries as top-level keys.
+
+    THE BUG THIS FIXES. The previous form was `inner = payload.get(name, payload)`, which takes
+    the array whenever the key EXISTS. For a seeded site store that array is `[]`, so the count
+    came back 0 and the checker reported an empty store while `MemoryManager.stats()` on the same
+    file reported seven. Measured 2026-09-09 on EcoSIM_Lusignan at its round close, immediately
+    after seven discoveries had been curated into it. A checker and the library it is checking
+    disagreeing about the same file is a bug in one of them, and it was here.
+    """
+    if not isinstance(payload, dict):
+        return len(payload) if isinstance(payload, list) else 0
+    seen = set()
+    arr = payload.get(name)
+    if isinstance(arr, list):
+        for item in arr:
+            if isinstance(item, dict):
+                seen.add(item.get("id") or item.get("name") or id(item))
+            else:
+                seen.add(id(item))
+    elif isinstance(arr, dict):
+        seen.update(k for k in arr if not str(k).startswith("_"))
+    for k, v in payload.items():
+        if str(k).startswith("_") or k == name:
+            continue
+        if isinstance(v, dict):
+            seen.add(k)
+    return len(seen)
 
 
 def _check_any_round_close_exists(paths):

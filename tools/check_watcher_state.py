@@ -3,7 +3,8 @@
 
     python tools/check_watcher_state.py <state.json> [--quiet]
 
-Exit: 0 alive-and-running · 0 finished · 1 STALE (watcher died) · 2 unreadable/malformed.
+Exit: 0 alive-and-running · 0 CLEANLY finished · 1 STALE / DIED / a terminal claim that does
+not hold up · 2 unreadable/malformed.
 
 WHY THIS EXISTS
 ---------------
@@ -15,12 +16,38 @@ is a heartbeat; this reads it and applies the one test the log cannot support.
 The load-bearing case is STALE: `status` still says RUNNING but the heartbeat has gone quiet. That
 is the SIGKILL / node-reboot / vanished-session death, which no shell trap can catch, so it is the
 reason liveness lives here rather than in the watcher's own exit handler.
+
+AND A TERMINAL STATUS IS NOT TAKEN ON TRUST (added 2026-09-04)
+-------------------------------------------------------------
+The first version treated any terminal status as a pass, so a watcher that died WHILE WRITING a
+false terminal blinded the layer built to catch it. That is not hypothetical and it was predicted
+in writing before it happened: commit 5f613ec6 fixed a bad squeue poll that made one empty read
+look like "no jobs left", and its own message warned that "the health guard would have reported
+wave 2 FINISHED indefinitely rather than stale -- the layer built to catch a dead watcher was
+blinded by the dead watcher's own final write." Two days later, on 2026-09-03, exactly that
+happened on a different array: the state file read ENDED_UNACCOUNTED with complete=233 of 4097
+while 3,733 tasks were still live, and this checker exited 0 over it for 31 hours.
+
+So a terminal claim now has to survive two tests before it passes:
+
+  ARITHMETIC (always available, and decisive for the case above)
+      complete + failed must equal total. ENDED_UNACCOUNTED means BY DEFINITION that it does not,
+      so it can no longer exit 0 -- the old code printed "inspect the logs before treating this as
+      a clean finish" and then returned 0, which is a warning nothing reads.
+
+  SCHEDULER CROSS-CHECK (best-effort; adds errors, never removes them)
+      If the job id still has tasks in the queue, the terminal claim is FALSE regardless of what
+      the arithmetic says. Reports UNKNOWN honestly when squeue is unavailable rather than
+      treating "cannot tell" as "fine" -- the whole failure class this tool exists for is a check
+      that passes because it could not see anything.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import pathlib
+import shutil
+import subprocess
 import sys
 import time
 
@@ -29,6 +56,34 @@ import time
 # tolerated hang per cycle), so a single-interval threshold would cry dead on a healthy watcher.
 STALE_INTERVALS = 2.0
 TERMINAL = {"ENDED", "ENDED_UNACCOUNTED", "DIED"}
+
+
+def _scheduler_still_has_tasks(job: str):
+    """(has_tasks, note) — True / False / None when it genuinely cannot be determined.
+
+    `-r` expands an array: without it a pending array folds to ONE line, which is the same
+    convenience-formatting trap that makes a scheduler CLI unsafe to read as data.
+
+    A non-zero exit is ambiguous: a purged/unknown job id and a controller outage both fail. They
+    are told apart on the error text, and the ambiguity is resolved toward UNKNOWN rather than
+    toward "fine", because a checker that treats "cannot tell" as a pass is the exact defect this
+    function was added to close.
+    """
+    if not job:
+        return None, "the state file names no job id"
+    if shutil.which("squeue") is None:
+        return None, "squeue is not on PATH (off-cluster?)"
+    try:
+        r = subprocess.run(["squeue", "-j", str(job), "-r", "-h", "-o", "%T"],
+                           capture_output=True, text=True, timeout=30)
+    except Exception as e:                                   # pragma: no cover - env-dependent
+        return None, f"squeue could not be run ({e})"
+    if r.returncode != 0:
+        if "invalid job id" in (r.stderr or "").lower():
+            return False, "the scheduler no longer knows this job id, consistent with terminal"
+        return None, f"squeue failed: {(r.stderr or '').strip()[:120]}"
+    n = len([ln for ln in r.stdout.splitlines() if ln.strip()])
+    return (n > 0), f"{n} task(s) still in the queue"
 
 
 def main() -> int:
@@ -77,7 +132,32 @@ def main() -> int:
         # DIED is NOT a pass. It is the same thing STALE reports, only self-announced, and the
         # array's outcome is equally unknown either way -- so it must not exit 0 and slip through
         # a gate that treats 0 as "nothing to do".
-        return 1 if status == "DIED" else 0
+        if status == "DIED":
+            return 1
+
+        # A terminal claim is CROSS-CHECKED, not trusted. See the module docstring for the
+        # 2026-09-03 measurement this closes.
+        problems = []
+        if done + bad != total:
+            problems.append(f"the numbers do not add up: complete+failed = {done + bad}, not "
+                            f"{total}. A terminal state with unaccounted tasks is not a finish.")
+        has_tasks, note = _scheduler_still_has_tasks(str(st.get("job", "")))
+        if has_tasks:
+            problems.append(f"the scheduler DISAGREES: {note}. The watcher wrote a terminal state "
+                            f"while the array is still live -- this is a FALSE TERMINAL.")
+
+        if problems:
+            if not a.quiet:
+                print("  FALSE-TERMINAL CHECK FAILED:")
+                for pr in problems:
+                    print(f"    - {pr}")
+                print("    Do NOT treat this as a finished ensemble. Re-launch the watcher and "
+                      "query sacct directly.")
+            return 1
+        if not a.quiet and has_tasks is None:
+            print(f"  cross-check: scheduler state UNKNOWN ({note}); the arithmetic check passed "
+                  f"({done + bad} of {total} accounted).")
+        return 0
 
     if age > STALE_INTERVALS * interval:
         if not a.quiet:

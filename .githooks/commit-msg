@@ -12,23 +12,50 @@ import re
 import sys
 
 PATTERNS = [
-    r"co-authored-by",
+    r"co-authored[- ]by",
     r"\U0001f916\s*generated with",      # 🤖 Generated with
-    r"generated with \[?claude code",
+    r"generated with \[?claude",
+    # Session/authorship trailers - see the note in .claude/hooks/block-ai-attribution.py.
+    # This layer sees the FINAL message on disk, so it can anchor to a line start.
+    r"^\s*claude[- ]session\s*:",
+    r"^\s*(assistant|ai)[- ](session|author)\s*:",
+    r"https?://claude\.ai/\S*",
 ]
+
+
+# A bare reference of the form GitHub autolinks. The lookbehind spares a doubled sign, a
+# hex colour, a URL fragment, and `PFT#11`, where the digits follow a word character.
+BARE_REF = re.compile(r"(?<![#\w/])#\d+\b")
 
 
 def main() -> int:
     try:
-        msg = open(sys.argv[1], encoding="utf-8", errors="replace").read().lower()
+        raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
     except Exception:
         return 0  # can't read → don't block
+    # Comment lines are stripped by git and are not part of the message.
+    body = "\n".join(l for l in raw.splitlines() if not l.lstrip().startswith("#"))
+    msg = body.lower()
+
     for p in PATTERNS:
-        if re.search(p, msg):
+        if re.search(p, msg, re.MULTILINE):
             sys.stderr.write(
                 "commit-msg: AI-attribution trailer detected (/%s/). CLAUDE.md rule #1 "
-                "forbids Co-Authored-By / 'Generated with Claude' trailers. Remove it and retry.\n" % p
+                "forbids attribution trailers. Remove it and retry.\n" % p
             )
+            return 1
+
+    # Git WRITES a bare reference itself in a merge or revert subject, so the rule cannot
+    # apply there - it is about what a person composes, not what git generates.
+    subject = next((l for l in body.splitlines() if l.strip()), "")
+    if not (subject.startswith("Merge ") or subject.startswith('Revert "')):
+        hits = sorted(set(BARE_REF.findall(body)))
+        if hits:
+            sys.stderr.write(
+                "commit-msg: bare reference %s. CLAUDE.md rule #1 forbids these - GitHub "
+                "autolinks them to an issue in THIS repository. Write 'task 17', 'Rule 4', "
+                "'anti-pattern 11', or the full owner/repo#2939 form for another repo.\n"
+                % ", ".join(hits))
             return 1
     return 0
 

@@ -176,6 +176,26 @@ def extract_relationships_from_yaml(data: Dict[str, Any]) -> List[tuple]:
     """Extract relationships from YAML data."""
     relationships = []
 
+    if 'categories' in data:
+        # The curated categories block was read by NOTHING until 2026-09-08: the graph's Category
+        # nodes and its category->parameter edges both come from the auto-extracted CDL layer, so
+        # the block looked wired while contributing no edge of its own. 44 relations were inert on
+        # api-43-1 (22 `mechanisms` + 22 `key_outputs`) and 42 on api-31-0. A field nothing reads
+        # emits no error, no skip line and no count change, which is why it survived: counts do not
+        # fall when an edge is never created. Both adapter builders have walked this block since
+        # they were written -- `scripts/build_pflotran_rag.py` wires the identical two fields.
+        # Endpoints that do not resolve are dropped by the existing both-nodes-exist guard below,
+        # so a category naming a mechanism this profile does not carry costs nothing.
+        for cat_name, cat_data in data['categories'].items():
+            for mech in (cat_data or {}).get('mechanisms', []) or []:
+                relationships.append(
+                    ("category", cat_name, "mechanism", mech, "contains")
+                )
+            for output in (cat_data or {}).get('key_outputs', []) or []:
+                relationships.append(
+                    ("category", cat_name, "output", output, "affects")
+                )
+
     if 'mechanisms' in data:
         for mech_name, mech_data in data['mechanisms'].items():
             for param in mech_data.get('parameters', []):

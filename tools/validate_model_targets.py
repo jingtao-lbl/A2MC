@@ -39,6 +39,12 @@ pitfalls BEFORE an ensemble runs — every one of these silently drops or NaN-po
     G14 a name appears in BOTH `prescribed_initialization:` and      ERROR (the run is BUILT FROM it,
         `targets:`                                                          so scoring it rewards
                                                                             the input, not the model)
+    G15 `site:` disagrees with the case directory the file lives in  WARN  (the file was seeded
+                                                                            from another case and
+                                                                            never re-headed; inert
+                                                                            to scoring, but it
+                                                                            misdescribes the case
+                                                                            to every reader)
 
 Exit: 0 clean · 1 warnings only · 2 any error.
 
@@ -176,6 +182,22 @@ def main() -> int:
         errors.append(f"[G14] {name}: listed in BOTH `prescribed_initialization:` and `targets:`. "
                       f"It is an input the run is built from, so scoring it rewards the input. "
                       f"Keep it in `prescribed_initialization:` only.")
+    # G15 -- the `site:` key must name the case directory this file lives in.
+    # Nothing in the codebase READS this key, so a wrong value changes no scored number and no
+    # test would ever catch it. That is exactly why it drifts: a new case's targets.yaml is
+    # seeded by copying a neighbour's, and re-heading it is the step that gets skipped. Found
+    # 2026-09-05 on a case whose file still declared another case's name and narrated that
+    # case's round history as its own, months after the copy. A WARN rather than an ERROR
+    # because it cannot corrupt a result -- it can only mislead the person reading it.
+    _tp = Path(args.targets).resolve()
+    _declared = doc.get("site")
+    if _declared and len(_tp.parents) >= 2 and _tp.parents[0].name == "validation":
+        _case = _tp.parents[1].name
+        if _declared != _case:
+            warns.append(f"[G15] site: '{_declared}' but this file lives in use_cases/{_case}/. "
+                         f"Almost certainly seeded from another case and never re-headed -- check "
+                         f"the whole header, not just this key, since the prose travels with it.")
+
     for name, t in targets.items():
         var = t.get("variable")
         if not var:

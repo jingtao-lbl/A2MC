@@ -388,6 +388,31 @@ class ModelBackend(ABC):
 
     # ---- Parameter file I/O ----
 
+    def read_secondary_param(self, path, name: str) -> float:
+        """Read back ONE secondary-surface parameter from a staged file.
+
+        The counterpart of ``write_parameter_file(..., surface="secondary")``, and it exists so a
+        sampled secondary value can be VERIFIED before submission rather than trusted. A surface
+        that is written but never checked is how a materializer that silently skipped one becomes
+        indistinguishable from a scientific result.
+
+        Raises NotImplementedError by default: a model declaring no secondary names never needs it.
+        """
+        raise NotImplementedError(
+            f"{type(self).__name__} declares no readable secondary surface (asked for '{name}')")
+
+    def secondary_param_names(self) -> set:
+        """Bare parameter names this model's SECONDARY surface can write. Empty = none.
+
+        DECLARED, not probed, and deliberately so. The secondary surface need not be a NetCDF
+        whose variable names can be listed: EcoSIM's is a management file whose writable knob
+        (`PPI`) is a whitespace token inside a fixed-width character array, invisible to
+        `nc_varnames()`. An adapter that supports `write_parameter_file(surface="secondary")`
+        should return the SAME key set its writer accepts, so the router and the writer cannot
+        drift apart. Default empty keeps every single-surface model's behaviour unchanged.
+        """
+        return set()
+
     @abstractmethod
     def write_parameter_file(
         self,

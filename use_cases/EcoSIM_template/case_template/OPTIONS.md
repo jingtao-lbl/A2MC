@@ -127,6 +127,13 @@ Many useful variables are registered **inactive** in `HistDataType.F90` and must
 `fincl` list to appear at all. A2MC injects `ECOSIM_SPEC.hist_activate` during `create_case`, so
 listing them here as well is belt-and-braces rather than required.
 
+**The tape set is a TARGET contract, not a preference.** Read `validation/targets.yaml` before
+fixing `hist_nhtfrq`: a target carrying `tape: h1` and a sub-daily `reduce` (e.g. EcoSIM's
+`growing_season_daytime_mean_abs`) cannot be scored at all without that tape, and nothing fails
+loudly -- the ensemble runs, completes, and simply scores one target fewer. Measured 2026-09-01
+while materializing a case whose namelist had been inherited from another case's `run.nml`: with
+`hist_fincl2 = ''` the `Fs` target was unscoreable and the ensemble looked healthy.
+
 **A second hourly tape is expensive.** Add one only when a target genuinely needs sub-daily
 resolution (BioCON added one for a daytime-window flux); a daily tape has already averaged the diel
 cycle away.

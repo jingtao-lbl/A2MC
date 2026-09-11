@@ -43,6 +43,34 @@ scripts default to `os.environ.get("A2MC_CASE_NAME_PATTERN", "<probe>_{N}")`, so
 config silently repoints them at the wrong directory and every case reports `FileNotFoundError` —
 which reads as "the array never ran". **Pass `--case-pattern` explicitly to any probe-era script.**
 
+## Step 0b — the EcoSIM knowledge base, BEFORE the source
+
+**`docs/ecosim-knowledge-base/` exists and this skill never mentioned it until 2026-09-05**, which
+is why a session spent several turns reconstructing the `micresb` slot semantics from Fortran that
+`microbial_bgc/index.md:133` states in one line with the same `MicBGCPars.F90:178-179` citation --
+and which additionally records that the 2-slot NECROMASS axis (`micresb`: kinetic, recalcitrant, the
+one `SPORC`/`SPOMC` index) is NOT the 3-slot LIVING-biomass axis (`ibiom_kinetic/struct/reserve`).
+That distinction is invisible in either declaration read alone, and it mattered.
+
+```bash
+git grep -i "<term>" -- docs/ecosim-knowledge-base/      # works with no RAG profile active
+```
+
+**KB first, then CONFIRM IN THE SOURCE.** Going to the Fortran first pays twice and loses the cross-axis context nobody re-derives; stopping at the KB leaves an understanding nothing has checked.
+
+**STAGE MATTERS, AND THIS IS THE CALIBRATION-STAGE RULE (PI, 2026-09-06).** While ONBOARDING a model the KB does not exist yet, source is the only recourse, and [[feedback_param_description_can_lie_verify_in_source]] governs: trace the read, then the internal variable, then its usage, especially before setting a bound. **At CALIBRATION stage the case is set up and the KB is assumed well-built, so the KB is where you START and it usually hands you the citation. It does NOT replace verifying in source: a KB page tells you what a thing IS, and only the code settles what it DOES -- or, just as often, what is ABSENT from it, which no page can state.** Query all five surfaces FIRST, then confirm in source. If you are in the source to LEARN what a parameter does rather than to CONFIRM what the KB told you, stop and name which it is: either you skipped the KB, or the KB has a gap. **A gap is a BUILD TASK** (rebuild the wiki, extend the curated seed, curate the round's findings at round close) and not something to route around every cycle.
+
+**THE KB IS FIVE SURFACES, NOT ONE, AND THEY ARE NOT INTERCHANGEABLE. QUERY ALL FIVE, not the first one or two that answer.** They are: the **codebase wiki** `docs/<model>-knowledge-base/<model>-codebase-wiki-<commit>/` (`git grep -i <term> -- docs/<model>-knowledge-base/`, which works with no RAG profile active), the **RAG vector index** `rag/chroma_db/<profile>/` and the **knowledge graph** `rag/graphs/<profile>.json` (both via `HybridRetriever`), the **MODEL-level adaptive memory** `memory/<model>/gained_knowledge/`, and the **SITE-level adaptive memory** `use_cases/{Model}_{Case}/memory/gained_knowledge/`. The last two are the ones that get forgotten and they are populated: 21 entries for EcoSIM at model level, 28 for one case at site level, on 2026-09-05. Measured the same day on ONE parameter, `SPORC`: the knowledge-graph node carried a one-line description and units but no bounds, no code location and no mention of the two-slot axis, while the codebase wiki carried the slot semantics, the defaults AND the `MicBGCPars.F90` citation. Concluding "the KB does not have it" from the thin surface would have been wrong, so check the surfaces that hold that KIND of knowledge rather than the first one you open.
+
+**The curated overlay lives in DIFFERENT PLACES by model family, and looking in the wrong one reads as "it does not exist".** An adapter model keeps it at `models/<model>/curated_seed.yaml`; only the FATES profiles use `rag/data/curated_relationships_<profile>.yaml`. The active profile's `rag/metadata/<profile>.json` names the file its graph was built from, so read that rather than guessing the path. Measured 2026-09-06: `models/ecosim/curated_seed.yaml` was declared missing on the strength of an `ls rag/data/`, and it is human-authored and is what built the EcoSIM graph.
+
+**MEASURED COST OF QUERYING ONE SURFACE INSTEAD OF FIVE (EcoSIM_TeRaCON R1, seven cycles, 2026-09-06).** The graph stated `parameter:RMOM --controls--> mechanism:Microbial_Maintenance_Respiration --affects--> output:CO2_SEMIS_FLX_col`, the exact variable that case scores as `Fs`, and named 12 parameters for that output where a rank-correlation screen surfaced 4. The curated seed's `RMOM` entry carried the mechanism, the `NitroPars.F90:209` citation, the positive sign, the Morris rank and the `VMXO` coupling. The SITE store listed `RMOM` as an untested rank-1 alternative and recorded `CNRT` as a confirmed lever at +41% `plant_C`. All of it was re-derived from correlations across two cycles. The graph also declares three `depends_on` pairs among nine levers composed in one experiment, which is the documented explanation for a non-additivity that got written up as a discovery.
+
+**THEN GO TO THE SOURCE AND CONFIRM IT. This step is not optional and is not reserved for claims you have already decided are load-bearing.** Confirming is not the same as learning: at calibration stage you arrive at the source already knowing what the KB says, in order to check it, so the read is short and targeted. A long exploratory source read at this stage is the signal described above. The KB tells you what a thing IS; the source tells you what it DOES. Open the `file:line` the KB handed you in the checkout at `$A2MC_MODEL_PATH` and read **the code that USES the value**, not only its declaration or its description string: a `description`, a `long_name` or a `units` field in any of these surfaces can be wrong, which is a standing rule here ([[feedback_param_description_can_lie_verify_in_source]]) and is exactly why the KB read is a starting point rather than an answer. Confirming costs one command -- `git -C "$A2MC_MODEL_PATH" show HEAD:<path> | sed -n '<lo>,<hi>p'` -- against the hours a wrong mechanism costs downstream.
+
+For EcoSIM specifically, the wiki records that the 2-slot NECROMASS axis (`micresb`, kinetic/recalcitrant) is NOT the 3-slot LIVING-biomass axis (`ibiom_kinetic`/`ibiom_struct`/`ibiom_reserve`) -- a distinction a source read alone missed and which decided a root cause on 2026-09-05. `models/ecosim/spec.py` and [[reference_ecosim_parameter_surfaces]] are the third
+leg: which SURFACE a name lives on.
+
 ## Step 1 — the three parameter surfaces
 
 EcoSIM cases are built from up to three NetCDF files. Know which is which before editing anything:
@@ -50,8 +78,17 @@ EcoSIM cases are built from up to three NetCDF files. Know which is which before
 | Surface | Env var | Treatment |
 |---|---|---|
 | primary | `A2MC_BASE_PARAM_FILE` | plant traits — perturbed per case |
-| secondary | `A2MC_SECONDARY_PARAM_FILE` | management (e.g. planting density) — **staged FIXED, never edited** |
+| secondary | `A2MC_SECONDARY_PARAM_FILE` | management (planting density `PPI`, cuts, fertiliser) — **per-case when the param list samples a name on it, staged unperturbed when it does not** |
 | tertiary | `A2MC_BASE_PARAM_FILE_3` | `MicrobePars.nc` microbial kinetics — perturbed per case |
+
+> **This row changed on 2026-09-01 and the change is easy to miss.** The secondary surface was
+> stageable but **not samplable** — a name on it could be routed nowhere, so a param list carrying
+> `PPI` refused rather than perturbing it. It is now written per case exactly as primary and tertiary
+> are (`materialize_adapter_ensemble.py`, the `secondary_edits` branch;
+> `memory/dev_logs_adapterkit/20260901g`). If you read "staged FIXED, never edited" anywhere, that
+> text is stale. The dry-run banner now reports which mode is in force -- `secondary(PER-CASE)` vs
+> `secondary(fixed)` -- computed from the routing rather than asserted, so check the banner instead
+> of assuming.
 
 Routing is **derived**, never declared: `route_surfaces()` probes each file's variable names and
 raises if a parameter is found in both or neither. A param list may carry an optional `surface`
@@ -106,6 +143,29 @@ Sobol sampling uses `SALib.sample.sobol` with a real `seed` and `scramble=True`.
 not a seed. The seed is written into the SALib problem file so the design is re-derivable at
 analysis time.
 
+### `sobol` and `sobol_seq` are DIFFERENT DESIGNS, and confusing them silently invalidates the analysis
+
+`create_adapter_parameter_sample.py` offers four schemes: `morris`, `sobol`, **`sobol_seq`**, `lhs`.
+The two Sobol' entries are not variants of one thing:
+
+| scheme | what it builds | analyze with |
+|---|---|---|
+| `sobol` | the **Saltelli A/B/AB** design, `N(2P+2)` rows with a required block structure | `SALib.analyze.sobol` |
+| `sobol_seq` | the **scrambled Sobol' SEQUENCE** — space-filling, every row independent | **given-data estimators**, `scripts/given_data_sensitivity.py` (Borgonovo delta, `rbd_fast`, `pawn`) |
+
+**The trap: `sobol.analyze()` and `morris.analyze()` do NOT error on a sequence design.** They
+consume the rows positionally, read a block structure that is not there, and return indices that
+look ordinary and mean nothing. Nothing fails, so nothing warns you.
+
+Two consequences worth holding onto. Saltelli **cannot drop rows** — a hole in an A/B/AB block
+damages the block, so a design with a meaningful failure rate needs its unusable-row rate measured
+on a cheap prefix first (Sobol' is extensible, so an `N=256` block is a true prefix of `N=1024` and
+its rows are reused rather than re-run). A `sobol_seq` design has no such constraint: rows are
+independent, so a dead case is simply a missing point.
+
+`A2MC_SAMPLING_SCHEME` in the round config records which one a round used. Read it before choosing
+an estimator; do not infer the design from the word "Sobol" in the ensemble name.
+
 ## Step 4 — VALIDATE before submitting. Non-negotiable.
 
 ```bash
@@ -123,6 +183,43 @@ unwritten. That is the failure mode this step exists for.
 ## Step 5 — submit and monitor
 
 **Archive the submit scripts into `phase_results/{stem}/submit_scripts/` as soon as they are final** — copy, not move. The run root is untracked scratch; the submit script is the only record of which BINARY the run was bound to and of its run-time hash assertion, and this workflow's own footgun list is why that matters. One per case plus a representative `runfile.nml`. **Phase 0 is deliberately EXEMPT.** Its job scripts are generated from the machine + round config by the materializer, and an ensemble is thousands of cases (one R3 round is 59,393), so archiving them would be both enormous and redundant: the config plus the generator already reproduces them exactly. Phase 5 is different because its handful of variants are hand-designed and hand-repointed, so nothing else records what actually ran.
+
+### How an ensemble is actually submitted
+
+One SLURM **job array** over the case dirs, via the case's own
+`use_cases/<Case>/case_template/submit_ensemble_array.sh`. One array task = one case = one serial
+EcoSIM run (`srun -n 1`, `OMP=1`, `--cpus-per-task=2`); parallelism is ACROSS cases, never within
+one. Raising `--cpus-per-task` cannot speed up a 1-grid-cell run and multiplies the charge.
+
+```bash
+source use_cases/<Case>/config/<site>_config_r<N>.sh
+mkdir -p "$A2MC_OUTPUT_DIR/logs"        # SLURM fails a task outright if it cannot open its log
+sbatch use_cases/<Case>/case_template/submit_ensemble_array.sh
+```
+
+**`shared` enforces `MaxSubmitJobsPU = 5000`, and SLURM counts array TASKS individually.** Measured
+ceiling: **4,995 pass `sbatch --test-only`**; 14,849 is rejected outright with
+`QOSMaxSubmitJobPerUserLimit`. `MaxArraySize` is 65,000 and is NOT the binding constraint. Check
+rather than discover:
+
+```bash
+sbatch --test-only --array=0-<LAST> use_cases/<Case>/case_template/submit_ensemble_array.sh
+```
+
+Over the cap, split into chunks **aligned on the design's own block stride** (the Saltelli stride
+for a `sobol` design) so a partially complete ensemble is still analyzable as whole blocks rather
+than fragments. Under it — an ensemble of a few thousand — use one array and skip the chunking
+entirely.
+
+**A slow hour in `shared` is not evidence that `shared` cannot serve the ensemble.** On 2026-08-20 a
+3.5-hour window measured ~20 cases/hour and projected 31 days; the same array then ramped to its
+full 512 concurrent and reprojected to ~6.6 hours, because `shared` backfills small tasks into
+slivers of busy nodes, which is what that queue is for. The node task-farm
+(`submit_taskfarm_array.sh`, 128 serial cases per exclusive `regular` node) is validated and
+remains available, but **per-case `shared` arrays are the default** (PI, 2026-08-20). Reach for the
+farm only after hours of measurement, not one sampling window. If you do: request `--qos=regular`,
+**never `regular_1`** — `regular_0`/`regular_1` appear in `sacctmgr show qos` and are rejected by
+`sbatch` with "Job request does not match any supported policy".
 
 Arm monitoring the moment anything is submitted, on YOUR launches only
 ([[feedback_monitor_only_own_session_launches]]):
@@ -143,7 +240,26 @@ the same ensemble can take a month or a week.
 ## Step 6 — extract and score against the TARGET's own reduce
 
 **`sacct COMPLETED` does not mean usable output.** A case can exit 0 having written a truncated
-tape. Census the years before trusting anything:
+tape.
+
+**The signal that means "finished" is the FINAL RESTART, never the h0 tape.** EcoSIM opens its
+single h0 tape at INITIALISATION and appends to it, so the tape exists from the first minute of the
+run — testing for it scores a wall-clock-killed run as COMPLETE, which is exactly the unusable row
+you are trying to detect. A restart set stamped `<final year + 1>-01-01` is written only after the
+last simulated year finishes. Derive the year from the case's own `runfile.nml`, never guess it:
+
+```
+start_date year + sum over forc_periods triplets of (y1 - y0 + 1) * repeats
+  e.g. start_date '20000101000000', forc_periods = 2000, 2022, 1  ->  23 years  ->  r.2023-01-01
+```
+
+`repeats` is included, so a recycled spin-up counts correctly. This is what
+`EcoSIMBackend.check_case_status` uses (`memory/dev_logs_adapterkit/20260820d`): before that fix a
+filesystem census reported COMPLETED=32 against `sacct`'s 12, and
+`phases/phase2_screening/screen_ensemble.py` was scoring truncated runs as finished. After it, the
+scan agreed with `sacct` exactly.
+
+Census the years before trusting anything:
 
 ```bash
 python - <<'PY'
@@ -222,6 +338,11 @@ scored on, and it should say so instead of plotting.
 - `ls -1d $DIR/case*` at ensemble scale: exceeds `ARG_MAX` and reports **0**, which reads exactly
   like data loss. Use `os.scandir`.
 - Treating `sacct COMPLETED` as "the science is valid".
+- Testing for the **h0 tape** as a completion signal: it exists from the first minute.
+- Analyzing a `sobol_seq` design with `sobol.analyze()`: it returns numbers rather than an error.
+- Assuming the secondary surface is fixed. It is per-case whenever the param list samples it.
+- Submitting more than **4,995** array tasks to `shared`: rejected, not queued.
+- `--qos=regular_1`: listed by `sacctmgr`, rejected by `sbatch`. Use `regular`.
 - Editing a staged base in place — a new base means a new round directory.
 - Stdout volume: EcoSIM can write tens of MB per case. At ensemble scale that dominates disk; trim
   or redirect at source before launching.
@@ -240,6 +361,18 @@ scored on, and it should say so instead of plotting.
   ([[feedback_per_model_scripts_not_generic]]): the machinery it drives is generic, the traps are not.
 
 ## Changelog
+
+- 2026-09-06: **"the KB is meant to be sufficient" removed -- it invited exactly the misreading it warns against.** PI-directed, and the signal is a measured misreading in the session that first followed this rule: the agent paraphrased the sentence as "the KB is assumed sufficient", which reads as permission to stop at the KB, and the PI corrected it -- *"KB is not sufficient, they just let you have a quick understanding, you still need to verify in the source code if needed"*. The sentence already said *and only then confirm in source*, so the instruction was right and one clause of it was pulling the other way. **Evidence that both halves are load-bearing, from the same session:** the wiki DID carry the model's respiration temperature functions with their constants and `file:line`, so one grep would have replaced six source reads of LEARNING -- and the finding that mattered was that NO calibratable array appears in either function body, a claim about ABSENCE that no wiki page can settle. The KB would have oriented in seconds and still not answered it. Replaced with "the KB is where you START and it usually hands you the citation; it does NOT replace verifying in source". Applied identically across nine skills. The five-surface requirement, the query order and every `description` are UNCHANGED, so when each skill fires is unaffected.
+
+
+- 2026-09-05: **KB FIRST, SOURCE TO CONFIRM.** PI-directed, after a session reconstructed the EcoSIM `micresb` slot semantics from Fortran over several turns while `docs/ecosim-knowledge-base/ecosim-codebase-wiki-2dea74d9/microbial_bgc/index.md:133` stated it in one line with the same `MicBGCPars.F90:178-179` citation -- and additionally recorded that the 2-slot NECROMASS axis is not the 3-slot LIVING-biomass axis, a distinction the source read missed and which mattered. Cost: a wrong root-cause diagnosis and two fixes that treated symptoms. The knowledge was in the repo THREE times (the KB, a sibling case's hand-authored parameter list, and the Fortran) and the lowest-level one was reached for. **This is a SEARCH ORDER, not a demotion of source:** source stays ground truth on what the model DOES, and a load-bearing claim still gets a `file:line`; the KB is where you START, because it usually carries that citation already plus context the source does not. `git grep -i <term> -- docs/<model>-knowledge-base/` works with no RAG profile active. This skill mentioned the EcoSIM knowledge base ZERO times before today, which is the coverage gap that let the source-first habit form on this model. New Step 0b. `description` untouched; no trigger change.
+- 2026-09-02: **Accuracy audit (PI-requested). One claim was FALSE and four operational facts were missing.** Checked against source, not recalled.
+  - **FIXED, was wrong:** the secondary surface was documented as "staged FIXED, never edited". It has been written **per case** since 2026-09-01 (`materialize_adapter_ensemble.py`, `secondary_edits`; `20260901g`), and EcoSIM_TeRaCON R1 samples `PPI` on it -- verified on disk, case1's secondary differs from the V0's. The same stale sentence lived in **five** places: this skill, `models/ecosim/README.md`, and three in `materialize_adapter_ensemble.py` including its **dry-run banner**, which printed `secondary(fixed)=` while sampling that surface. All five corrected in one pass; the banner now computes `PER-CASE` vs `fixed` from the routing instead of asserting it.
+  - **ADDED:** `sobol` vs **`sobol_seq`** -- different designs with different estimators, and `sobol.analyze()` does not error on a sequence design, it returns meaningless numbers. The round config's `A2MC_SAMPLING_SCHEME` is the authority; TeRaCON R1 is `sobol_seq`.
+  - **ADDED:** how an ensemble is actually submitted (`submit_ensemble_array.sh`), and `shared`'s `MaxSubmitJobsPU = 5000` with its measured 4,995-task ceiling -- a hard reject, not a queue, and the reason one round needed block-aligned chunking. With the 2026-08-20 correction that a slow hour in `shared` is transient, so per-case arrays stay the default over the task-farm.
+  - **ADDED:** the completion test. The skill described censusing h1 years but never said that the **h0 tape is not a completion signal** -- EcoSIM opens it at initialisation, so a wall-clock-killed run looked COMPLETE. The final restart `<final year + 1>-01-01` is the signal (`20260820d`).
+  - Six new footgun lines. Nothing was removed except the false sentence.
+
 
 - 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. Step 0 drops from three commands to one, and its `a2mc_config.sh`-is-the-wrong-file warning changes character: the guard now repairs that choice rather than leaving it to bite. The footgun list says what repair does NOT do -- the ~45 ELM-FATES variables the CIME config left in the shell stay there, so a high `env | grep -c '^A2MC_'` still means start a fresh shell.
 

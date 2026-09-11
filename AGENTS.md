@@ -7,7 +7,7 @@
 
 ## What you are
 
-A2MC ("Agentic Adaptive Multi-target Calibration") is an AI-driven calibration framework for **ELM — with or without FATES**. It runs as **one agent, two ways** — read [`README.md` §"Two Ways to Run A2MC"](README.md):
+A2MC ("Agentic Adaptive Multi-target Calibration") is an AI-driven calibration framework for **process-based environmental models**. This repository is the **non-CIME line** — EcoSIM, PFLOTRAN and ATS through the `models/` adapter registry, plus the built-in FATES code path; for a CIME-configured Earth system model (ELM, ELM-FATES) see the sibling **A2MC-elm** release, linked from `README.md`. It runs as **one agent, two ways** — read [`README.md` §"Two Ways to Run A2MC"](README.md):
 
 - **Autonomous (online) agent** — `python orchestrator.py --run`, a fixed Phase 0→7 state machine that calls the model in a loop. Unattended, at scale.
 - **Interactive (offline) agent** — *you*, a coding-agent harness operating in the repo, driven by conversation. For open-ended, exploratory, judgment-heavy, one-off work the fixed loop cannot do (forensics, synthesis, triage, figures, experiment design, auditing). You are also the **only writer of curated knowledge**: the autonomous agent runs its memory in "propose" mode (stages proposals); *you* review and promote them (see §"Memory & knowledge conventions").
@@ -81,7 +81,7 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | `arm-hpc-monitoring` | any (HPC) | Set up real-time monitoring of an in-flight ensemble at session start |
 | `restart-failed-jobs` | any (HPC) | Restart SLURM jobs that failed in an ensemble/experiment |
 | `restart-adapter-ensemble` | any (HPC) | Recover failed cases in a NON-CIME adapter ensemble (EcoSIM/PFLOTRAN/ATS) — classify why they died, persist the case list, relaunch only what is missing |
-| `diagnose-forensics` | any | Investigate an anomaly — real or artifact? — then root-cause it |
+| `diagnose-forensics` | any | Triage ONE anomaly — real or artifact? — then root-cause it (a whole round -> `phase3-diagnosis`) |
 | `scientific-analysis` | any | Run an investigation → figure → ana_log |
 | `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |
 | `literature-review` | any | Cited literature review via `paper-search-mcp` (search→triage→extract→synthesis) — PARAMETER-BOUNDS (published ranges → refine a param-list's `lower`/`upper`) or MANUSCRIPT topic review. Validated DOIs, no fabrication. NOT a single-citation lookup |
@@ -93,14 +93,15 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | `write-report` | any | Integrated, self-contained report for a zero-context human reader |
 | `build-rag-from-scratch` | any | Build the RAG/GraphRAG knowledge layer from scratch (new model or full reconstruction) |
 | `rebuild-rag` | any | Rebuild/repair a model's RAG index — **one build script per model** (FATES/EcoSIM/PFLOTRAN), reindex, wiki bump, and how to actually COMMIT it |
+| `wire-knowledge-graph` | any | Audit/fix WHICH curated relations reach a model's knowledge graph — one `build_graph()` per model reading its own seed field names, and a field nothing reads fails silently |
 | `generate-codebase-wiki` | any | Produce a source-grounded codebase wiki for a model |
 | `validate-rag-chain` | any | Validate the source → wiki → curated-YAML → RAG chain before shipping |
 | `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
 | `port-param-file` | any | Port a calibrated param file across model/API versions (remap PFT identity by functional type, transfer tuned values) |
 | `add-skill` | any | Scaffold + register a new skill (4-way registry parity) |
 | `refine-skill` | any | Refine an existing skill from accumulated evidence (human-gated) |
-| `summarize-calibration-round` | **FATES** | Summarize one calibration round (whole-ensemble biomass + evaluation report) |
-| `compare-calibration-rounds` | **FATES** | Compare calibration rounds (top-N, μ* sensitivity, cross-round overlays) |
+| `summarize-calibration-round` | any | Summarize one round: whole-ensemble figures, evaluation, sensitivity, and what the round established about the system |
+| `compare-calibration-rounds` | any | Cross-round parameter AND mechanism ledgers, plus performance and sensitivity overlays |
 | `ecosim-run-workflow` | any | Run + test EcoSIM (non-CIME): multi-surface cases, pre-submission validation, target-driven scoring |
 | `pflotran-run-workflow` | any | Run + test PFLOTRAN (deck-driven): deck-as-parameter-file, case assembly, `*-mas.dat` scoring, the 806-hour observation offset |
 | `ats-run-workflow` | any | Run + test ATS (XML-deck): ParameterList-by-path, targets declared in the deck, honest about the v0.1 run wiring |

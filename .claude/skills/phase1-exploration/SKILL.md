@@ -34,6 +34,10 @@ per PFT) as CSV + plots, plus your interpretation of what to tune (captured in t
 `tools/diagnose_ensemble_status.py --cases 1-N` — proceed when >95% of cases have TRANS complete.
 Failed cases become NaN rows downstream.
 
+> **Before designing or interpreting anything here, hold the MECHANISM NETWORK, not one or two parameters.** At calibration stage the model KB is assumed well-built, so it is where you START and it usually hands you the citation -- it does NOT replace verifying in source: query ALL FIVE surfaces (codebase wiki, RAG index, **knowledge graph**, MODEL-level and SITE-level `gained_knowledge/`) plus the case's own parameter list, pull `parameter -> controls -> mechanism -> affects -> output` for the **scored** variables and the `depends_on` couplings among anything you intend to move together, and only then confirm in source. Needing source to LEARN rather than to CONFIRM means a KB gap, which is a build task. [[feedback_full_mechanism_picture_before_designing_an_experiment]]
+
+> **AND AN OUTPUT VARIABLE IS VERIFIED LIKE A PARAMETER.** The rule above is written about parameters and mechanisms; a tape field is a third category and the same failure arrives one category over. Before reducing one, establish that it is ACTIVE (a field registered `default='inactive'` is not written unless a run names it, and the model's `docs/<model>-knowledge-base/<model>_output_info_<commit>.cdl` carries a source-derived `:status`) and what its TEMPORAL SEMANTICS are -- rate, per-record increment, within-year cumulative that RESETS, run-cumulative, or stock. One reduction does not fit all five and the units do not separate them. Full rule and the measured cost: `calibration-discipline` item 3c.
+
 ## Step 1 — extract the Y matrix (reads existing outputs — no new simulations)
 
 `phases/phase1_exploration/extract_sensitivity_outputs.py --output-var leaf_biomass --cases 1-N
@@ -147,6 +151,10 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 - **Next:** `phase2-screening` (rank the ensemble against targets).
 
 ## Changelog
+
+- 2026-09-08: **An OUTPUT VARIABLE is verified like a parameter** (one line appended to the KB-first block; PI-directed). The rule that block states is written about parameters and mechanisms, and a tape field is a third category no rule named -- so in one session the identical failure arrived one category over: a single `nanmean` applied to six variables with five different temporal semantics, and an `inactive` field read as gross production while the model's own output-info CDL carried `status = "inactive"`. Canonical rule and the measured cost: `calibration-discipline` item 3c. No `description` change.
+
+- 2026-09-06: **"the KB is meant to be sufficient" removed -- it invited exactly the misreading it warns against.** PI-directed, and the signal is a measured misreading in the session that first followed this rule: the agent paraphrased the sentence as "the KB is assumed sufficient", which reads as permission to stop at the KB, and the PI corrected it -- *"KB is not sufficient, they just let you have a quick understanding, you still need to verify in the source code if needed"*. The sentence already said *and only then confirm in source*, so the instruction was right and one clause of it was pulling the other way. **Evidence that both halves are load-bearing, from the same session:** the wiki DID carry the model's respiration temperature functions with their constants and `file:line`, so one grep would have replaced six source reads of LEARNING -- and the finding that mattered was that NO calibratable array appears in either function body, a claim about ABSENCE that no wiki page can settle. The KB would have oriented in seconds and still not answered it. Replaced with "the KB is where you START and it usually hands you the citation; it does NOT replace verifying in source". Applied identically across nine skills. The five-surface requirement, the query order and every `description` are UNCHANGED, so when each skill fires is unaffected.
 
 - 2026-08-27: **Says that the adapter parallel does NOT carry PFLOTRAN, and what to use instead**
   (PI-directed, first PFLOTRAN campaign). `extract_and_plot_adapter_ensemble.py` reduces per-PFT

@@ -80,7 +80,7 @@ export A2MC_RAG_AUTO_REBUILD="${A2MC_RAG_AUTO_REBUILD:-false}"
 # ITERATION CONTROL   (mirrors a2mc_config.sh — keep in sync)
 # ========================
 export A2MC_MAX_SKIP_TESTING=10
-export A2MC_MAX_EXPERIMENTS=10
+export A2MC_MAX_EXPERIMENTS=20
 export A2MC_CONFIDENCE_THRESHOLD=0.95
 
 # ========================

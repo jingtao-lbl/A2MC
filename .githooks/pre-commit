@@ -333,14 +333,39 @@ fi
 # Resolve the interpreter IN THIS BLOCK. Every other check calls pick_py inside its own scope, and
 # reusing a $PY set by an earlier block only works when that block ran -- under `set -u` an unset PY
 # aborts the whole hook, which is what this check did on its first real commit.
+#
+# SCOPED TO THE CASES WITH STAGED FILES (2026-09-08). Run repo-wide, this warning prints OTHER
+# cases' stem names into every commit, and in a shared clone those belong to campaigns the
+# committer is not working on. That is not only noise: measured the same day, a Phase-5 experiment
+# in one case was named with a NUMBERING CONVENTION belonging to another, whose stems this warning
+# had put in front of the author on about a dozen consecutive commits. A check that reports on work
+# you are not doing trains you in another case's habits.
+#
+# NO STAGED CASE FILES -> SKIP, and that is the right answer for a FRESH CLONE with nothing set up
+# yet. A user who has just cloned A2MC has only the shipped templates under use_cases/, no case of
+# their own, and nothing they commit until they create one touches a case at all. Scoping means
+# they see this check for the first time on the first commit into their OWN case, which is exactly
+# when its advice applies. Repo-wide it would have greeted them on their very first commit with
+# findings about someone else's campaign, in a repo where those cases do not even ship.
+#
+# THE TRADE, stated because it is real: duplication inside a case nobody is committing to stops
+# being reported at commit time. It is still found by running the tool with no --site, which is
+# what the round-close housekeeping pass should do.
 PY="$(pick_py)"
 if [[ -n "${PY:-}" ]]; then
-    set +e
-    TIER_OUT="$("$PY" "$ROOT/tools/check_case_script_tier.py" 2>&1)"
-    TIER_RC=$?
-    set -e
-    if [[ $TIER_RC -ne 0 ]]; then
-        echo "$TIER_OUT" | sed 's/^/  /' >&2
+    TIER_SITES=()
+    while IFS= read -r s; do
+        [[ -n "$s" ]] && TIER_SITES+=(--site "$s")
+    done < <(git diff --cached --name-only --diff-filter=ACMR \
+             | sed -n 's|^use_cases/\([^/]*\)/.*|\1|p' | sort -u)
+    if [[ ${#TIER_SITES[@]} -gt 0 ]]; then
+        set +e
+        TIER_OUT="$("$PY" "$ROOT/tools/check_case_script_tier.py" "${TIER_SITES[@]}" 2>&1)"
+        TIER_RC=$?
+        set -e
+        if [[ $TIER_RC -ne 0 ]]; then
+            echo "$TIER_OUT" | sed 's/^/  /' >&2
+        fi
     fi
 fi
 
@@ -551,6 +576,51 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^use_cases/[^/]
     fi
 fi
 
+# (18) tools/check_cycle_reports.py — every CLOSED experiment cycle has a CYCLE REPORT.
+# `calibration-discipline` item 7 requires one at each cycle end, and `write-report` builds the
+# ROUND report by synthesizing the cycle reports rather than the raw phase logs. Nothing enforced
+# either half. Measured 2026-09-09: three cycles of EcoSIM_Lusignan R1b closed with no report, the
+# omission was written into the round summary as "recorded as debt rather than written", and the
+# round was closed on top of it -- so the round report re-derived from raw phase logs, the exact
+# anti-pattern that contract names. It produced no signal anywhere, because every OTHER Phase-6
+# requirement has a checker and this one did not: check_offline_log_evidence.py warns when a figure
+# EXISTS and is not embedded, and cannot warn about a report that was never written.
+#
+# SAME TRIGGER AS (9), and for the same reason: case work is the moment to ask. Firing when a
+# report is staged would fire exactly when someone is already writing one.
+#
+# WARN ONLY, never blocking. Six real gaps exist today, all in a case another effort owns, so
+# erroring would block their commits over history this branch does not own. `--strict` is available
+# for a deliberate audit.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^use_cases/[^/]+/'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        CYC_OUT="$("$PY" "$ROOT/tools/check_cycle_reports.py" 2>&1)"
+        CYC_RC=$?
+        set -e
+        # exit 2 is the anti-silent-pass guard: a naming convention moved and the checker has gone
+        # blind. That IS worth blocking, because a checker reporting clean forever is worse than
+        # no checker.
+        if [[ $CYC_RC -eq 2 ]]; then
+            echo "$CYC_OUT" >&2
+            echo "" >&2
+            echo "pre-commit: the cycle-report checker went BLIND (a naming convention moved)." >&2
+            echo "  Fix tools/check_cycle_reports.py before committing case work; a checker that" >&2
+            echo "  cannot fail is worse than no checker." >&2
+            exit 1
+        fi
+        if grep -q "closed with no report" <<< "$CYC_OUT"; then
+            echo "" >&2
+            grep -E "^  warn |cycle\(s\) closed with no report" <<< "$CYC_OUT" >&2
+            echo "  ^ not blocking. A cycle report is \`calibration-discipline\` item 7, and the" >&2
+            echo "    ROUND report synthesizes the CYCLE reports -- without them it re-derives" >&2
+            echo "    from raw phase logs. Contract: .claude/skills/write-report/SKILL.md." >&2
+            echo "" >&2
+        fi
+    fi
+fi
+
 # (8) tools/check_rag_index_committed.py — the COMMITTED RAG index must match the COMMITTED
 # expected_counts. Runs only when something under rag/ is staged, which is the moment the
 # mismatch is CREATED: a rebuild arms expected_counts in rag/milestones.json (plain JSON,
@@ -571,6 +641,35 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^rag/'; then
         echo "pre-commit: a committed RAG index does not match its expected_counts -- see above." >&2
         echo "  A rebuild almost certainly did not reach the repo. See the \`rebuild-rag\` skill," >&2
         echo "  Step 4 (chroma.sqlite3 carries --skip-worktree; \`git add\` stages it silently)." >&2
+        exit 1
+    fi
+fi
+
+# (17) Curated-seed -> knowledge-graph COVERAGE. Fires only when a commit touches a seed, a graph
+# or a graph builder, because it reads every registered profile and there is no reason to pay that
+# on an unrelated commit.
+#
+# WHAT IT CATCHES that nothing else can: a relation FIELD in a curated seed that no builder pass
+# reads. It passes tools/validate_curated_yaml.py, which checks that names RESOLVE and never that
+# anything CONSUMES them; it emits no `skipped edge` line, because nothing tried; and it moves no
+# count, so the builders' count-regression guard is blind -- counts do not fall when an edge is
+# never created. Two such fields sat unread in the EcoSIM builder for months (2026-09-08), one of
+# them carrying the driver of the scored target a live round was stuck on.
+#
+# It went into this hook only once every non-legacy profile was green. A check that is red on
+# arrival is a check people learn to skip.
+if git diff --cached --name-only --diff-filter=ACMR \
+   | grep -qE '^(rag/graphs/|rag/data/curated_relationships|rag/graph_builder\.py|models/[^/]+/curated_seed\.yaml|scripts/build_.*rag.*\.py)'; then
+    PY="$(pick_py)"
+    _cov_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_graph_coverage.py" || _cov_rc=$?
+    fi
+    if [[ $_cov_rc -ge 1 ]]; then
+        echo "" >&2
+        echo "pre-commit: a curated relation field reaches no edge -- see above." >&2
+        echo "  Add the pass to that model's OWN builder (the \`wire-knowledge-graph\` skill)," >&2
+        echo "  rebuild, and diff node-by-node. Do not silence this by deleting the seed field." >&2
         exit 1
     fi
 fi

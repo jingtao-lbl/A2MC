@@ -51,6 +51,13 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
      sync derives its exclude list from this field, and wrap the skill's registry rows in a
      private-comment block); default `public`. `category: phase|calibration|model-dev|meta|kb-build|authoring`
      — pick the group (schema table in `.claude/skills/README.md`).
+     **Visibility is WHOLE-SKILL, and that is a decision, not a limitation (PI, 2026-08-29).** There is no
+     private SECTION inside a skill: `filter_private` runs over a fixed file list that does not include
+     `SKILL.md` bodies, so a `<!-- private -->` block in one would ship the text AND the markers. Do not add
+     skill bodies to that list. **When one step applies only to a private clone, write a mode-aware
+     CONDITIONAL instead** — `onboard-session`'s framework-log step runs only if `memory/dev_logs*/` exists,
+     so both clones run the same skill and it is correct in each. Splitting the text would ship the public
+     reader a skill with a hole in it and leave two versions to keep in sync.
    - Body: short purpose → decision tree → numbered recipes (ready-to-run bash, use `$PY` for
      Python-3.10 RAG ops) → guardrails/footguns → cross-references.
    - End with a **`## Changelog`** seeded with a dated "Initial version — distilled from
@@ -116,6 +123,8 @@ add-only asymmetry is exactly how a deleted skill leaves stale registry rows beh
   `curate-knowledge` / `inject-knowledge` write-gate stance (a skill is a contract).
 
 ## Changelog
+
+- 2026-08-29: **Step 3 records that skill visibility is WHOLE-SKILL by decision (PI).** There is no private SECTION inside a skill — `filter_private` runs over a fixed file list that excludes `SKILL.md` bodies, so a `<!-- private -->` block in one ships the text AND the markers. The answer for a step that applies to only one kind of clone is a **mode-aware conditional**, not a split text: `onboard-session`'s framework-log step now runs only if `memory/dev_logs*/` exists, so both clones run the same skill and it is correct in each. Written into the frontmatter step because the mechanism is invisible until someone tries it, and it fails silently when they do.
 
 - 2026-07-15: Step 5 names `tools/smoke_test_skills.py` as the **Tier-2 runtime** skill-contract check (complements the Tier-1 static `check_skill_registry.py`) — runs the read-only backing commands + asserts exit 0. Ported from demo `84af889`.
 - 2026-07-12: Step 5 note — `check_skill_registry.py` now **strict-parses each SKILL.md frontmatter** (`yaml.safe_load`), closing the gap where a colon-space in a `description:` passed the (lenient, regex) registry check but failed the strict pytest frontmatter parse. The checker and `tests/test_offline_agent_mode.py` now agree; avoid `: ` in a `description:` (use ` — `). Signal: colon-space bit twice (calibration-goal, literature-review).

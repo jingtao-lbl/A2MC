@@ -41,7 +41,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from scripts.create_adapter_parameter_sample import (  # noqa: E402
-    parse_pft_param_list, canonical_pft_id, nc_varnames, route_surfaces,
+    parse_pft_param_list, canonical_pft_id, nc_varnames, route_surfaces, parse_param_modes,
 )
 
 _CID_RE = re.compile(r"^(?P<name>[A-Za-z][A-Za-z0-9_]*?)_(?P<pft>\d+)$")
@@ -59,7 +59,7 @@ def _case_name(pattern: str, n) -> str:
     return pattern.replace("{N}", str(n))
 
 
-def _check_submit_script(script: Path, run_root: Path, sample_ids):
+def _check_submit_script(script: Path, run_root: Path, sample_ids, case_pattern=None):
     """Dry-run the ENSEMBLE array submit script's task dispatch for sample SLURM_ARRAY_TASK_IDs.
 
     Runs the real script with SLURM_ARRAY_TASK_ID set and `srun` stubbed to a no-op, so it exercises
@@ -79,6 +79,12 @@ def _check_submit_script(script: Path, run_root: Path, sample_ids):
     os.chmod(stub / "srun", 0o755)
     env = dict(os.environ)
     env["PATH"] = str(stub) + os.pathsep + env.get("PATH", "")
+    # The dry-check must use the pattern the VALIDATION is running against, not whatever the
+    # ambient environment holds. Without this the check resolved the config's default pattern and
+    # reported `no case dir <default>0` for every task of an EXPERIMENT run root, which is a false
+    # negative that cost two cycles a --no-submit-check workaround.
+    if case_pattern:
+        env["A2MC_CASE_NAME_PATTERN"] = case_pattern
     try:
         for tid in sample_ids:
             env["SLURM_ARRAY_TASK_ID"] = str(tid)
@@ -105,6 +111,9 @@ def main() -> int:
     ap.add_argument("--matrix", default=os.environ.get("A2MC_ENSEMBLE_MATRIX_FILE"))
     ap.add_argument("--run-root", default=os.environ.get("A2MC_OUTPUT_DIR"))
     ap.add_argument("--base-param", default=os.environ.get("A2MC_BASE_PARAM_FILE"))
+    ap.add_argument("--secondary-param", default=os.environ.get("A2MC_SECONDARY_PARAM_FILE"),
+                    help="secondary base file, if the param list samples that surface (e.g. EcoSIM "
+                         "pft_mgmt PPI) — default $A2MC_SECONDARY_PARAM_FILE")
     ap.add_argument("--tertiary-base", default=os.environ.get("A2MC_BASE_PARAM_FILE_3"),
                     help="tertiary base file, if the param list spans a 3rd surface (e.g. EcoSIM "
                          "MicrobePars.nc) — default $A2MC_BASE_PARAM_FILE_3; omit for a single-surface ensemble")
@@ -135,6 +144,24 @@ def main() -> int:
     tertiary_path = Path(args.tertiary_base) if args.tertiary_base else None
     tertiary_name = tertiary_path.name if tertiary_path else None
     tertiary_base_vals = {}
+    # SECONDARY surface: a sampled value here was UNVERIFIED before 2026-09-01, because the
+    # surface could only be staged fixed and so never needed checking. Its base value is read
+    # through the BACKEND rather than as a NetCDF variable -- EcoSIM's PPI is a token inside a
+    # fixed-width string, invisible to `nc_varnames`.
+    # The secondary surface is model-dispatched (declared names + a token reader), so unlike the
+    # NetCDF surfaces this validator now needs the backend itself.
+    import importlib
+    from models import registry as _registry
+    try:
+        importlib.import_module(f"models.{args.model}")
+        backend = _registry.get_model(args.model)
+    except Exception as e:
+        print(f"FATAL: model '{args.model}' not onboarded: {e}", file=sys.stderr)
+        return 2
+
+    secondary_path = Path(args.secondary_param) if getattr(args, "secondary_param", None) else None
+    modes = parse_param_modes(args.param_list)
+    secondary_base_vals = {}
     if tertiary_path is not None:
         tds = nc.Dataset(tertiary_path)
         tertiary_base_vals = {v: np.asarray(tds.variables[v][:]).ravel() for v in tds.variables}
@@ -143,7 +170,9 @@ def main() -> int:
     try:
         routing = route_surfaces(names, nc_varnames(args.base_param),
                                   nc_varnames(tertiary_path) if tertiary_path else set(),
-                                  tertiary_path is not None)
+                                  tertiary_path is not None,
+                                  secondary_names=backend.secondary_param_names(),
+                                  secondary_given=secondary_path is not None)
     except ValueError as e:
         print(f"FATAL: {e}", file=sys.stderr)
         return 2
@@ -197,6 +226,32 @@ def main() -> int:
         try:
             for j, (var, idx0) in enumerate(decomp):
                 surface = routing[names[j]]
+                if surface == "secondary":
+                    # Verified through the BACKEND, not as a NetCDF variable. A multiplier is not
+                    # supported here: the secondary writer stores one token, so there is no base
+                    # array to scale, and route_surfaces would have to be taught otherwise first.
+                    if modes.get(names[j]) == "multiplier":
+                        err(case, f"{names[j]}: mode=multiplier is not supported on the secondary "
+                                  f"surface (a single token has no base array to scale)")
+                        continue
+                    sfile = (cdir / secondary_path.name) if secondary_path else None
+                    if sfile is None or not sfile.exists():
+                        err(case, f"{names[j]} (secondary): no staged secondary file in this case dir")
+                        continue
+                    try:
+                        got = backend.read_secondary_param(sfile, names[j])
+                    except Exception as e:
+                        err(case, f"{names[j]} (secondary): unreadable — {e}"); continue
+                    if row_i is None:
+                        want = backend.read_secondary_param(secondary_path, names[j])
+                    else:
+                        # The writer stores an INTEGER token, so compare the ROUNDED value or every
+                        # case fails for a reason that is not an error.
+                        want = round(float(X[row_i - 1][j]))
+                    if not np.isclose(got, want, rtol=0, atol=0.5):
+                        err(case, f"{names[j]} (secondary) got {got:g} expected {want:g}")
+                    checked += 1
+                    continue
                 cur_ds = ds if surface == "primary" else tds
                 cur_base = base if surface == "primary" else tertiary_base_vals
                 if var not in cur_ds.variables:
@@ -213,7 +268,31 @@ def main() -> int:
                     # R3 is the first round whose tertiary surface has scalars at all
                     # (RCCZ/VMXO/RMOM/GO2X/DCKML are all dims=()).
                     base_arr = np.asarray(cur_base[var]).ravel()
-                    expect = float(base_arr[0] if idx0 is None else base_arr[idx0])
+                    if idx0 is None:
+                        # The whole variable must equal the BASE, elementwise. Taking element 0 as
+                        # a scalar expectation (the previous form) is right only for a UNIFORM
+                        # array and silently wrong for a varied one: SPOSC's twenty entries span
+                        # 0 to 7.5, so V0 was reported as "broadcast != 7.5" while being exactly
+                        # correct. A scalar parameter ravels to one element, so this covers it too.
+                        if not np.allclose(arr, base_arr, rtol=args.rtol, atol=1e-12):
+                            err(case, f"{names[j]} ({surface}) V0 != base elementwise")
+                        checked += 1
+                        continue
+                    expect = float(base_arr[idx0])
+                elif modes.get(names[j]) == "multiplier":
+                    # The matrix column is a FACTOR, not a value: the expected content is the
+                    # BASE array scaled elementwise. Comparing the factor itself would fail every
+                    # case, and comparing a broadcast scalar would PASS the very defect the mode
+                    # exists to fix.
+                    factor = float(X[row_i - 1][j])
+                    want_arr = np.asarray(cur_base[var]).ravel() * factor
+                    if not np.allclose(arr, want_arr, rtol=args.rtol, atol=1e-12):
+                        err(case, f"{names[j]} ({surface}) != base x {factor:g} elementwise")
+                    if not (lower[j] - 1e-9 <= factor <= upper[j] + 1e-9):
+                        err(case, f"{names[j]} factor {factor:g} out of "
+                                  f"[{lower[j]:g},{upper[j]:g}]")
+                    checked += 1
+                    continue
                 else:
                     expect = float(X[row_i - 1][j])
                 if idx0 is None:  # broadcast / scalar
@@ -294,15 +373,22 @@ def main() -> int:
                     if c.exists():
                         ss = str(c); break
         if ss and Path(ss).exists():
-            sample = sorted({int(args.baseline_index), 1, max(1, n_rows // 2), n_rows})
-            for p in _check_submit_script(Path(ss), run_root, sample):
+            # Sample the BASELINE index only when a baseline case actually exists. An experiment
+            # is materialized as rows 1..N with no unperturbed case 0, so including index 0
+            # unconditionally reported `no case dir ...0` on every correct experiment ensemble.
+            has_baseline = bool(cases) and cases[0][1] is None
+            sample = sorted({1, max(1, n_rows // 2), n_rows}
+                            | ({int(args.baseline_index)} if has_baseline else set()))
+            for p in _check_submit_script(Path(ss), run_root, sample,
+                                          case_pattern=args.case_pattern):
                 err("submit-script", p)
             submit_msg = f"submit-script dry-check ({Path(ss).name}): tasks {sample}"
         else:
             submit_msg = "submit-script check: no submit_ensemble_array.sh found (skipped)"
 
     ok = not errors
-    print(f"Validated {checked} case dirs (+structure, param file, namelist, submit) under {run_root}")
+    print(f"Validated {len(cases)} case dir(s), {checked} check(s) "
+          f"(structure, param file, namelist, submit) under {run_root}")
     print(f"  params/case: {len(names)}  |  matrix: {n_rows}x{n_cols}  |  baseline: "
           f"{'yes' if cases and cases[0][1] is None else 'no'}")
     print(f"  {submit_msg}")

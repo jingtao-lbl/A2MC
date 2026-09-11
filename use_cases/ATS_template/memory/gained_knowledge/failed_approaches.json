@@ -1,0 +1,9 @@
+{
+  "_comment": "ATS_template. Copy this folder when creating a new ATS case, then replace this comment with the case's own description. Holds approaches refuted at this case. A refutation is a property of the (parameter, direction, base) TRIPLE, so record all three.",
+  "_schema_version": "1.0",
+  "_last_updated": "2026-09-08",
+  "_scope": "SITE-SPECIFIC / CASE-SPECIFIC knowledge only. Knowledge true of the MODEL wherever it runs belongs in memory/<model>/gained_knowledge/, and promotion up to that layer is a separate, later, evidence-gated decision -- one case showing a relation is one observation. Relationships in the model SOURCE CODE belong in neither store: they are the model knowledge graph, which is built by reading source and is independent of any case and any target.",
+  "_source": "Template scaffold created 2026-09-08. EMPTY BY DESIGN. Do not hand-edit. Entries arrive through the write gate: the autonomous agent STAGES to auto_discovered_pending.json and cannot write here; the interactive agent promotes with a human in the loop (curate-knowledge / inject-knowledge / round-housekeeping). See README.md beside this file.",
+  "_affects_convention": "affects lists this model's history-variable names or the case's scored target names",
+  "failed_approaches": []
+}

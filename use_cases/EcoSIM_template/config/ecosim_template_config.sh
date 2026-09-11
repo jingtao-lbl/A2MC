@@ -137,8 +137,24 @@ export A2MC_SALIB_PROBLEM_FILE="${A2MC_USE_CASE_DIR}/parameters/salib_problem_ec
 
 # ---- Validation targets (loaded generically by tools/targets_loader.py) ----
 export A2MC_VALIDATION_TARGETS="${A2MC_USE_CASE_DIR}/validation/targets.yaml"
-# <CASE> (Cedar Creek) is a real-calendar 2000–2022 run; peak-season = mid-summer.
-export A2MC_VALIDATION_START_YEAR="<FIRST_VALIDATION_YEAR>"
-export A2MC_VALIDATION_END_YEAR="<LAST_VALIDATION_YEAR>"
+# THE RUN'S span, not the scored window. `A2MC_VALIDATION_START_YEAR` is the calendar year of
+# history record 0 -- run.nml's `start_date` -- and is an ANCHOR for leap-aware year blocking,
+# NOT a filter: it skips nothing. Which years are SCORED is each target's `window_years` in
+# validation/targets.yaml, and that is also where a spin-up is excluded.
+#
+# Putting the first VALIDATION year here silently scores the spin-up instead of the observation
+# window: the anchor shifts every block label, so `window_years` then selects the run's opening
+# years. It is silent because the block boundaries do not move and coverage stays complete. This
+# cost an entire 4,097-case round -- see
+# memory/dev_logs_adapterkit/20260905c_The_Scoring_Calendar_Nobody_Checked.md
+#
+# The pair is consumed as `sim_years: "<start>-<end>"` by the round-record generator; no reducer
+# reads the END year at all.
+#
+# VERIFY, before submitting anything:  python tools/check_ecosim_validation_years.py
+# BETTER STILL: pin `start_year:` in each target block of validation/targets.yaml, so scoring does
+# not depend on this variable at all.
+export A2MC_VALIDATION_START_YEAR="<RUN_START_YEAR>"
+export A2MC_VALIDATION_END_YEAR="<RUN_END_YEAR>"
 
 echo "[ecosim_<case>_config] A2MC_MODEL=$A2MC_MODEL  binary=$(basename "$A2MC_ECOSIM_BINARY")  out=$A2MC_OUTPUT_DIR"

@@ -194,32 +194,109 @@ def declared_surfaces(path) -> dict:
     return out
 
 
+def parse_param_modes(path) -> dict:
+    """canonical id -> "absolute" | "multiplier", from the list's optional ``mode`` column.
+
+    DEFAULT IS ABSOLUTE, and a missing column means every row is absolute -- so every existing
+    param list keeps its exact meaning.
+
+    WHY A MULTIPLIER MODE EXISTS AT ALL. Some model parameters are ARRAYS, and a sampled scalar
+    cannot express an absolute value for one. EcoSIM's `SPOSC` is the motivating case: a
+    (jsken, jcplx) rate-constant array whose 20 defaults span 0 to 7.5 (7.5, 1.5, 0.5, 0.05,
+    0.0167, 0.0 ...), declared in source as "specific decomposition rate constant, [h-1]"
+    (`MicBGCPars.F90:40`) and consumed at `MicBGCFGMod.F90:1442`. Writing a sampled scalar sets
+    EVERY element to that scalar -- the NetCDF writer broadcasts -- which both destroys the
+    per-complex structure and means nothing physical. Scaling the whole array by one factor is
+    the only handle a single matrix column can offer, and it is what the prior campaign's probes
+    actually did.
+
+    WHAT A MULTIPLIER CANNOT DO, and it must be said next to the feature rather than discovered:
+      * it explores a 1-D RAY through the array's space, not the space;
+      * it can NEVER move an element that is exactly 0.0 -- five of SPOSC's twenty entries are,
+        which is separately why a multiplicative probe could not move them;
+      * it composes with any post-read scaling the model applies. `MicBGCPars.F90:336` multiplies
+        SPOSC's litter complexes by 1.5 AFTER the file is read, so the effective value is
+        1.5 x (factor x file_value) there and (factor x file_value) elsewhere.
+    """
+    import csv as _csv
+    path = Path(path)
+    skiprows = _detect_header_row(path)
+    out = {}
+    with path.open() as f:
+        for _ in range(skiprows):
+            next(f, None)
+        for r in _csv.DictReader(f):
+            r = {(k.strip() if k else k): v for k, v in r.items()}
+            if "mode" not in r:
+                return {}
+            val = (r.get("mode") or "absolute").strip().lower() or "absolute"
+            if val not in ("absolute", "multiplier"):
+                raise ValueError(
+                    f"{path}: unknown mode '{val}' for {r['name']} "
+                    f"(expected 'absolute' or 'multiplier')")
+            out[canonical_pft_id(r["name"], r["pft"])] = val
+    return out
+
+
 def route_surfaces(names, primary_vars: set, tertiary_vars: set, tertiary_given: bool,
-                   declared: dict = None) -> dict:
-    """canonical id -> "primary" | "tertiary", by PROBING each base file's own variable names
-    (never assumed or hand-listed). Refuses loudly (raises ValueError) if a name resolves to
-    neither or both surfaces, or would-be-tertiary but no tertiary base was supplied.
+                   declared: dict = None,
+                   secondary_names: set = None, secondary_given: bool = False) -> dict:
+    """canonical id -> "primary" | "secondary" | "tertiary".
+
+    Primary and tertiary are resolved by PROBING each base file's own variable names (never
+    assumed or hand-listed). Refuses loudly (raises ValueError) if a name resolves to neither or
+    several surfaces, or would-be-tertiary but no tertiary base was supplied.
+
+    THE SECONDARY SURFACE CANNOT BE PROBED, and that is why it takes a declared set rather than a
+    variable-name set. EcoSIM's management parameter `PPI` is not a NetCDF variable at all: it is a
+    whitespace-delimited token inside the fixed-width `pft_pltinfo` character array, so
+    `nc_varnames()` on that file returns `pft_pltinfo` and never `PPI`. `secondary_names` therefore
+    comes from the BACKEND (`ModelBackend.secondary_param_names()`), which reads the same token map
+    its writer uses -- so the router and the writer cannot disagree about what is writable.
+
+    Before 2026-09-01 there was no secondary branch here, so the secondary surface could only be
+    STAGED FIXED and never sampled. A round wanting to sample it crossed whole files by hand, which
+    is how one campaign's `PPI` refutation went two rounds before anyone noticed it was scoped to a
+    single base (`SCOPE_secondary_surface_routing.md`).
 
     `declared` is an optional {id: surface} map from the list's own ``surface`` column. It is
     CHECKED against the probe, never used in place of it: a disagreement raises. That keeps the
     column honest documentation rather than a second source of truth that can drift from the
     files it describes.
     """
+    secondary_names = secondary_names or set()
     routing = {}
     problems = []
     for cid in names:
         bare = bare_name(cid)
         in_primary = bare in primary_vars
         in_tertiary = tertiary_given and bare in tertiary_vars
-        if in_primary and in_tertiary:
-            problems.append(f"{cid}: '{bare}' exists in BOTH the primary and tertiary base files")
+        # Declared, not probed -- see the docstring. Checked BEFORE the not-found branch so a
+        # writable secondary name with no base file gets its own explicit error rather than the
+        # generic "not found", which would send a reader looking in the wrong file.
+        is_secondary = bare in secondary_names
+        n_hits = int(in_primary) + int(in_tertiary) + int(is_secondary)
+        if n_hits > 1:
+            where = [w for w, hit in (("primary", in_primary), ("secondary", is_secondary),
+                                      ("tertiary", in_tertiary)) if hit]
+            problems.append(f"{cid}: '{bare}' resolves to MORE THAN ONE surface ({', '.join(where)})")
         elif in_primary:
             routing[cid] = "primary"
         elif in_tertiary:
             routing[cid] = "tertiary"
+        elif is_secondary and secondary_given:
+            routing[cid] = "secondary"
+        elif is_secondary:
+            problems.append(
+                f"{cid}: '{bare}' is writable on this model's SECONDARY surface but no secondary "
+                f"base file was supplied (--secondary-param / $A2MC_SECONDARY_PARAM_FILE). "
+                f"Refusing rather than staging the surface unchanged, which would silently drop "
+                f"a sampled value.")
         else:
             where = "the primary base file" if not tertiary_given else "either supplied base file"
-            problems.append(f"{cid}: '{bare}' not found in {where}")
+            extra = (f" (this model's secondary surface accepts: {', '.join(sorted(secondary_names))})"
+                     if secondary_names else "")
+            problems.append(f"{cid}: '{bare}' not found in {where}{extra}")
     if problems:
         raise ValueError(
             "Cannot route " + str(len(problems)) + " parameter(s) to a surface:\n  "

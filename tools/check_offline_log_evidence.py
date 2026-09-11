@@ -23,6 +23,7 @@ Non-analysis phases (0/1/2/5/7) and non-offline files are skipped. Dependency-fr
 Usage:
     python3 tools/check_offline_log_evidence.py <log.md | logs_dir | --site use_cases/<site>>
 """
+import json
 import os
 import re
 import sys
@@ -50,6 +51,10 @@ CITED_RE = re.compile(r"`([^`]+?\.(?:py|png|pdf|csv|txt|nc|json|npy|npz))`|"
 #: Effective date for the phase-0/5 submit-script archive rule (PI, 2026-08-23). Earlier folders
 #: predate it; the count of exempt folders is not printed here because this check reports per-log.
 SUBMIT_ARCHIVE_SINCE = "20260823"
+#: Since this date a phase-5 stem's cases must also appear in the case's RUN LEDGER
+#: (`memory/run_records.json`, written by `tools/record_run_status.py`). Non-retroactive for the
+#: same reason as the line above: a permanently-red check is one nobody reads.
+RUN_LEDGER_SINCE = "20260908"
 
 def cited_artifacts(text):
     out = set()
@@ -100,6 +105,21 @@ def parse_confidence(text):
 #: at write time -- so a log written before its state was repointed freezes the superseded stem.
 ARTIFACT_DIR_RE = re.compile(r"phase_results/(\d{8}[a-z]+_phase\d+_[A-Za-z0-9_]+)")
 
+#: A CROSS-CASE artifact citation, repo-rooted: `use_cases/<Case>/memory/phase_results/<stem>`.
+#: These are legitimate and are how a NEW case inherits evidence from an earlier one -- the whole
+#: point of seeding a case from a prior campaign. Resolved against the case the path NAMES, not
+#: against the log's own site_dir, which is what made a valid cross-case pointer indistinguishable
+#: from a dead local one. It still ERRORs when the named case or stem does not exist; the fix
+#: widens WHERE the checker looks, never WHETHER it can fail.
+#: The case segment is `<Model>_<Case>`, NOT a free-form directory name (PI, 2026-09-01). The model
+#: half may itself carry a hyphen (`ELM-FATES_Kougarok`, `EcoSIM-PFLOTRAN_LEO`), so the shape is
+#: "one-or-more non-underscore chars, an underscore, then the case". Matching a bare name instead
+#: would accept `use_cases/TEMPLATE/...` and any typo'd path as a well-formed citation and then
+#: report it as merely missing, which hides a malformed reference behind a not-found message.
+CROSS_CASE_DIR_RE = re.compile(
+    r"use_cases/([A-Za-z0-9.-]+_[A-Za-z0-9_.-]+)/memory/phase_results/"
+    r"(\d{8}[a-z]+_phase\d+_[A-Za-z0-9_]+)")
+
 #: An embedded image: ![](path) or ![alt](path). The convention is EMPTY alt text plus a bold
 #: **Figure N.** caption beneath (feedback_report_figure_embed / feedback_report_figure_empty_alt_text).
 EMBED_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
@@ -124,8 +144,21 @@ def _dead_artifact_pointers(name, text, site_dir):
     """
     out, seen = [], set()
     pr = site_dir / "memory" / "phase_results"
+    # A cross-case citation matches ARTIFACT_DIR_RE too (the repo-rooted path CONTAINS the local
+    # shape), so resolve those first and exempt their stems from the local check below -- otherwise
+    # a valid pointer into another case reports as a dead local one.
+    use_cases_root = site_dir.parent
+    cross_ok = set()
+    for case, stem in CROSS_CASE_DIR_RE.findall(text):
+        if (use_cases_root / case / "memory" / "phase_results" / stem).is_dir():
+            cross_ok.add(stem)
+        elif stem not in seen:
+            seen.add(stem)
+            out.append(
+                f"{name}: cites `use_cases/{case}/memory/phase_results/{stem}/` which does not "
+                f"exist — a dead CROSS-CASE artifact pointer. Check the case name and the stem.")
     for stem in ARTIFACT_DIR_RE.findall(text):
-        if stem in seen:
+        if stem in seen or stem in cross_ok:
             continue
         seen.add(stem)
         if not (pr / stem).is_dir():
@@ -219,6 +252,45 @@ def check_log(path, repo_root):
                 f"submit script(s) and a representative runfile there (copy, do not move: the "
                 f"scheduler reads the operative copy). The run root is untracked scratch, and the "
                 f"submit script is the only record of which BINARY this run was bound to.")
+        elif stem[:8] >= RUN_LEDGER_SINCE:
+            # --- WARN: every case this phase SUBMITTED must appear in the RUN LEDGER ---
+            # The archive above records what was submitted; the ledger records what BECAME of it.
+            # Without this pairing the ledger is optional in practice, and an optional record is
+            # the one that stops being written: the same content lived in a hand-written caption
+            # section for cycles c00-c08 of one round and then silently vanished for ten
+            # consecutive cycles, because nothing checked it.
+            # The submit_scripts archive is the right authority to check against precisely
+            # BECAUSE it is checked above -- it cannot be quietly skipped to dodge this.
+            # Both separators are in use for the filenames ([[feedback_exact_strings_are_contracts]]).
+            submitted = sorted({f.name[:-len("_submit.sh")] if f.name.endswith("_submit.sh")
+                                else f.name[:-len(".submit.sh")]
+                                for f in sub.glob("*submit.sh")})
+            ledger = site_dir / "memory" / "run_records.json"
+            if not submitted:
+                pass  # nothing named a case; the archive check above already spoke
+            elif not ledger.exists():
+                warnings.append(
+                    f"{name}: phase 5 submitted {len(submitted)} case(s) but "
+                    f"{ledger.parent.name}/run_records.json does not exist — record them with "
+                    f"`python tools/record_run_status.py`. The ledger is a RECORD, not curated "
+                    f"knowledge: it is ungated and Phase 5 fills it as the runs progress.")
+            else:
+                try:
+                    recorded = {r.get("case") for r in
+                                json.loads(ledger.read_text()).get("records", [])}
+                except (ValueError, OSError) as exc:
+                    warnings.append(f"{name}: could not read run_records.json ({exc})")
+                    recorded = None
+                if recorded is not None:
+                    missing = [c for c in submitted if c not in recorded]
+                    if missing:
+                        warnings.append(
+                            f"{name}: {len(missing)} of {len(submitted)} submitted case(s) are "
+                            f"absent from memory/run_records.json — "
+                            f"{', '.join(missing[:4])}{' ...' if len(missing) > 4 else ''}. "
+                            f"Record them with `python tools/record_run_status.py from-ladder "
+                            f"--case-dir <case> --round <R> --cycle <C> --data <scoring .json> "
+                            f"--stem {stem}` (or `from-submits` if the cycle has no scoring JSON).")
 
     if phase not in ANALYSIS_PHASES:
         return errors, warnings
@@ -254,7 +326,20 @@ def check_log(path, repo_root):
         EVIDENCE_HEADERS.split(text)[-1:] if EVIDENCE_HEADERS.search(text) else [])
     for hm in DECISION_HDR.finditer(text):
         seg = text[hm.end(): hm.end() + 600]
-        for num in re.findall(r"(?<![\w.])(\d{2,}(?:\.\d+)?)", seg):
+        # PhaseLogger appends its own `## Iteration Context` JSON right after the Next Action
+        # heading, carrying a wall-clock timestamp. Scanning it made the check fire on the
+        # generator's own output ("57" out of 03:57:25) rather than on anything the author wrote,
+        # which is a check reporting a defect it created. Stop the segment at the next heading.
+        nxt = re.search(r"\n#{1,6} ", seg)
+        if nxt:
+            seg = seg[: nxt.start()]
+        # A `File.F90:1009` or `path/to/x.py:88-93` citation IS a source citation, so its LINE
+        # NUMBER is not an orphan quantity. Strip those spans before scanning, or the check fires
+        # on the very act of citing -- measured 2026-09-07, when adding `RootMod.F90:1009` to
+        # source a percentage silently replaced that warning with a warning about `1009`.
+        scan = re.sub(r"[\w./-]+\.(?:F90|f90|py|sh|nml|yaml|yml|json|md|cdl|nc|xml)"
+                      r"(?::\d+(?:\s*[-,]\s*:?\d+)*)?", " ", seg)
+        for num in re.findall(r"(?<![\w.])(\d{2,}(?:\.\d+)?)", scan):
             if num not in art_blob and num not in "".join(resolved):
                 warnings.append(
                     f"{name}: load-bearing number `{num}` appears in a "

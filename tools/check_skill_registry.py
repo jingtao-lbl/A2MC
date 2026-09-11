@@ -20,6 +20,12 @@ Checks:
                 PROJECT skill (policy: all skills live in the repo's .claude/skills/). A ref
                 that resolves only at user level → GLOBAL-SKILL-REF (move it in); an unknown
                 one → DEAD-SKILL-REF. Catches skill rot (a renamed tool leaving a dead ref).
+  5. MODES      each surface's MODES CELL agrees with the skill's own `modes:` frontmatter
+                (added 2026-09-05, and the root CLAUDE.md table is a fourth surface here).
+                Check 1 verifies that a ROW EXISTS; this verifies that the row is TRUE.
+                Measured gap: two skills went `requires_fates: true` -> `false` so adapter
+                models could use them, all four surfaces went on saying FATES for twelve
+                days, and this script reported clean every run in between.
 
 This is the STATIC (Tier-1) gate. Its runtime sibling is tools/smoke_test_skills.py
 (Tier-2), which actually runs the read-only backing commands the skills document and
@@ -374,6 +380,106 @@ def reciprocity_check(disk):
     return problems
 
 
+# ---------------------------------------------------------------- modes-column parity (2026-09-05)
+#
+# The four surfaces each carry a MODES cell beside every skill: the run configurations the skill
+# applies to, mirroring its `modes:` frontmatter. Until now this check compared NAMES and COUNTS
+# and never read that cell, so the cell could say anything. Measured: `summarize-calibration-round`
+# and `compare-calibration-rounds` went `requires_fates: true` -> `false` on 2026-08-24 precisely so
+# adapter models could use them, and for twelve days all four surfaces still said FATES -- the
+# documentation telling an EcoSIM or PFLOTRAN user that the standardized round close did not apply
+# to them, while this checker reported clean on every run.
+#
+# What it compares: FATES-ness only, which is the one modes fact the tables actually encode. A cell
+# reading `any`, `any (HPC)` or `EcoSIM` is not-FATES; a cell naming FATES is FATES; and a cell
+# spelling `requires_fates: false` is not-FATES even though the word appears in it, which is the
+# trap a naive substring match falls into.
+FATES_WORD = re.compile(r"\bFATES\b")
+
+
+def _fates_from_cell(text):
+    """FATES-ness a surface CLAIMS for a skill.
+
+    Order matters. An explicit `requires_fates: <bool>` wins outright. Otherwise only the VALUE is
+    read, never the commentary: a catalog line reads "`any` — ATS-specific, no FATES dependency",
+    whose tail names FATES while asserting the opposite, so a bare word search over the whole cell
+    reports five false drifts. The value is the first backticked token, or the text before the em
+    dash when there is none.
+    """
+    m = re.search(r"requires_fates:\s*(true|false)", text, re.I)
+    if m:
+        return m.group(1).lower() == "true"
+    head = text.split("—")[0]
+    tok = re.search(r"`([^`]+)`", head)
+    return bool(FATES_WORD.search(tok.group(1) if tok else head))
+
+
+def _fates_on_disk(skill_text):
+    """FATES-ness the SKILL.md declares, or None when it declares nothing."""
+    fm = _frontmatter_block(skill_text)
+    if fm is None:
+        return None
+    m = re.search(r"requires_fates:\s*(true|false)", fm, re.I)
+    return None if not m else m.group(1).lower() == "true"
+
+
+def _table_modes(path, row_re):
+    if not path.is_file():
+        return {}
+    out = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        m = row_re.match(line)
+        if m:
+            out[m.group(1)] = m.group(2)
+    return out
+
+
+def _catalog_modes():
+    if not CATALOG.is_file():
+        return {}, []
+    parts = re.split(r"^###\s+`([a-z0-9-]+)`", CATALOG.read_text(encoding="utf-8"), flags=re.M)
+    out, missing = {}, []
+    for i in range(1, len(parts), 2):
+        name, body = parts[i], parts[i + 1]
+        m = re.search(r"^-\s*\*\*Modes:\*\*\s*(.+)$", body, re.M)
+        (out.__setitem__(name, m.group(1)) if m else missing.append(name))
+    return out, missing
+
+
+def modes_check(disk):
+    """Every surface's modes cell must agree with the skill's own frontmatter."""
+    problems = []
+    truth = {n: _fates_on_disk(t) for n, t in disk.items()}
+    cat, cat_missing = _catalog_modes()
+    surfaces = {
+        ".claude/skills/README.md": _table_modes(
+            README, re.compile(r"^\|\s*\[([a-z0-9-]+)\]\([^)]*\)\s*\|([^|]*)\|")),
+        "AGENTS.md": _table_modes(
+            AGENTS, re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|([^|]*)\|")),
+        "CLAUDE.md": _table_modes(
+            ROOT / "CLAUDE.md", re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|([^|]*)\|")),
+        "docs/a2mc_reference/skills_catalog.md": cat,
+    }
+    for surface, rows in surfaces.items():
+        for name, cell in sorted(rows.items()):
+            want = truth.get(name)
+            if want is None:          # not on disk, or declares no requires_fates
+                continue
+            if _fates_from_cell(cell) != want:
+                problems.append(
+                    f"MODES DRIFT: {surface} marks '{name}' as "
+                    f"{'FATES' if not want else 'not FATES'} but its SKILL.md declares "
+                    f"requires_fates: {str(want).lower()} — the cell reads {cell.strip()!r}. "
+                    f"A modes cell nobody checks is how two skills stayed documented as "
+                    f"FATES-only for twelve days after they were made generic")
+    for name in sorted(cat_missing):
+        if name in truth:
+            problems.append(
+                f"MODES MISSING: docs/a2mc_reference/skills_catalog.md entry '{name}' has no "
+                f"'- **Modes:**' line, so its modes cell cannot be checked at all")
+    return problems
+
+
 def main():
     disk = skills_on_disk()
     if not disk:
@@ -440,6 +546,7 @@ def main():
     problems += reciprocity_check(disk)
     problems += marker_check()
     problems += phase_section_check()
+    problems += modes_check(disk)
 
     print(f"Skills on disk : {len(disk_names)}")
     print(f"README table   : {len(readme)}")

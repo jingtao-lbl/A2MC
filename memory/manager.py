@@ -30,6 +30,26 @@ WRITE_MODES = ("interactive", "propose")
 PENDING_FILENAME = "auto_discovered_pending.json"
 
 
+def _same_parameter(a: str, b: str) -> bool:
+    """Do two parameter names refer to the same knob?
+
+    Names reach this code in two conventions that must compare equal. The parameter list
+    and the model call it ``CNWL``; A2MC's Morris/Sobol shorthand appends the index of the
+    axis it is stored on, giving ``CNWL_1``. A hypothesis may legitimately be written
+    either way, so a comparison that misses one of them produces a do-not-repeat guard
+    that is silent exactly when it is needed.
+
+    Comparison is case-insensitive and ignores ONE trailing ``_<digits>`` group on either
+    side. A trailing ``_-`` (the parameter list's marker for a knob with no index) is also
+    stripped, because that convention has already caused one silent key mismatch.
+    """
+    import re as _re
+    def norm(x: str) -> str:
+        x = (x or "").strip().lower()
+        return _re.sub(r"_(?:\d+|-)$", "", x)
+    return bool(norm(a)) and norm(a) == norm(b)
+
+
 class MemoryManager:
     """
     Adaptive memory system for A2MC calibration framework.
@@ -384,19 +404,55 @@ class MemoryManager:
                 if old_value != 0:
                     multiplier = new_value / old_value
 
-            # Check failed approaches
+            # Check failed approaches. A STATED BOUND is the only thing matched here.
+            #
+            # A prose heuristic used to sit beside this and was deleted 2026-09-08 (PI): it
+            # fired when the parameter name was a SUBSTRING of the entry's free text, the
+            # proposal exceeded 5x, and the literal characters "10" appeared in that same
+            # text. Those two numbers were reverse-engineered from one case's phrasing
+            # ("10x increase in ..."), which put a case's vocabulary -- and, as it turned
+            # out, its PFT NUMBERING -- inside shared framework code (CLAUDE.md rule 5).
+            #
+            # Measured over all 88 stored entries before deleting it: 9 could fire it, all
+            # in the one case it was written for, and in 7 of those 9 the "10" meant
+            # something else entirely -- `PFT#10` (x4), the parameter name `leaf_slatop_10`,
+            # `10 degC`, and the "10" inside `> 100`. So it raised a false alarm whenever a
+            # parameter's NAME happened to end in 10, and stayed silent on every refutation
+            # expressed as a bound, which is most of them: an entry reading "setting CNWL
+            # below 2.52 collapses the stand" matched nothing at any dose, including a 10x
+            # raise. Two genuine 10x entries lost their (coincidental) coverage and are owed
+            # a `constraint` through the curated-write gate.
             for fa in self.failed_approaches.get("failed_approaches", []):
-                approach_lower = fa.get("approach", "").lower()
+                c = fa.get("constraint")
+                if not (c and _same_parameter(param, c.get("parameter", ""))):
+                    continue
 
-                # Simple pattern matching
-                if param in approach_lower:
-                    # Check for similar multipliers (e.g., "10x increase")
-                    if multiplier and multiplier > 5 and "10" in approach_lower:
-                        warnings.append({
-                            "modification": mod,
-                            "matched_approach": fa,
-                            "warning": fa.get("why_failed", "Previously failed")
-                        })
+                # An entry constrains this parameter but the proposal is not numeric, so the
+                # bound cannot be evaluated. SAY SO rather than returning nothing: silence is
+                # byte-identical to "no problem found", which is the failure mode the deleted
+                # branch had and the one this guard exists to avoid.
+                if not isinstance(new_value, (int, float)):
+                    warnings.append({
+                        "modification": mod,
+                        "matched_approach": fa,
+                        "warning": (f"cannot evaluate the recorded bound on {c['parameter']}: "
+                                    f"new_value {new_value!r} is not numeric"),
+                        "unevaluated": True,
+                    })
+                    continue
+
+                bound = float(c["bound"])
+                violated = (new_value < bound if c["direction"] == "min"
+                            else new_value > bound)
+                if violated:
+                    rel = "below" if c["direction"] == "min" else "above"
+                    warnings.append({
+                        "modification": mod,
+                        "matched_approach": fa,
+                        "warning": (f"proposed {c['parameter']} = {new_value} is "
+                                    f"{rel} the recorded bound {bound}: "
+                                    + fa.get("why_failed", "previously failed"))
+                    })
 
         return warnings
 
@@ -573,7 +629,8 @@ class MemoryManager:
 
     def add_failed_approach(self, approach: str, experiment_id: str,
                            why_failed: str, severity: str,
-                           alternatives: List[str]) -> None:
+                           alternatives: List[str],
+                           constraint: Optional[Dict] = None) -> None:
         """
         Add an approach to the do-not-repeat list.
 
@@ -583,6 +640,22 @@ class MemoryManager:
             why_failed: Explanation of why it failed
             severity: "catastrophic", "degradation", "no_effect"
             alternatives: List of alternative approaches to try
+            constraint: OPTIONAL machine-checkable form of the same statement, as
+                ``{"parameter": <name>, "direction": "min"|"max", "bound": <number>}``.
+                ``direction="min"`` means values BELOW ``bound`` failed; ``"max"`` means
+                values above it did.
+
+        WHY ``constraint`` EXISTS. ``check_do_not_repeat`` matched only on prose: the
+        parameter name had to appear in ``approach``, the proposed change had to be more
+        than 5x, and the literal string "10" had to appear in the text. That triple was
+        written for one historical entry of the form "10x increase in X" and cannot express
+        a BOUND at all, so an entry saying "values below 2.52 kill the stand" was stored
+        and then never matched -- including by a proposal to halve the parameter. Measured
+        2026-09-05 on the EcoSIM_Lusignan viability bounds: 1 entry written, 0 warnings
+        raised across four proposals, one of them a 10x increase.
+
+        The prose path is unchanged and still runs, so nothing already stored behaves
+        differently; ``constraint`` is checked in addition to it.
         """
         record = {
             "approach": approach,
@@ -592,6 +665,15 @@ class MemoryManager:
             "alternatives": alternatives,
             "date_added": datetime.now().isoformat()
         }
+        if constraint:
+            missing = {"parameter", "direction", "bound"} - set(constraint)
+            if missing:
+                raise ValueError(f"constraint is missing {sorted(missing)}")
+            if constraint["direction"] not in ("min", "max"):
+                raise ValueError("constraint direction must be 'min' or 'max'")
+            record["constraint"] = {"parameter": str(constraint["parameter"]),
+                                    "direction": constraint["direction"],
+                                    "bound": float(constraint["bound"])}
 
         # Write-mode gate: autonomous online agent proposes; only the interactive
         # (human-in-the-loop) agent writes curated knowledge. See 20260612d.

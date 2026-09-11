@@ -2,8 +2,8 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of process-based environmental models using AI API + HPC + Adaptive Memory. **This line is the NON-CIME one** (EcoSIM · PFLOTRAN · ATS, via the `models/` adapter registry); the CIME-configured ESMs (ELM, ELM-FATES) are developed in the sibling **[`A2MC-elm`](https://github.com/jingtao-lbl/A2MC-elm/)**. See §"What is A2MC?" below.
-**Status:** Implementation Complete (v2.344)
-**Last Updated:** August 28, 2026
+**Status:** Implementation Complete (v2.409)
+**Last Updated:** September 10, 2026
 ---
 
 
@@ -143,7 +143,7 @@ Inner loop: Phase 3 ↔ Phase 4 (skip-test with existing data, no HPC)
 | 1 | EXPLORATION | Extract Y matrix, run Morris sensitivity analysis | Yes |
 | 2 | SCREENING | Rank ensemble by validation targets | Yes |
 | 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes |
-| 4 | HYPOTHESIS | Generate testable hypotheses OR test with existing data | Yes |
+| 4 | HYPOTHESIS | Generate testable hypotheses, then design experiments OR test them on existing data | Yes |
 | 5 | TESTING | Run designed experiments on HPC | No |
 | 6 | REFINEMENT | Evaluate results, extract lessons, check equifinality | Yes |
 | 7 | CONVERGED | Final optimal configuration | - |
@@ -323,7 +323,7 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 | `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
 | `port-param-file` | any | Port a calibrated/tuned parameter file across model/API versions — remap PFT identity by functional type, transfer overlapping tuned values (api-31 `.nc` → api-43 `.json` and beyond) |
 | `calibration-log` | any | Log interactive calibration/exploration for a site — a PhaseLogger phase log or a free-form session log under `use_cases/{site}/memory/logs/` |
-| `diagnose-forensics` | any | Investigate an anomaly — real or artifact? — then root-cause it |
+| `diagnose-forensics` | any | Triage ONE anomaly — real or artifact? — then root-cause it (a whole round -> `phase3-diagnosis`) |
 | `scientific-analysis` | any | Investigation → figure → ana_log (manuscript-supporting) |
 | `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |
 | `literature-review` | any | Cited literature review via `paper-search-mcp` (search→triage→extract→synthesis) — PARAMETER-BOUNDS (published ranges → refine a param-list's `lower`/`upper`) or MANUSCRIPT topic review |
@@ -336,12 +336,13 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 | `ats-run-workflow` | any | Run + test ATS (XML-deck) — ParameterList-by-path, targets in the deck's `observations` block, honest about the v0.1 run wiring |
 | `build-rag-from-scratch` | any | Build the RAG/GraphRAG layer from scratch (new model or full reconstruction) |
 | `rebuild-rag` | any | Rebuild/repair a model's RAG index — **one build script per model** (FATES/EcoSIM/PFLOTRAN), reindex, wiki bump, and how to actually COMMIT it |
+| `wire-knowledge-graph` | any | Audit/fix WHICH curated relations reach a model's knowledge graph — one `build_graph()` per model reading its own seed field names, and a field nothing reads fails silently |
 | `generate-codebase-wiki` | any | Produce a source-grounded codebase wiki for a model |
 | `validate-rag-chain` | any | Validate the source → wiki → curated-YAML → RAG chain before shipping |
 | `add-skill` | any | Scaffold + register a new skill (4-way registry parity) |
 | `refine-skill` | any | Refine an existing skill from accumulated evidence (human-gated) |
-| `summarize-calibration-round` | FATES | Single-round summary: ensemble graphs + evaluation + Morris μ* → report |
-| `compare-calibration-rounds` | FATES | Cross-round comparison (R1…RN): top-N overlays, μ* overlay, P-pool/cross-regime |
+| `summarize-calibration-round` | any | Single-round summary: ensemble graphs + evaluation + sensitivity + the round's MECHANISM inventory → report |
+| `compare-calibration-rounds` | any | Cross-round PARAMETER and MECHANISM ledgers (R1…RN) + performance/sensitivity overlays; required from R1 |
 | `offline-testing-workflow` | FATES | Design + launch + analyze a parameter-sweep HPC experiment (V0 reproducibility gate → KB injection) |
 | `add-fates-parameter` | FATES | Model-evolution — wire a new FATES parameter into EDParamsMod + the parameter file (experiment branch, default-off, V0-at-equality) |
 | `model-evolution` | any | Model-evolution umbrella — the workflow for evolving ANY onboarded model's source, ELM/FATES · EcoSIM · PFLOTRAN · ATS (branch, preserve the baseline binary, default-off, paired verify, fork-only push) |
@@ -468,11 +469,19 @@ A2MC/
 
 ## Adaptive Memory System
 
-Two-tier knowledge architecture with JSON-based persistent memory:
+**THREE LAYERS** (PI, 2026-09-06). This section said "two-tier" until then and named the first layer "Generic Knowledge (Framework-level) … applies to all sites", which is wrong twice over: the model layer was missing entirely, and the store it called generic is FATES-only.
 
-### Generic Knowledge (Framework-level)
+| layer | path | holds |
+|---|---|---|
+| **1. Claude memory bucket** | `.claude_memory/` (dev repo only, never synced) | how the agent works — process rules, references, user facts — **and model-scoped notes**: 18 of its files carry `scope: fates / ecosim / elm / elm-fates` |
+| **2. model** | `memory/gained_knowledge/` (**FATES**), `memory/ecosim/gained_knowledge/`, `memory/pflotran/gained_knowledge/` | true of that model wherever it runs, on any site |
+| **3. model-case** | `use_cases/{Model}_{Case}/memory/gained_knowledge/` | true of THIS case: its clock, its data, its deck, its targets |
 
-Located at `memory/gained_knowledge/` - applies to all sites:
+**The default is the narrowest layer that holds the finding.** Layers 2 and 3 are the JSON knowledge stores below; layer 1 is documented in `.claude_memory/CLAUDE.md`.
+
+### Model Knowledge — FATES
+
+Located at `memory/gained_knowledge/`. Despite the unprefixed path this is the **FATES** store, not a framework-generic one; the adapter models have their own at `memory/<model>/gained_knowledge/`:
 
 | Store | Purpose |
 |-------|---------|
@@ -502,11 +511,15 @@ Located at `use_cases/{site}/memory/gained_knowledge/`:
 
 ### Knowledge Promotion
 
-AI evaluates site-specific discoveries and promotes generalizable ones to generic knowledge:
+**A curated discovery lands in its own case's store. It is not promoted anywhere by default** (PI, 2026-09-06):
 
 ```
-Site Discovery → AI Evaluation → If generalizable → Copy to memory/gained_knowledge/
+Run/agent discovery → human review gate → Copy to use_cases/{Model}_{Case}/memory/gained_knowledge/
 ```
+
+**Promotion UP to the model layer is a separate, evidence-gated step**, and the destination is that case's own model — `memory/ecosim/gained_knowledge/`, `memory/pflotran/gained_knowledge/`, or `memory/gained_knowledge/` **for FATES only**. One site showing a pattern is one observation, not evidence the pattern generalizes.
+
+> **`memory/gained_knowledge/` is the FATES store, not a generic one.** All 12 of its discoveries name `fates_cnp_*`, `FATES_L2FR` or ELM variables and its one failed approach is `SUPLPHOS=ALL during TRANSIENT`. It is unprefixed because FATES is A2MC's built-in path rather than an adapter under `models/`, so it occupies the slot from before the model layer existed. **Copying a non-FATES case's discovery there is a cross-model misroute**, and `tools/promote_knowledge.py` still hardcodes it as `GENERIC` — an open defect, harmless only because that tool has never run on a real promotion.
 ### Session Logging Convention
 
 **Phase Execution logs** (outputs from A2MC runs, session-scoped):

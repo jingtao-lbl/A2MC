@@ -1,22 +1,22 @@
 {
   "metadata_schema_version": 1,
   "profile_name": "api-43-1",
-  "built_at": "2026-07-11T03:40:55+00:00",
+  "built_at": "2026-09-09T02:10:48+00:00",
   "a2mc_version": "v2.89-dev",
   "model_path": "<A2MC_MODEL_PATH>",
   "elm": {
-    "commit_sha": "6565255bb60dd6404893fc4d3f756a8a97648a1a",
-    "commit_short": "6565255",
-    "describe": "v3.2.0-alpha-133-g6565255bb6",
+    "commit_sha": "938f765b5930d1a0847f1412ce3e12c1517f9242",
+    "commit_short": "938f765",
+    "describe": "v3.2.0-alpha-140-g938f765b59",
     "wiki_subdir": "elm-codebase-wiki-d40b843",
     "wiki_root": "docs/elm-knowledge-base"
   },
   "fates": {
-    "commit_sha": "57016c44cee9f3f1e30f4b2d95e911b174f6d19a",
-    "commit_short": "57016c4",
-    "describe": "sci.1.91.1_api.43.1.0-2-g57016c44",
+    "commit_sha": "6f61d4238e5c847120df2477eb459101c3d1affb",
+    "commit_short": "6f61d42",
+    "describe": "sci.1.91.1_api.43.1.0-8-g6f61d423",
     "nearest_tag": "sci.1.91.1_api.43.1.0",
-    "commits_past_tag": 2,
+    "commits_past_tag": 8,
     "api_epoch": "43.1",
     "wiki_subdir": "fates-codebase-wiki-e027a40",
     "wiki_root": "docs/fates-knowledge-base"
@@ -32,11 +32,11 @@
   },
   "curated_yaml": {
     "path": "rag/data/curated_relationships_api-43-1.yaml",
-    "sha": "0159aa03828f38e6e6ec31ab5da5b732d035b2400944fc6cf386466aa0f32b55"
+    "sha": "202824b8e0b0d5e40b546dc953ae36f8af1d6bf45fc2b68afdddad15ca23e3eb"
   },
   "stats": {
     "chunk_count": 0,
-    "graph_nodes": 3178,
-    "graph_edges": 2772
+    "graph_nodes": 3180,
+    "graph_edges": 2810
   }
 }

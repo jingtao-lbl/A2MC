@@ -60,13 +60,47 @@ def load_milestone() -> dict:
     return m["milestones"][PROFILE]
 
 
+def parse_param_surfaces(param_files: list[Path]) -> dict:
+    """Parse EVERY declared parameter surface and merge, first file wins on a name clash.
+
+    EcoSIM has THREE parameter surfaces (primary plant traits, secondary planting
+    management, tertiary microbial) and this builder used to read only the first.
+    Everything the curated seed said about the other two was then dropped by the
+    `if pid(pname) not in kg.graph: continue` guards below -- silently, because a
+    missing Parameter node is skipped while a missing Output node is created by
+    ensure_output(). Measured 2026-09-01 on ecosim-2dea74d9: 12 of the seed's 44
+    parameters never became nodes (CKC GO2X HSORP RCCY RCCZ RMOM SPOMC SPORC SPOSC
+    TSORP VMXF VMXO) and all seven microbial mechanism nodes carried ZERO parameter
+    edges, so the reasoning layer had no parameter-level content for Fs at all.
+    """
+    pp = EcoSIMParameterParser()
+    merged: dict = {}
+    for pf in param_files:
+        if not pf.exists():
+            print(f"  WARNING: parameter surface not found, skipping: {pf}")
+            continue
+        got = pp.parse(pf)
+        new = [n for n in got if n not in merged]
+        for n in new:
+            merged[n] = got[n]
+        print(f"  surface {pf.name}: {len(got)} parsed, {len(new)} new")
+    return merged
+
+
+def warn_unresolved_seed_params(seed: dict, params: dict) -> list[str]:
+    """Name every curated parameter that no surface supplies. Never silent."""
+    missing = [n for n in (seed.get("parameters") or {}) if n not in params]
+    if missing:
+        print(f"  WARNING: {len(missing)} curated parameter(s) match no parsed surface "
+              f"and will have NO graph node or edges: {', '.join(sorted(missing))}")
+    return missing
+
+
 # ---------------------------------------------------------------------------
 # Definition chunks (params + outputs) — EcoSIM parser feeds the vector store.
 # ---------------------------------------------------------------------------
-def build_definition_chunks(param_file: Path, output_cdl: Path, seed: dict) -> list[dict]:
+def build_definition_chunks(params: dict, output_cdl: Path, seed: dict) -> list[dict]:
     chunks: list[dict] = []
-    pp = EcoSIMParameterParser()
-    params = pp.parse(param_file)
     seed_params = seed.get("parameters", {})
     for name, par in params.items():
         if par.is_string:
@@ -153,7 +187,7 @@ def build_curated_chunks(seed: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Knowledge graph — full param/output surface + curated relationships.
 # ---------------------------------------------------------------------------
-def build_graph(param_file: Path, output_cdl: Path, seed: dict) -> FATESKnowledgeGraph:
+def build_graph(params: dict, output_cdl: Path, seed: dict) -> FATESKnowledgeGraph:
     kg = FATESKnowledgeGraph()
 
     # Categories
@@ -166,8 +200,6 @@ def build_graph(param_file: Path, output_cdl: Path, seed: dict) -> FATESKnowledg
                          code_location=m.get("code_reference"))
 
     # All real params as nodes (category from parser; curated overrides)
-    pp = EcoSIMParameterParser()
-    params = pp.parse(param_file)
     seed_params = seed.get("parameters", {})
     for name, par in params.items():
         if par.is_string:
@@ -199,6 +231,17 @@ def build_graph(param_file: Path, output_cdl: Path, seed: dict) -> FATESKnowledg
         for mname in c.get("mechanisms", []) or []:
             if mid(mname) in kg.graph:
                 kg.add_relationship(cid(cname), mid(mname), kg.CONTAINS)
+        # `key_outputs` is the category's answer to "which scored things does this area of the
+        # model move", and it was read for chunk text and for no edge until 2026-09-08, costing 22
+        # category -> output edges. Same defect as the outputs block one loop below, one seed block
+        # over, and the PFLOTRAN builder wires this field too. An output named here may be one the
+        # parsed CDL does not carry, so `ensure_output` rather than a skip: unlike a parameter, an
+        # output name in the seed is a claim about the history tape that the curator is entitled to
+        # make ahead of the registry, and the three phantom outputs removed in 2026-09-06 were
+        # caught by `tools/validate_curated_yaml.py` dimension B, which checks exactly that.
+        for oname in c.get("key_outputs", []) or []:
+            ensure_output(oname)
+            kg.add_relationship(cid(cname), oid(oname), kg.AFFECTS)
     for mname, m in seed.get("mechanisms", {}).items():
         for pname in m.get("parameters", []) or []:
             if pid(pname) in kg.graph:
@@ -220,6 +263,30 @@ def build_graph(param_file: Path, output_cdl: Path, seed: dict) -> FATESKnowledg
         for rel in p.get("related_to", []) or []:
             if pid(rel) in kg.graph:
                 kg.add_relationship(pid(pname), pid(rel), kg.DEPENDS_ON)
+
+    # outputs -> {direct,indirect}_drivers -> parameters. The seed carries this direction too and
+    # it is NOT symmetric with `parameters.*.affects`: an output entry names what drives IT, which
+    # is the question a diagnosis asks, while a parameter entry names what it reaches. Walking only
+    # the parameter side dropped 73 curated edges here, among them RSMX -> ECO_ET_col, which is why
+    # the round's binding target could be reached only two hops through a mechanism. The PFLOTRAN
+    # builder has had this pass since it was written; EcoSIM's never did.
+    #
+    # `driver_kind` records the curator's direct/indirect distinction as an edge attribute rather
+    # than as a weight: nothing in the retriever reads `weight` today, so encoding it there would
+    # look like a ranking signal while being inert.
+    #
+    # An unknown driver name is SKIPPED, never minted. Minting is how three phantom outputs entered
+    # this graph in the first place (fixed 2026-09-06), and `warn_unresolved_seed_params` already
+    # reports the names so a typo stays visible instead of becoming a node.
+    for oname, o in (seed.get("outputs") or {}).items():
+        ensure_output(oname)
+        for kind, field in (("direct", "direct_drivers"), ("indirect", "indirect_drivers")):
+            for pname in (o.get(field) or []):
+                if pid(pname) not in kg.graph:
+                    continue
+                if kg.graph.has_edge(pid(pname), oid(oname)):
+                    continue          # the parameter side already asserted it; do not downgrade
+                kg.add_relationship(pid(pname), oid(oname), kg.AFFECTS, driver_kind=kind)
     return kg
 
 
@@ -237,7 +304,9 @@ def main():
     kb_dir = _rel(ms["knowledge_base_dir"])
     wiki_dir = kb_dir / ms["model_wiki_subdir"]
     output_cdl = kb_dir / ms["output_cdl"]
-    param_file = _rel(ms["param_file"])
+    param_files = [_rel(ms["param_file"])] + [
+        _rel(x) for x in (ms.get("param_files_extra") or [])
+    ]
     curated = _rel(ms["curated_yaml_path"])
     seed = yaml.safe_load(curated.read_text())
 
@@ -253,10 +322,14 @@ def main():
     print("=" * 64)
     print(f"  Building EcoSIM RAG profile: {PROFILE}")
     print(f"  wiki:    {wiki_dir}")
-    print(f"  params:  {param_file}")
+    for _pf in param_files:
+        print(f"  params:  {_pf}")
     print(f"  outputs: {output_cdl}")
     print(f"  curated: {curated}")
     print("=" * 64)
+
+    params = parse_param_surfaces(param_files)
+    warn_unresolved_seed_params(seed, params)
 
     chunk_count = 0
     if not args.graph_only:
@@ -265,7 +338,7 @@ def main():
         for d in wiki_docs:
             d["kb_source"] = "ecosim"
         wiki_chunks = chunk_documents(wiki_docs)
-        def_chunks = build_definition_chunks(param_file, output_cdl, seed)
+        def_chunks = build_definition_chunks(params, output_cdl, seed)
         cur_chunks = build_curated_chunks(seed)
         all_chunks = wiki_chunks + def_chunks + cur_chunks
         print(f"\nchunks: wiki={len(wiki_chunks)} definitions={len(def_chunks)} "
@@ -281,7 +354,7 @@ def main():
 
     # Graph
     print("\nBuilding knowledge graph...")
-    kg = build_graph(param_file, output_cdl, seed)
+    kg = build_graph(params, output_cdl, seed)
     kg.save(str(graph_out))
     stats = kg.get_stats()
     print(f"graph: {stats.get('total_nodes')} nodes, {stats.get('total_edges')} edges -> {graph_out}")
@@ -299,6 +372,7 @@ def main():
         "model_commit_built": ms["model_commit_built"],
         "wiki_subdir": ms["model_wiki_subdir"],
         "param_file": ms["param_file"],
+        "param_files_extra": ms.get("param_files_extra") or [],
         "output_cdl": ms["output_cdl"],
         "curated_yaml": ms["curated_yaml_path"],
         "curated_yaml_status": "v0.1-ai-draft-pending-PI-review",
@@ -319,12 +393,21 @@ def main():
         "nodes": stats.get("total_nodes", 0),
         "edges": stats.get("total_edges", 0),
     }
+    # WHICH counts this run actually rebuilt. A --graph-only run does not re-embed, so its
+    # `documents` is read back out of the previous metadata (above) and comparing it against
+    # expected_counts is a tautology that always passes. Its nodes and edges ARE freshly built,
+    # and they are precisely what a curated-YAML edit changes -- including by silently dropping
+    # an edge whose endpoint is not in the CDL, which is the documented footgun of that mode.
+    # Gating the whole guard on `not args.graph_only` therefore disarmed it exactly where it was
+    # most needed. Same principle as the FATES builder, which checks only the half it rebuilt.
+    built_keys = ("documents", "nodes", "edges") if not args.graph_only else ("nodes", "edges")
+
     prev = (ms.get("expected_counts") or {})
-    if not args.graph_only and any(v is not None for v in prev.values()):
+    if any(v is not None for v in prev.values()):
         regressions = [
             f"    {k}: built {new_counts[k]} < expected {prev[k]} "
             f"({100.0*(prev[k]-new_counts[k])/prev[k]:.1f}% drop)"
-            for k in ("documents", "nodes", "edges")
+            for k in built_keys
             if prev.get(k) and new_counts[k] < prev[k] * 0.98
         ]
         if regressions and not args.allow_shrink:
@@ -335,14 +418,20 @@ def main():
                   file=sys.stderr)
             sys.exit(3)
 
-    # Arm the count-regression guard: write expected_counts into milestones.json
-    if not args.no_write_counts and not args.graph_only:
+    # Arm the count-regression guard: write expected_counts into milestones.json.
+    # A --graph-only run updates ONLY the keys it rebuilt, leaving `documents` at whatever the
+    # last full build recorded, so the expectation tracks the artifact instead of drifting from
+    # it silently on every curated-YAML edit.
+    if not args.no_write_counts:
         mpath = REPO / "rag/milestones.json"
         mjson = json.loads(mpath.read_text())
-        mjson["milestones"][PROFILE]["expected_counts"] = new_counts
+        counts = dict(mjson["milestones"][PROFILE].get("expected_counts") or {})
+        counts.update({k: new_counts[k] for k in built_keys})
+        mjson["milestones"][PROFILE]["expected_counts"] = counts
         mpath.write_text(json.dumps(mjson, indent=2) + "\n")
-        print(f"expected_counts written to milestones.json: "
-              f"docs={chunk_count} nodes={stats.get('total_nodes')} edges={stats.get('total_edges')}")
+        print("expected_counts written to milestones.json: "
+              + " ".join(f"{k}={counts[k]}" for k in ("documents", "nodes", "edges") if k in counts)
+              + ("  (graph-only: documents left at the last full build)" if args.graph_only else ""))
 
     print("\nBUILD COMPLETE")
 

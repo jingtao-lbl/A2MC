@@ -34,7 +34,7 @@ it is what the code reads, so consult it rather than trusting a copy here.
 |---|---|---|---|
 | `pft_file_in` | ~123 per-PFT plant traits (VCMX, VRNLI/VRNXI, CNLF …) | primary, `A2MC_BASE_PARAM_FILE` | yes, per ensemble row |
 | `grid_file_in` | **~114 soil vars** — `CORGC`/`CORGN`/`CORGP` organic pools, `FC`/`WP`/`PSIFC`/`PSIWP`, `SCNH`/`SCNV` Ksat, `BKDSI`, `CSAND`/`CSILT`/`FHOL`, `PH`/`CEC`/`AEC`, initial litter C/N/P | **none** | **not through the param list** — see below |
-| `pft_mgmt_in` | stand management: planting, cuts, fertiliser | secondary, `A2MC_SECONDARY_PARAM_FILE` | staged FIXED by default |
+| `pft_mgmt_in` | stand management: planting, cuts, fertiliser | secondary, `A2MC_SECONDARY_PARAM_FILE` | PER-CASE when the param list samples a name on it (e.g. `PPI`); staged unperturbed otherwise |
 | `soil_mgmt_in` | soil management: tillage, amendments | **none** | no |
 | `micpar_file_in` | 76 microbial kinetics: RCCZ, VMXO, RMOM, GO2X, SPORC, SPOMC | tertiary, `A2MC_BASE_PARAM_FILE_3` | yes, when wired |
 | `clm_hour_file_in`, `atm_ghg_in` | weather and atmospheric composition | — | forcing, not parameters |

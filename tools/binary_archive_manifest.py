@@ -48,7 +48,20 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 ARCHIVES = {
     "ecosim": {
         "archive_root": "~/EcoSIM/build_archive",
-        "manifest": ROOT / "use_cases/EcoSIM_BioCON/config/binary_archive_manifest.json",
+        # EVERY case whose round ledger cites these binaries needs its own copy, because M7
+        # cross-checks a ledger against the manifest BESIDE IT. One manifest under one case left
+        # every other case's provenance claims unchecked: EcoSIM_TeRaCON R1 cites
+        # TeRaCONbase_forkmain_0366560a and nothing resolved that claim until 2026-09-04.
+        "manifests": [
+            ROOT / "use_cases/EcoSIM_BioCON/config/binary_archive_manifest.json",
+            ROOT / "use_cases/EcoSIM_TeRaCON/config/binary_archive_manifest.json",
+            # Added 2026-09-04 with the Lusignan binary repoint. Its config now binds
+            # R3_baseline_expsposc_12a47976, so without a manifest beside it the setup gate
+            # could confirm the archive EXISTS but not what runtime switches it requires --
+            # which is the half that matters, since that binary predates
+            # `guard_floor_dying_stand`.
+            ROOT / "use_cases/EcoSIM_Lusignan/config/binary_archive_manifest.json",
+        ],
         "binary_name": "ecosim.f90.x",
     },
     # PFLOTRAN has the SAME hazard for the same reason: a shared CMake tree whose
@@ -57,13 +70,16 @@ ARCHIVES = {
     # ensemble was materialized and its submit scripts were found bound to the LIVE build path.
     "pflotran": {
         "archive_root": "~/PFLOTRAN/build_archive",
-        "manifest": ROOT / "use_cases/PFLOTRAN_miniLEO/config/binary_archive_manifest.json",
+        "manifests": [
+            ROOT / "use_cases/PFLOTRAN_miniLEO/config/binary_archive_manifest.json",
+        ],
         "binary_name": "pflotran",
     },
 }
 
 _SHA_LINE = re.compile(r"^\s*SHA256\s*:\s*([0-9a-f]{64})\s*$", re.I | re.M)
-_FIELD = re.compile(r"^\s*(Archived|Source|Change|Binary|Why|V0 pair)\s*:\s*(.+)$", re.I | re.M)
+_FIELD = re.compile(r"^\s*(Archived|Source|Change|Binary|Why|V0 pair|Runtime switches)\s*:\s*(.+)$",
+                    re.I | re.M)
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -97,6 +113,13 @@ def scan(model: str):
     for d in sorted(os.scandir(root), key=lambda e: e.name):
         if not d.is_dir():
             continue
+        # A SYMLINK is a compatibility ALIAS, not a second archive: counting it would publish two
+        # labels for one binary and then M4 would demand the alias be recorded, entrenching a name
+        # that may exist only to be retired. Note this is NOT how a deliberate second label is
+        # made -- R4base_forkmain_0366560a and TeRaCONbase_forkmain_0366560a are two REAL copies,
+        # each with its own PROVENANCE.txt saying which is the original, and both are recorded.
+        if d.is_symlink():
+            continue
         binp = pathlib.Path(d.path) / cfg["binary_name"]
         provp = pathlib.Path(d.path) / "PROVENANCE.txt"
         if not binp.is_file():
@@ -119,6 +142,10 @@ def scan(model: str):
             "provenance_sha256": claimed,
             "source": fields.get("source", ""),
             "change": fields.get("change", ""),
+            # What must be SET to use this binary. A commit and a checksum say what is IN it and
+            # nothing about how to run it, which is how a compiled-in, default-off switch stays
+            # off across a case handover without producing a single symptom.
+            "runtime_switches": fields.get("runtime_switches", ""),
             "archived": fields.get("archived", ""),
         })
     return entries, problems
@@ -134,8 +161,6 @@ def cmd_generate(models, stamp):
             print(f"✘ {model}: no archives found at {ARCHIVES[model]['archive_root']}", file=sys.stderr)
             rc = max(rc, 2)
             continue
-        out = ARCHIVES[model]["manifest"]
-        out.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "_comment": (
                 "Manifest of ARCHIVED model binaries. The binaries themselves are NOT in git -- "
@@ -149,10 +174,12 @@ def cmd_generate(models, stamp):
             "_tool": "tools/binary_archive_manifest.py",
             "archives": entries,
         }
-        out.write_text(json.dumps(payload, indent=2) + "\n")
         total = sum(e["bytes"] for e in entries) / 1e6
-        print(f"✔ {model}: {len(entries)} archive(s), {total:.0f} MB on disk -> "
-              f"{out.relative_to(ROOT)}")
+        for out in ARCHIVES[model]["manifests"]:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(payload, indent=2) + "\n")
+            print(f"✔ {model}: {len(entries)} archive(s), {total:.0f} MB on disk -> "
+                  f"{out.relative_to(ROOT)}")
     return rc
 
 
@@ -207,40 +234,43 @@ def check_round_ledger(model, manifest_path, recorded):
 def cmd_verify(models):
     errors, warnings = [], []
     for model in models:
-        man = ARCHIVES[model]["manifest"]
-        if not man.is_file():
-            errors.append(f"{model}: no manifest at {man} -- run --generate")
-            continue
-        recorded = {e["label"]: e for e in json.loads(man.read_text())["archives"]}
         on_disk, problems = scan(model)
         warnings.extend(problems)
         seen = {e["label"]: e for e in on_disk}
-
-        for label, e in recorded.items():                                          # M1, M2
-            if label not in seen:
-                errors.append(f"{model}/{label}: in the manifest but MISSING from disk. Every "
-                              f"round citing this binary now has unverifiable provenance.")
+        # One pass per manifest. Each is checked against disk AND against the round ledger beside
+        # it, so a case's provenance claims are verified where that case records them.
+        for man in ARCHIVES[model]["manifests"]:
+            if not man.is_file():
+                errors.append(f"{model}: no manifest at {man} -- run --generate")
                 continue
-            if seen[label]["sha256"] != e["sha256"]:
-                errors.append(f"{model}/{label}: SHA256 CHANGED "
-                              f"(manifest {e['sha256'][:12]}..., disk "
-                              f"{seen[label]['sha256'][:12]}...) -- an archived binary is supposed "
-                              f"to be immutable; it has been altered or swapped")
-        for label in seen:                                                          # M4
-            if label not in recorded:
-                warnings.append(f"{model}/{label}: on disk but not in the manifest -- "
-                                f"run --generate after archiving a new build")
+            recorded = {e["label"]: e for e in json.loads(man.read_text())["archives"]}
 
-        errors.extend(check_round_ledger(model, man, recorded))                      # M7
+            for label, e in recorded.items():                                          # M1, M2
+                if label not in seen:
+                    errors.append(f"{model}/{label}: in the manifest but MISSING from disk. Every "
+                                  f"round citing this binary now has unverifiable provenance.")
+                    continue
+                if seen[label]["sha256"] != e["sha256"]:
+                    errors.append(f"{model}/{label}: SHA256 CHANGED "
+                                  f"(manifest {e['sha256'][:12]}..., disk "
+                                  f"{seen[label]['sha256'][:12]}...) -- an archived binary is supposed "
+                                  f"to be immutable; it has been altered or swapped")
+            for label in seen:                                                          # M4
+                if label not in recorded:
+                    warnings.append(f"{model}/{label}: on disk but not in the manifest -- "
+                                    f"run --generate after archiving a new build")
 
-    if not any(ARCHIVES[m]["manifest"].is_file() or
+            errors.extend(check_round_ledger(model, man, recorded))                      # M7
+
+    if not any(any(x.is_file() for x in ARCHIVES[m]["manifests"]) or
                pathlib.Path(ARCHIVES[m]["archive_root"]).is_dir() for m in models):  # M6
         errors.append("no archive root and no manifest found for any model -- nothing was "
                       "checked, which is not a pass")
 
-    n = sum(len(json.loads(ARCHIVES[m]["manifest"].read_text())["archives"])
-            for m in models if ARCHIVES[m]["manifest"].is_file())
-    print(f"binary archive verification — {n} archive(s) in manifest(s)")
+    n = sum(len(json.loads(x.read_text())["archives"])
+            for m in models for x in ARCHIVES[m]["manifests"] if x.is_file())
+    nman = sum(1 for m in models for x in ARCHIVES[m]["manifests"] if x.is_file())
+    print(f"binary archive verification — {n} archive claim(s) across {nman} manifest(s)")
     for w in warnings:
         print(f"  WARN  {w}")
     for e in errors:

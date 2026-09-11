@@ -55,9 +55,17 @@ def test_a_fresh_logger_reuses_the_stem_of_an_existing_LOG(tmp_path, monkeypatch
     assert lg2.topic_stem(2, "my topic") == stem
 
 
+@pytest.mark.filterwarnings("ignore:PhaseLogger is minting a SECOND stem")
 def test_a_DIFFERENT_topic_still_gets_its_own_letter(tmp_path, monkeypatch):
     """Reuse must key on the FULL suffix. Collapsing two topics onto one letter would be a
-    worse bug than the one being fixed -- two logs overwriting each other."""
+    worse bug than the one being fixed -- two logs overwriting each other.
+
+    THE SUPPRESSED WARNING IS CORRECT HERE, and is suppressed rather than fixed for that reason.
+    This fixture creates topic one's artifact FOLDER and never writes its log, which is exactly
+    the orphan-in-the-making signature `_warn_if_slot_already_used` looks for. Real use writes the
+    log, so the warning does not fire; the fixture is artificial in precisely the way the warning
+    detects. Suppressed narrowly, by message, so a DIFFERENT warning here would still surface.
+    """
     lg1, site = _logger(tmp_path, monkeypatch)
     a = lg1.topic_artifact_dir(2, "topic one")
 

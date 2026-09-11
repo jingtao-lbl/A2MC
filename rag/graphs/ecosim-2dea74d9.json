@@ -145,6 +145,14 @@
     },
     {
       "node_type": "Mechanism",
+      "name": "Leaf_Protein_Colimitation",
+      "description": "Leaf protein, which carries the photosynthetic machinery, accumulates at the LESSER of what the available nitrogen and the available phosphorus allow. Leaf protein per unit leaf area then sets mesophyll Rubisco surface density, which sets Vmax, which sets the CO2-limited carboxylation rate. So the two leaf stoichiometric CEILINGS, CNLF and CPLF, are two branches of ONE min(), and only the branch that is currently smaller has any leverage.",
+      "code_location": "PlantBranchMod.F90:3547 (LeafProteinC_node += AMIN1(GrowthElms(ielmn)*rProteinC2LeafN_pft, GrowthElms(ielmp)*rProteinC2LeafP_pft)); StomatesMod.F90:414 (MesophyllRubiscoSurfDensity = LeafRubisco2Protein_pft*ProteinCLeafAreaDensity); StomatesMod.F90:433-435 (Vmax4RubiscoCarboxy_node); StomatesMod.F90:439 (CO2lmtRubiscoCarboxyRate_node). Leaf P supplied by PlantBranchMod.F90:392, Growth_brch(ielmp,leaf) = Growth_brch(ielmc,leaf)*fPCLFW_brch.",
+      "module": null,
+      "id": "mechanism:Leaf_Protein_Colimitation"
+    },
+    {
+      "node_type": "Mechanism",
       "name": "Root_Growth_Allocation",
       "description": "Root branching frequency and the shoot-root nonstructural-C economy that funds new root growth.",
       "code_location": "f90src/IOutils/PlantInfoMod.F90:589,592,593 (RootBranchFreq/ShootRootNonstElmConduts/NonstCMinCon2InitRoot); root dry-matter yield DMRT at :618.",
@@ -1318,6 +1326,859 @@
       "bounds": null,
       "code_location": null,
       "id": "parameter:CPND"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "DCKI",
+      "pft": null,
+      "category": "respiration",
+      "description": "Inhibition of decomposition by respiration-based microbial activity",
+      "units": "gC m-3 h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:DCKI"
+    },
+    {
+      "node_type": "Category",
+      "name": "respiration",
+      "description": null,
+      "id": "category:respiration"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "RCCX",
+      "pft": null,
+      "category": "other",
+      "description": "Maximum fraction of N recycled for microbial reserve",
+      "units": "-",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:RCCX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "RCCQ",
+      "pft": null,
+      "category": "other",
+      "description": "Maximum fraction of P recycled for microbial reserve",
+      "units": "-",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:RCCQ"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "RCCZ",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Minimum fraction of senescenced C recycled for microbial reserve",
+      "units": "-",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:RCCZ"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "RCCY",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Maximum fraction of senescenced C recycled for microbial reserve",
+      "units": "-",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:RCCY"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "FPRIM",
+      "pft": null,
+      "category": "other",
+      "description": "Rate for DOM, microbial activity transfer via priming",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:FPRIM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "FPRIMM",
+      "pft": null,
+      "category": "other",
+      "description": "Rate for microbial C,N,P transferred via priming",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:FPRIMM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "OMGR",
+      "pft": null,
+      "category": "other",
+      "description": "Rate constant for transferring microbial C from nonstructural to structural components",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:OMGR"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "H2KI",
+      "pft": null,
+      "category": "other",
+      "description": "H2 product inhibition for methanogenesis",
+      "units": "gH m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:H2KI"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "OQKI",
+      "pft": null,
+      "category": "other",
+      "description": "DOC product inhibition constant for decomposition",
+      "units": "gC m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:OQKI"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "OAKI",
+      "pft": null,
+      "category": "other",
+      "description": "Acetate product inhibition constant for decomposition",
+      "units": "gC m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:OAKI"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "COMKI",
+      "pft": null,
+      "category": "other",
+      "description": "Km to slow microbial decomposition with low microbial C",
+      "units": "g micr C (g subs C)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:COMKI"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "COMKM",
+      "pft": null,
+      "category": "respiration",
+      "description": "Km to slow microbial maintenance respiration with low microbial C",
+      "units": "g micr C (g subs C)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:COMKM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CKC",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Half saturating reserve C concentration for microbial C remobilization",
+      "units": "gC (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CKC"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "FOSCZ0",
+      "pft": null,
+      "category": "other",
+      "description": "Surface litter mixing rate",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:FOSCZ0"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "FOSCZL",
+      "pft": null,
+      "category": "other",
+      "description": "Subsurface litter mixing rate",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:FOSCZL"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "DCKM0",
+      "pft": null,
+      "category": "other",
+      "description": "Reference Km for litter layer SOC decomposition",
+      "units": "gC (g soil)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:DCKM0"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "DCKML",
+      "pft": null,
+      "category": "other",
+      "description": "Reference Km for subsurface SOC decomposition",
+      "units": "gC (g soil)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:DCKML"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMXO",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Specific DOC/acetate oxidation rates for aerobic microbe at 25oC",
+      "units": "gC (gC h)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMXO"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMXF",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Specific DOC/acetate oxidation rates for fermentation at 25oC",
+      "units": "gC (gC h)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMXF"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMXCH4gAcet",
+      "pft": null,
+      "category": "other",
+      "description": "Specific acetate oxidation rates for acetoclastic methanogens",
+      "units": "gC (gC h)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMXCH4gAcet"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMXNO2Oxi",
+      "pft": null,
+      "category": "other",
+      "description": "Specific NO2 oxidation rate by nitrite oxidizers,",
+      "units": "gN (gC)-1 h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMXNO2Oxi"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMXNH3Oxi",
+      "pft": null,
+      "category": "other",
+      "description": "Specific NH3 oxidation rate by ammonia oxidizers at 25oC",
+      "units": "gN (gC h)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMXNH3Oxi"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMXCH4OxiAero",
+      "pft": null,
+      "category": "other",
+      "description": "Specific CH4 oxidation rate by aerobic methanotrophs at 25oC",
+      "units": "g (gC h)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMXCH4OxiAero"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMXCH4gH2",
+      "pft": null,
+      "category": "other",
+      "description": "Referece specific H2 oxidation rates by hydrogenotrophic methanogens at 25oC",
+      "units": "g g-1C h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMXCH4gH2"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "OQKM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for DOC uptake by heterotrophic bacteria and fungi",
+      "units": "gC m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:OQKM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "OQKA",
+      "pft": null,
+      "category": "other",
+      "description": "Km for acetate uptake by heterotrophic fermenters,",
+      "units": "gC m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:OQKA"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "OQKAM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for acetate uptake by acetoclastic methanogens,",
+      "units": "g C m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:OQKAM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CCKM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for autotrophic CO2 uptake",
+      "units": "gC m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CCKM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CCK4",
+      "pft": null,
+      "category": "other",
+      "description": "Km for CH4 uptake by aerobic methanotroph",
+      "units": "g C m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CCK4"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ZHKM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for NH4 uptake by ammonia oxidizing nitrifiers",
+      "units": "gN m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ZHKM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ZNKM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for NO2 uptake by nitrite oxidizing nitrifiers",
+      "units": "gN m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ZNKM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "Z3KM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for NO3 uptake by facultative denitrifiers",
+      "units": "gN m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:Z3KM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "Z2KM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for NO2 uptake by facultative denitrifiers",
+      "units": "gN m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:Z2KM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "Z1KM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for N2O uptake by denitrifiers",
+      "units": "gN m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:Z1KM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "Z4MX",
+      "pft": null,
+      "category": "other",
+      "description": "Maximum NH4 uptake rate by all microbial functional groups for biomass synthesis",
+      "units": "gN m-2 h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:Z4MX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "Z4KU",
+      "pft": null,
+      "category": "other",
+      "description": "Km for NH4 uptake by all microbial functional groups for biomass synthesis",
+      "units": "g N m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:Z4KU"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "Z4MN",
+      "pft": null,
+      "category": "other",
+      "description": "Minimum concentration for NH4 uptake kinetics by all microbial functional groups for biomass synthesis",
+      "units": "gN m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:Z4MN"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ZOMX",
+      "pft": null,
+      "category": "other",
+      "description": "Maximum NO3 uptake rate by all microbial functional groups for biomass synthesis",
+      "units": "gN m-2 h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ZOMX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ZOKU",
+      "pft": null,
+      "category": "other",
+      "description": "Km for NO3 uptake kinetics by all microbial functional groups for biomass synthesis",
+      "units": "gN m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ZOKU"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ZOMN",
+      "pft": null,
+      "category": "other",
+      "description": "Minimum concentration for NO3 uptake kinetics by all microbial functional groups for biomass synthesis",
+      "units": "g N m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ZOMN"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "HPMX",
+      "pft": null,
+      "category": "other",
+      "description": "Maximum H2PO4 uptake rate by all microbial functional groups for biomass synthesis",
+      "units": "g P m-2 h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:HPMX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "HPKU",
+      "pft": null,
+      "category": "other",
+      "description": "Km for H2PO4 uptake kinetics by all microbial functional groups for biomass synthesis",
+      "units": "gP m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:HPKU"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "HPMN",
+      "pft": null,
+      "category": "other",
+      "description": "Minimum concentration for H2PO4 uptake kinetics by all microbial functional groups",
+      "units": "gP m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:HPMN"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ZFKM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for N2 uptake by free-living diazotrophs for N-fixation",
+      "units": "g N m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ZFKM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "H2KM",
+      "pft": null,
+      "category": "other",
+      "description": "Km for H2 uptake by hydrogenotrophic methanogens",
+      "units": "g H m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:H2KM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ECNH",
+      "pft": null,
+      "category": "other",
+      "description": "Efficiency of CO2 conversion to biomass by ammonia oxidizers,",
+      "units": "gC biomass (gC CO2)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ECNH"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ECNO",
+      "pft": null,
+      "category": "other",
+      "description": "Efficiency of CO2 conversion to biomass by nitrite oxidizers,",
+      "units": "gC biomass (gC CO2)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ECNO"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ECHO",
+      "pft": null,
+      "category": "other",
+      "description": "Efficiency of CO2 conversion to biomass by methane oxidizers,",
+      "units": "-",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ECHO"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "RNFNI",
+      "pft": null,
+      "category": "other",
+      "description": "Parameter for nitrification inhibition",
+      "units": "-",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:RNFNI"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ZHKI",
+      "pft": null,
+      "category": "other",
+      "description": "Inhibition of nitrification inhibition by NH3",
+      "units": "gN m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ZHKI"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMKI",
+      "pft": null,
+      "category": "other",
+      "description": "Product inhibn for NOx reduction by denitrifiers",
+      "units": "g N m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMKI"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VHKI",
+      "pft": null,
+      "category": "other",
+      "description": "Product inhibn for NH3 oxidation by nitrifiers,",
+      "units": "g N m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VHKI"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "OXKA",
+      "pft": null,
+      "category": "other",
+      "description": "Km for O2 uptake by nitrifiers",
+      "units": "gO m-3",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:OXKA"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "EOMC",
+      "pft": null,
+      "category": "other",
+      "description": "Energy requirements for microbial growth of aerobic bacteria",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:EOMC"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "EOMD",
+      "pft": null,
+      "category": "other",
+      "description": "Energy requirements for microbial growth of denitrifiers,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:EOMD"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "EOMG",
+      "pft": null,
+      "category": "other",
+      "description": "Energy requirements for microbial growth of fungi,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:EOMG"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "EOMF",
+      "pft": null,
+      "category": "other",
+      "description": "Energy requirements for microbial growth of fermenters,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:EOMF"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "EOMH",
+      "pft": null,
+      "category": "other",
+      "description": "Energy requirements for microbial growth of methanogens,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:EOMH"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "EOMN",
+      "pft": null,
+      "category": "other",
+      "description": "Energy requirements for microbial growth of diazotrophs,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:EOMN"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GO2X",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Free energy yields of redox reactions for DOC->CO2,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:GO2X"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GH4X",
+      "pft": null,
+      "category": "other",
+      "description": "Free energy yields of redox reactions for CO2->CH4,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:GH4X"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GCHX",
+      "pft": null,
+      "category": "other",
+      "description": "Free energy yields of redox reactions for DOC->acetate,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:GCHX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GC4X",
+      "pft": null,
+      "category": "other",
+      "description": "Free energy yields of redox reactions for acetate->CH4,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:GC4X"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GCOX",
+      "pft": null,
+      "category": "other",
+      "description": "Free energy yields of redox reactions for CO2->CH4,",
+      "units": "kJ (gC)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:GCOX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GNOX",
+      "pft": null,
+      "category": "other",
+      "description": "Free energy yields of redox reactions for NO3->NO2, NO2->N2O,N2O->N2,",
+      "units": "kJ (gN)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:GNOX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GN2X",
+      "pft": null,
+      "category": "other",
+      "description": "Free energy yields of redox reactions for N2->NH3,",
+      "units": "kJ (gN)-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:GN2X"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "TSORP",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Sorption rate constant for OHC",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:TSORP"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "HSORP",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Sorption volume coefficient for OHC",
+      "units": "-",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:HSORP"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "SPOHC",
+      "pft": null,
+      "category": "other",
+      "description": "Specific decomposition rate constant for adsorbed SOC",
+      "units": "g subs. C g-1 micr. C",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:SPOHC"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMX2AMONC10",
+      "pft": null,
+      "category": "other",
+      "description": "maximum specific uptake rate of NO2(-) by AMO NC-10",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMX2AMONC10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "VMX3AMO2D",
+      "pft": null,
+      "category": "other",
+      "description": "maximum specific uptake rate of NO2(-) by AMO ANME-2D",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:VMX3AMO2D"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "SPOHA",
+      "pft": null,
+      "category": "other",
+      "description": "Specific decomposition rate constant for adsorbed acetate,",
+      "units": "g subs. C g-1 micr. C",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:SPOHA"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "RMOM",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Specific maintenance respiration",
+      "units": "gC (gN)-1 h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:RMOM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "SPORC",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Specific decomposition rate constant microbial residue",
+      "units": "gC gN-1 h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:SPORC"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "SPOMC",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "Specific decomposition rate constant microbial biomass",
+      "units": "gC gN-1 h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:SPOMC"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "SPOSC",
+      "pft": null,
+      "category": "microbial_decomposition",
+      "description": "specific decomposition rate constant of solid SOM, BASE (pre-boost); SetPars applies the x1.5 litter-complex boost after reading",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:SPOSC"
     },
     {
       "node_type": "Output",
@@ -5966,30 +6827,6 @@
       "units": "MJ/m3/K",
       "level": "column",
       "id": "output:vHeatCap_litr_col"
-    },
-    {
-      "node_type": "Output",
-      "name": "PETIOLE_C_pft",
-      "description": null,
-      "units": null,
-      "level": null,
-      "id": "output:PETIOLE_C_pft"
-    },
-    {
-      "node_type": "Output",
-      "name": "NODULE_N_pft",
-      "description": null,
-      "units": null,
-      "level": null,
-      "id": "output:NODULE_N_pft"
-    },
-    {
-      "node_type": "Output",
-      "name": "Petiole_N_pft",
-      "description": null,
-      "units": null,
-      "level": null,
-      "id": "output:Petiole_N_pft"
     }
   ],
   "links": [
@@ -6066,6 +6903,18 @@
       "target": "mechanism:PEP_C4_Refixation"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:photosynthesis",
+      "target": "output:CAN_GPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:photosynthesis",
+      "target": "output:NPP_pft"
+    },
+    {
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:stomatal",
@@ -6096,6 +6945,18 @@
       "target": "mechanism:Turgor_Based_Stomatal_Stress"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:stomatal",
+      "target": "output:CAN_GPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:stomatal",
+      "target": "output:dCAN_GPP_CLIM_pft"
+    },
+    {
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:radiation",
@@ -6124,6 +6985,18 @@
       "weight": 1.0,
       "source": "category:radiation",
       "target": "mechanism:Canopy_Radiative_Transfer"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:radiation",
+      "target": "output:ECO_LAI_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:radiation",
+      "target": "output:CanopyLAIZ_plyr"
     },
     {
       "relation_type": "contains",
@@ -6174,6 +7047,18 @@
       "target": "mechanism:Node_Leaf_Phenology"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:phenology",
+      "target": "output:LEAF_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:phenology",
+      "target": "output:LAI_xstk_pft"
+    },
+    {
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:allocation",
@@ -6208,6 +7093,24 @@
       "weight": 1.0,
       "source": "category:allocation",
       "target": "mechanism:Stage_Prescribed_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:allocation",
+      "target": "output:LEAF_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:allocation",
+      "target": "output:Plant_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:allocation",
+      "target": "output:GRAIN_C_pft"
     },
     {
       "relation_type": "contains",
@@ -6256,6 +7159,24 @@
       "weight": 1.0,
       "source": "category:nutrient",
       "target": "mechanism:Symbiotic_N2_Fixation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:nutrient",
+      "target": "output:Plant_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:nutrient",
+      "target": "output:Plant_P_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:nutrient",
+      "target": "output:RootNodule_N_pft"
     },
     {
       "relation_type": "contains",
@@ -6336,6 +7257,24 @@
       "target": "mechanism:Root_Vertical_Profile"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "output:Root_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "output:Plant_P_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "output:EXUD_CumYr_C_FLX_pft"
+    },
+    {
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:stoichiometry",
@@ -6372,6 +7311,24 @@
       "target": "mechanism:Prescribed_Tissue_Stoichiometry"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:stoichiometry",
+      "target": "output:LEAF_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:stoichiometry",
+      "target": "output:LEAF_P_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:stoichiometry",
+      "target": "output:LITRf_N_FLX_pft"
+    },
+    {
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:pfts",
@@ -6388,6 +7345,84 @@
       "weight": 1.0,
       "source": "category:pfts",
       "target": "mechanism:Plant_Functional_Type_Switches"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "category:pfts",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:RCCZ"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:RCCY"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:CKC"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:VMXO"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:VMXF"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:GO2X"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:TSORP"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:HSORP"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:RMOM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:SPORC"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:SPOMC"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "parameter:SPOSC"
     },
     {
       "relation_type": "contains",
@@ -6434,6 +7469,12 @@
     {
       "relation_type": "affects",
       "weight": 1.0,
+      "source": "category:microbial_decomposition",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
       "source": "mechanism:Grant_Rubisco_C3_Kinetics",
       "target": "output:CAN_GPP_pft"
     },
@@ -6446,8 +7487,26 @@
     {
       "relation_type": "affects",
       "weight": 1.0,
+      "source": "mechanism:Grant_Rubisco_C3_Kinetics",
+      "target": "output:ECO_GPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
       "source": "mechanism:PEP_C4_Refixation",
       "target": "output:CAN_GPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:PEP_C4_Refixation",
+      "target": "output:ECO_GPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:PEP_C4_Refixation",
+      "target": "output:ECO_RA_col"
     },
     {
       "relation_type": "affects",
@@ -6464,6 +7523,18 @@
     {
       "relation_type": "affects",
       "weight": 1.0,
+      "source": "mechanism:Turgor_Based_Stomatal_Stress",
+      "target": "output:ECO_GPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Turgor_Based_Stomatal_Stress",
+      "target": "output:ECO_ET_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
       "source": "mechanism:Canopy_Radiative_Transfer",
       "target": "output:ECO_LAI_col"
     },
@@ -6472,6 +7543,12 @@
       "weight": 1.0,
       "source": "mechanism:Canopy_Radiative_Transfer",
       "target": "output:CanopyLAIZ_plyr"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Canopy_Radiative_Transfer",
+      "target": "output:ECO_GPP_col"
     },
     {
       "relation_type": "affects",
@@ -6495,7 +7572,7 @@
       "relation_type": "affects",
       "weight": 1.0,
       "source": "mechanism:Stage_Prescribed_Allocation",
-      "target": "output:PETIOLE_C_pft"
+      "target": "output:PetolSheth_C_pft"
     },
     {
       "relation_type": "affects",
@@ -6508,6 +7585,12 @@
       "weight": 1.0,
       "source": "mechanism:Stage_Prescribed_Allocation",
       "target": "output:Root_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Stage_Prescribed_Allocation",
+      "target": "output:ECO_RA_col"
     },
     {
       "relation_type": "affects",
@@ -6525,13 +7608,19 @@
       "relation_type": "affects",
       "weight": 1.0,
       "source": "mechanism:Symbiotic_N2_Fixation",
-      "target": "output:NODULE_N_pft"
+      "target": "output:RootNodule_N_pft"
     },
     {
       "relation_type": "affects",
       "weight": 1.0,
       "source": "mechanism:Symbiotic_N2_Fixation",
       "target": "output:Plant_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Symbiotic_N2_Fixation",
+      "target": "output:ECO_RA_col"
     },
     {
       "relation_type": "affects",
@@ -6549,7 +7638,7 @@
       "relation_type": "affects",
       "weight": 1.0,
       "source": "mechanism:Prescribed_Tissue_Stoichiometry",
-      "target": "output:Petiole_N_pft"
+      "target": "output:PetolSheth_N_pft"
     },
     {
       "relation_type": "affects",
@@ -6584,6 +7673,24 @@
     {
       "relation_type": "affects",
       "weight": 1.0,
+      "source": "mechanism:Root_Hydraulic_Architecture",
+      "target": "output:ECO_ET_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Leaf_Protein_Colimitation",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Leaf_Protein_Colimitation",
+      "target": "output:LEAF_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
       "source": "mechanism:Root_Growth_Allocation",
       "target": "output:Root_C_pft"
     },
@@ -6592,6 +7699,12 @@
       "weight": 1.0,
       "source": "mechanism:Root_Growth_Allocation",
       "target": "output:Plant_P_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Root_Growth_Allocation",
+      "target": "output:ECO_RA_col"
     },
     {
       "relation_type": "affects",
@@ -6614,8 +7727,20 @@
     {
       "relation_type": "affects",
       "weight": 1.0,
+      "source": "mechanism:Heterotroph_Aerobic_Catabolism",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
       "source": "mechanism:Microbial_Maintenance_Respiration",
       "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Microbial_Maintenance_Respiration",
+      "target": "output:ECO_RH_col"
     },
     {
       "relation_type": "affects",
@@ -6626,8 +7751,20 @@
     {
       "relation_type": "affects",
       "weight": 1.0,
+      "source": "mechanism:Microbial_Mortality_Recycling",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
       "source": "mechanism:Growth_Efficiency_Energetics",
       "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Growth_Efficiency_Energetics",
+      "target": "output:ECO_RH_col"
     },
     {
       "relation_type": "affects",
@@ -6638,14 +7775,32 @@
     {
       "relation_type": "affects",
       "weight": 1.0,
+      "source": "mechanism:SOM_Hydrolysis",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
       "source": "mechanism:Necromass_Hydrolysis",
       "target": "output:CO2_SEMIS_FLX_col"
     },
     {
       "relation_type": "affects",
       "weight": 1.0,
+      "source": "mechanism:Necromass_Hydrolysis",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
       "source": "mechanism:DOM_Sorption_Desorption",
       "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:DOM_Sorption_Desorption",
+      "target": "output:ECO_RH_col"
     },
     {
       "relation_type": "controls",
@@ -6678,6 +7833,27 @@
       "target": "mechanism:Symbiotic_N2_Fixation"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:INTYP",
+      "target": "output:LEAF_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:INTYP",
+      "target": "output:Plant_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:INTYP",
+      "target": "output:RootNodule_N_pft"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:IWTYP",
@@ -6706,6 +7882,13 @@
       "weight": 1.0,
       "source": "parameter:IRTYP",
       "target": "mechanism:Plant_Functional_Type_Switches"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:ZTYPI",
+      "target": "output:ECO_RA_col"
     },
     {
       "relation_type": "contains",
@@ -6750,6 +7933,27 @@
       "target": "parameter:XKCO2"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:VCMX",
+      "target": "output:Plant_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:VCMX",
+      "target": "output:ECO_NPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:VCMX",
+      "target": "output:ECO_GPP_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:VOMX",
@@ -6774,10 +7978,31 @@
       "target": "parameter:XKO2"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:VOMX",
+      "target": "output:NPP_pft"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:VCMX4",
       "target": "mechanism:PEP_C4_Refixation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:VCMX4",
+      "target": "output:CAN_GPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:VCMX4",
+      "target": "output:ECO_GPP_col"
     },
     {
       "relation_type": "controls",
@@ -6796,6 +8021,13 @@
       "weight": 1.0,
       "source": "parameter:XKCO2",
       "target": "parameter:VCMX"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:XKCO2",
+      "target": "output:ECO_GPP_col"
     },
     {
       "relation_type": "controls",
@@ -7062,6 +8294,384 @@
       "target": "parameter:CPND"
     },
     {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:RCCX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:RCCQ"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:FPRIM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:FPRIMM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:OMGR"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:H2KI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:OQKI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:OAKI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:COMKI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:FOSCZ0"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:FOSCZL"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:DCKM0"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:DCKML"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VMXCH4gAcet"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VMXNO2Oxi"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VMXNH3Oxi"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VMXCH4OxiAero"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VMXCH4gH2"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:OQKM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:OQKA"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:OQKAM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:CCKM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:CCK4"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ZHKM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ZNKM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:Z3KM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:Z2KM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:Z1KM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:Z4MX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:Z4KU"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:Z4MN"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ZOMX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ZOKU"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ZOMN"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:HPMX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:HPKU"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:HPMN"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ZFKM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:H2KM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ECNH"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ECNO"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ECHO"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:RNFNI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:ZHKI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VMKI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VHKI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:OXKA"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:EOMC"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:EOMD"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:EOMG"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:EOMF"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:EOMH"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:EOMN"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:GH4X"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:GCHX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:GC4X"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:GCOX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:GNOX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:GN2X"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:SPOHC"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VMX2AMONC10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:VMX3AMO2D"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:SPOHA"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:XKCO24",
@@ -7146,10 +8756,52 @@
       "target": "parameter:OSMO"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:FCO2",
+      "target": "output:ECO_GPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:FCO2",
+      "target": "output:ECO_ET_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:ALBP",
       "target": "mechanism:Canopy_Radiative_Transfer"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:ALBP",
+      "target": "output:CAN_GPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:ALBP",
+      "target": "output:ECO_LAI_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:ALBP",
+      "target": "output:ECO_GPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:ALBP",
+      "target": "output:ECO_ET_col"
     },
     {
       "relation_type": "controls",
@@ -7272,6 +8924,27 @@
       "target": "parameter:DMLF"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:SLA1",
+      "target": "output:ECO_LAI_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:SLA1",
+      "target": "output:ECO_GPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:SLA1",
+      "target": "output:ECO_ET_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:SSL1",
@@ -7290,10 +8963,24 @@
       "target": "mechanism:Canopy_Radiative_Transfer"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:CLASS",
+      "target": "output:LAI_xstk_pft"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:CFI",
       "target": "mechanism:Canopy_Radiative_Transfer"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:CFI",
+      "target": "output:ECO_LAI_col"
     },
     {
       "relation_type": "controls",
@@ -7332,6 +9019,13 @@
       "target": "parameter:RSRR"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:RRAD1M",
+      "target": "output:ECO_ET_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:RRAD2M",
@@ -7356,6 +9050,13 @@
       "target": "parameter:RRAD1M"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:RRAD2M",
+      "target": "output:ECO_ET_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:PORT",
@@ -7378,6 +9079,13 @@
       "weight": 1.0,
       "source": "parameter:PORT",
       "target": "parameter:RSRA"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:PORT",
+      "target": "output:ECO_ET_col"
     },
     {
       "relation_type": "controls",
@@ -7404,6 +9112,13 @@
       "target": "parameter:PTSHT"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:PR",
+      "target": "output:ECO_RA_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:RSRR",
@@ -7434,6 +9149,13 @@
       "target": "parameter:RRAD1M"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:RSRR",
+      "target": "output:ECO_ET_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:RSRA",
@@ -7458,6 +9180,13 @@
       "target": "parameter:RSRR"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:RSRA",
+      "target": "output:ECO_ET_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:PTSHT",
@@ -7474,6 +9203,13 @@
       "weight": 1.0,
       "source": "parameter:PTSHT",
       "target": "parameter:PR"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:PTSHT",
+      "target": "output:ECO_RA_col"
     },
     {
       "relation_type": "controls",
@@ -7506,6 +9242,13 @@
       "target": "parameter:DMRT"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:RTFQ",
+      "target": "output:ECO_RA_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:UPMXZH",
@@ -7534,6 +9277,20 @@
       "weight": 1.0,
       "source": "parameter:UPMXZH",
       "target": "parameter:UPMXZO"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:UPMXZH",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:UPMXZH",
+      "target": "output:Root_N_pft"
     },
     {
       "relation_type": "controls",
@@ -7608,6 +9365,27 @@
       "target": "parameter:UPMNPO"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:UPMXPO",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:UPMXPO",
+      "target": "output:Root_P_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:UPMXPO",
+      "target": "output:ECO_NPP_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:UPKMPO",
@@ -7630,6 +9408,13 @@
       "weight": 1.0,
       "source": "parameter:UPKMPO",
       "target": "parameter:UPMNPO"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:UPKMPO",
+      "target": "output:LEAF_P_pft"
     },
     {
       "relation_type": "controls",
@@ -7656,6 +9441,20 @@
       "target": "parameter:RSMX"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:OSMO",
+      "target": "output:ECO_GPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:OSMO",
+      "target": "output:ECO_ET_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:RSMX",
@@ -7672,6 +9471,20 @@
       "weight": 1.0,
       "source": "parameter:RSMX",
       "target": "parameter:OSMO"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:RSMX",
+      "target": "output:ECO_GPP_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:RSMX",
+      "target": "output:ECO_ET_col"
     },
     {
       "relation_type": "controls",
@@ -7710,10 +9523,38 @@
       "target": "parameter:SLA1"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:DMLF",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:DMLF",
+      "target": "output:LAI_xstk_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:DMLF",
+      "target": "output:ECO_RA_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:DMSHE",
       "target": "mechanism:Stage_Prescribed_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DMSHE",
+      "target": "output:ECO_RA_col"
     },
     {
       "relation_type": "controls",
@@ -7734,10 +9575,31 @@
       "target": "parameter:DMLF"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:DMSTK",
+      "target": "output:ECO_RA_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:DMRSV",
       "target": "mechanism:Stage_Prescribed_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:DMRSV",
+      "target": "output:Plant_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DMRSV",
+      "target": "output:ECO_RA_col"
     },
     {
       "relation_type": "controls",
@@ -7770,16 +9632,55 @@
       "target": "parameter:RTFQ"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DMRT",
+      "target": "output:Root_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DMRT",
+      "target": "output:Root_P_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:DMRT",
+      "target": "output:ECO_RA_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:CNLF",
       "target": "mechanism:Prescribed_Tissue_Stoichiometry"
     },
     {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:CNLF",
+      "target": "mechanism:Leaf_Protein_Colimitation"
+    },
+    {
       "relation_type": "affects",
       "weight": 1.0,
       "source": "parameter:CNLF",
       "target": "output:LEAF_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CNLF",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CNLF",
+      "target": "output:LEAF_C_pft"
     },
     {
       "relation_type": "depends_on",
@@ -7792,6 +9693,13 @@
       "weight": 1.0,
       "source": "parameter:CNLF",
       "target": "parameter:CNSHE"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:CNLF",
+      "target": "output:Plant_N_pft"
     },
     {
       "relation_type": "controls",
@@ -7854,10 +9762,30 @@
       "target": "mechanism:Symbiotic_N2_Fixation"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:CNND",
+      "target": "output:RootNodule_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:CNND",
+      "target": "output:ECO_RA_col"
+    },
+    {
       "relation_type": "controls",
       "weight": 1.0,
       "source": "parameter:CPLF",
       "target": "mechanism:Prescribed_Tissue_Stoichiometry"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:CPLF",
+      "target": "mechanism:Leaf_Protein_Colimitation"
     },
     {
       "relation_type": "affects",
@@ -7866,10 +9794,29 @@
       "target": "output:LEAF_P_pft"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CPLF",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CPLF",
+      "target": "output:LEAF_C_pft"
+    },
+    {
       "relation_type": "depends_on",
       "weight": 1.0,
       "source": "parameter:CPLF",
       "target": "parameter:CNLF"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:CPLF",
+      "target": "output:Plant_P_pft"
     },
     {
       "relation_type": "controls",
@@ -7918,6 +9865,480 @@
       "weight": 1.0,
       "source": "parameter:CPND",
       "target": "mechanism:Symbiotic_N2_Fixation"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:DCKI",
+      "target": "mechanism:SOM_Hydrolysis"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DCKI",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:respiration",
+      "target": "parameter:DCKI"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:respiration",
+      "target": "parameter:COMKM"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:RCCZ",
+      "target": "mechanism:Microbial_Mortality_Recycling"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RCCZ",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RCCZ",
+      "target": "parameter:RCCY"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RCCZ",
+      "target": "parameter:CKC"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RCCZ",
+      "target": "parameter:SPOMC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:RCCZ",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:RCCY",
+      "target": "mechanism:Microbial_Mortality_Recycling"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RCCY",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RCCY",
+      "target": "parameter:RCCZ"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RCCY",
+      "target": "parameter:CKC"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:CKC",
+      "target": "mechanism:Microbial_Mortality_Recycling"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CKC",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CKC",
+      "target": "parameter:RCCZ"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CKC",
+      "target": "parameter:RCCY"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:CKC",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:DCKM0",
+      "target": "mechanism:SOM_Hydrolysis"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DCKM0",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DCKM0",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:DCKML",
+      "target": "mechanism:SOM_Hydrolysis"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DCKML",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:DCKML",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:VMXO",
+      "target": "mechanism:Heterotroph_Aerobic_Catabolism"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:VMXO",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:VMXO",
+      "target": "parameter:VMXF"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:VMXO",
+      "target": "parameter:OQKM"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:VMXO",
+      "target": "parameter:OQKA"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:VMXO",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:VMXF",
+      "target": "mechanism:Heterotroph_Aerobic_Catabolism"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:VMXF",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:VMXF",
+      "target": "parameter:VMXO"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:OQKM",
+      "target": "mechanism:Heterotroph_Aerobic_Catabolism"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:OQKM",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:OQKM",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:OQKA",
+      "target": "mechanism:Heterotroph_Aerobic_Catabolism"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:OQKA",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:OQKA",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:EOMC",
+      "target": "mechanism:Growth_Efficiency_Energetics"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:EOMG",
+      "target": "mechanism:Growth_Efficiency_Energetics"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:GO2X",
+      "target": "mechanism:Growth_Efficiency_Energetics"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:GO2X",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:GO2X",
+      "target": "parameter:EOMC"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:GO2X",
+      "target": "parameter:EOMG"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:GO2X",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:TSORP",
+      "target": "mechanism:DOM_Sorption_Desorption"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:TSORP",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:TSORP",
+      "target": "parameter:HSORP"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:TSORP",
+      "target": "parameter:RCCZ"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:TSORP",
+      "target": "parameter:SPOMC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:TSORP",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:HSORP",
+      "target": "mechanism:DOM_Sorption_Desorption"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:HSORP",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:HSORP",
+      "target": "parameter:TSORP"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:RMOM",
+      "target": "mechanism:Microbial_Maintenance_Respiration"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:RMOM",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:RMOM",
+      "target": "parameter:VMXO"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:RMOM",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:SPORC",
+      "target": "mechanism:Necromass_Hydrolysis"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:SPORC",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SPORC",
+      "target": "parameter:SPOMC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:SPORC",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:SPOMC",
+      "target": "mechanism:Microbial_Mortality_Recycling"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:SPOMC",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SPOMC",
+      "target": "parameter:SPORC"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SPOMC",
+      "target": "parameter:RCCZ"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SPOMC",
+      "target": "parameter:RCCY"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:SPOMC",
+      "target": "output:ECO_RH_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:SPOSC",
+      "target": "mechanism:SOM_Hydrolysis"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:SPOSC",
+      "target": "output:CO2_SEMIS_FLX_col"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SPOSC",
+      "target": "parameter:DCKM0"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SPOSC",
+      "target": "parameter:DCKML"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:SPOSC",
+      "target": "parameter:DCKI"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "direct",
+      "source": "parameter:SPOSC",
+      "target": "output:ECO_RH_col"
     }
   ]
 }
