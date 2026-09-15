@@ -27,6 +27,9 @@ citations are the evidence, not decoration.
 source use_cases/<Site>/config/<site>_config_r<N>.sh   # the ROUND wrapper if one exists, else the site config
 ```
 
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
+
 **ONE command since v2.306.** The round wrapper sources the site config, and the site config
 auto-sources `a2mc_noncime_config.sh` when it is not already loaded — so the machine config's three
 loop limits arrive without you choosing a file. If you sourced `a2mc_config.sh` (the CIME/FATES one,
@@ -89,6 +92,35 @@ EcoSIM cases are built from up to three NetCDF files. Know which is which before
 > text is stale. The dry-run banner now reports which mode is in force -- `secondary(PER-CASE)` vs
 > `secondary(fixed)` -- computed from the routing rather than asserted, so check the banner instead
 > of assuming.
+
+> **★ WIRING THE TERTIARY SURFACE FOR A NEW CASE — and why an empty `micpar_file_in` does NOT
+> mean "unreachable".** Two things are easy to get wrong here, and both have cost a case a
+> deferred soil-BGC calibration.
+>
+> **(a) The BASE namelist is not what reaches an ensemble case.** `create_case` stages
+> `tertiary_param_file` and repoints `micpar_file_in` per case (`models/ecosim/backend.py:277-311`),
+> so what matters is `A2MC_BASE_PARAM_FILE_3`. A case can run with an EMPTY `micpar_file_in` in its
+> base namelist and still calibrate the microbial surface. Wire the namelist too only for the
+> STANDALONE path — a probe or spin-up run that does not go through `create_case`.
+>
+> **(b) Wiring it is FREE if you build the file from the COMPILED defaults.** With the slot empty
+> the reader early-returns (`NitroPars.F90:277`) and the run uses `initNitroPars`' compiled-in
+> constants, so the parameters are never absent — just not file-backed, and A2MC perturbs files.
+> Pointing at the SHIPPED `MicrobePars.*.nc` therefore MOVES the baseline (it differs from the
+> compiled values on a handful of entries) and needs a fresh reference run. A file built from the
+> compiled defaults reads back the same numbers, so V0 still reproduces the un-wired configuration
+> and the surface becomes calibratable at zero cost.
+>
+> **Compiled defaults are a property of the BINARY, not the site**, so any case binding the same
+> `sha256` can reuse one such file. **Verify, don't assume:** diff the candidate against the shipped
+> file — only the known-divergent entries should differ.
+>
+> Do this at ONBOARDING. Deferring it on the belief that the surface is unreachable is the specific
+> failure: one case deferred its soil side for exactly that reason and corrected it later
+> (`use_cases/EcoSIM_Lusignan/memory/logs/20260904b_phase0_design_r01_*.md`), and a second repeated
+> the error eight days on, at a column where heterotrophic respiration dominates
+> (`use_cases/EcoSIM_Kougarok/memory/logs/20260912b_*.md`). It is 12 of the curated seed's 47
+> calibratable parameters.
 
 Routing is **derived**, never declared: `route_surfaces()` probes each file's variable names and
 raises if a parameter is found in both or neither. A param list may carry an optional `surface`
@@ -360,31 +392,3 @@ scored on, and it should say so instead of plotting.
 - **Branch fit:** `adapter-kit` and any branch carrying the EcoSIM adapter. Model-specific by design
   ([[feedback_per_model_scripts_not_generic]]): the machinery it drives is generic, the traps are not.
 
-## Changelog
-
-- 2026-09-06: **"the KB is meant to be sufficient" removed -- it invited exactly the misreading it warns against.** PI-directed, and the signal is a measured misreading in the session that first followed this rule: the agent paraphrased the sentence as "the KB is assumed sufficient", which reads as permission to stop at the KB, and the PI corrected it -- *"KB is not sufficient, they just let you have a quick understanding, you still need to verify in the source code if needed"*. The sentence already said *and only then confirm in source*, so the instruction was right and one clause of it was pulling the other way. **Evidence that both halves are load-bearing, from the same session:** the wiki DID carry the model's respiration temperature functions with their constants and `file:line`, so one grep would have replaced six source reads of LEARNING -- and the finding that mattered was that NO calibratable array appears in either function body, a claim about ABSENCE that no wiki page can settle. The KB would have oriented in seconds and still not answered it. Replaced with "the KB is where you START and it usually hands you the citation; it does NOT replace verifying in source". Applied identically across nine skills. The five-surface requirement, the query order and every `description` are UNCHANGED, so when each skill fires is unaffected.
-
-
-- 2026-09-05: **KB FIRST, SOURCE TO CONFIRM.** PI-directed, after a session reconstructed the EcoSIM `micresb` slot semantics from Fortran over several turns while `docs/ecosim-knowledge-base/ecosim-codebase-wiki-2dea74d9/microbial_bgc/index.md:133` stated it in one line with the same `MicBGCPars.F90:178-179` citation -- and additionally recorded that the 2-slot NECROMASS axis is not the 3-slot LIVING-biomass axis, a distinction the source read missed and which mattered. Cost: a wrong root-cause diagnosis and two fixes that treated symptoms. The knowledge was in the repo THREE times (the KB, a sibling case's hand-authored parameter list, and the Fortran) and the lowest-level one was reached for. **This is a SEARCH ORDER, not a demotion of source:** source stays ground truth on what the model DOES, and a load-bearing claim still gets a `file:line`; the KB is where you START, because it usually carries that citation already plus context the source does not. `git grep -i <term> -- docs/<model>-knowledge-base/` works with no RAG profile active. This skill mentioned the EcoSIM knowledge base ZERO times before today, which is the coverage gap that let the source-first habit form on this model. New Step 0b. `description` untouched; no trigger change.
-- 2026-09-02: **Accuracy audit (PI-requested). One claim was FALSE and four operational facts were missing.** Checked against source, not recalled.
-  - **FIXED, was wrong:** the secondary surface was documented as "staged FIXED, never edited". It has been written **per case** since 2026-09-01 (`materialize_adapter_ensemble.py`, `secondary_edits`; `20260901g`), and EcoSIM_TeRaCON R1 samples `PPI` on it -- verified on disk, case1's secondary differs from the V0's. The same stale sentence lived in **five** places: this skill, `models/ecosim/README.md`, and three in `materialize_adapter_ensemble.py` including its **dry-run banner**, which printed `secondary(fixed)=` while sampling that surface. All five corrected in one pass; the banner now computes `PER-CASE` vs `fixed` from the routing instead of asserting it.
-  - **ADDED:** `sobol` vs **`sobol_seq`** -- different designs with different estimators, and `sobol.analyze()` does not error on a sequence design, it returns meaningless numbers. The round config's `A2MC_SAMPLING_SCHEME` is the authority; TeRaCON R1 is `sobol_seq`.
-  - **ADDED:** how an ensemble is actually submitted (`submit_ensemble_array.sh`), and `shared`'s `MaxSubmitJobsPU = 5000` with its measured 4,995-task ceiling -- a hard reject, not a queue, and the reason one round needed block-aligned chunking. With the 2026-08-20 correction that a slow hour in `shared` is transient, so per-case arrays stay the default over the task-farm.
-  - **ADDED:** the completion test. The skill described censusing h1 years but never said that the **h0 tape is not a completion signal** -- EcoSIM opens it at initialisation, so a wall-clock-killed run looked COMPLETE. The final restart `<final year + 1>-01-01` is the signal (`20260820d`).
-  - Six new footgun lines. Nothing was removed except the false sentence.
-
-
-- 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. Step 0 drops from three commands to one, and its `a2mc_config.sh`-is-the-wrong-file warning changes character: the guard now repairs that choice rather than leaving it to bite. The footgun list says what repair does NOT do -- the ~45 ELM-FATES variables the CIME config left in the shell stay there, so a high `env | grep -c '^A2MC_'` still means start a fresh shell.
-
-- 2026-08-23 (corrected same day): the rule is **PHASE 5 ONLY**; Phase 0 is exempt because its ensemble scripts are config-generated and number in the tens of thousands (PI).
-- 2026-08-23: **Phase 5 archives its JOB SCRIPTS into `phase_results/{stem}/submit_scripts/`.** PI-directed. Copy, never move: the scheduler reads the operative copy from the run directory, but that directory is untracked scratch and gets cleaned, while the submit script is where the binary a run was bound to and its run-time hash assertion are written down. A log claiming a passed V0 gate with no archived submit script cannot show which executable produced the number. Signal: on 2026-08-23 a cycle nearly ran against the wrong binary because the materializer emits the LIVE build path by default. Updates `feedback_plot_scripts_canonical_in_phase_results`, which had said run drivers simply stay in CFS.
-
-- 2026-08-22 (later): **The figure script is copied from the case template and adapted.** PI-directed; canonical script stays in `phase_results/{stem}/`, canonical script TEMPLATE in `use_cases/{Model}_{Case}/scripts/`. Part of the three-tier script rule (`calibration-discipline` item 2b).
-
-- 2026-08-22: **Added Step 7, the Phase-6 figure this model owns.** `phase6-refinement` Step 1b calls the sim-vs-obs time series REQUIRED but described it only through the FATES driver, which cannot run on these tapes; nothing on this side claimed the requirement, so it fell between the two skills and this model's experiment cycles produced no such figure at all. Names what the figure must carry (one panel per SCORED target, measurements drawn as measured with gaps left as gaps, control on top, full trajectory), the two reusable pieces here (`control_observations()` for the observed series, `evaluate_model_case` per year for the simulated one so the figure cannot disagree with the score), the leap-calendar rule, and the canonical-script location. Signal: PI, on a cycle report whose only figure showed one of three scored targets against a flat line at the multi-year observed mean. Paired with the `phase6-refinement` and `write-report` edits of the same day.
-
-- 2026-08-18: Initial version — distilled from the EcoSIM BioCON R1-R3 arc, and specifically from the
-  R3 design session where the 4096-byte namelist buffer aborted materialization at case 100, the
-  deprecated SALib sampler made `--seed` inert, the validator crashed on a scalar parameter in the
-  baseline case, and two truncated runs corrupted a probe's gate. Sources:
-  `memory/dev_logs_adapterkit/20260818a`, `20260818e`, `use_cases/EcoSIM_BioCON/reports/20260818a_R3_Parameter_Decisions/`.

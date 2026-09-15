@@ -81,8 +81,15 @@ def test_names_moved_out_of_the_bullet_fails(disk):
     """The checker reads the BULLET, not the section — so a list that drifts out of it must fail
     rather than quietly shrink the enforced set to nothing."""
     d = dict(disk)
-    d["plotting"] = re.sub(r"\n  \*\*All seven phase skills\*\*.*?compare-calibration-rounds`\.",
+    # Strip from the start of the name list to the END OF THE BULLET, rather than to a named skill.
+    # Pinning the regex to the last name in the list (it was `compare-calibration-rounds`) made this
+    # negative control fail open the moment a name was appended: the strip stopped short, one name
+    # survived in the bullet, and the checker correctly reported nothing. A test whose negative
+    # control silently stops being negative is worse than no test.
+    d["plotting"] = re.sub(r"\n  \*\*All seven phase skills\*\*.*?(?=\n\n|\n- \*\*)",
                            "", d["plotting"], flags=re.S)
+    assert "compare-calibration-rounds" not in d["plotting"], (
+        "the strip did not remove the name list, so this control is no longer negative")
     out = reciprocity_check(d)
     assert any("names no skills" in p for p in out), out
 

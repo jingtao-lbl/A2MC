@@ -127,12 +127,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 def _detect_header_row(path: Path) -> int:
     """Return the 0-based line index of the header row.
 
-    The header is the first line that contains both 'Lower_Bound' and
+    The header is the first NON-COMMENT line that contains both 'Lower_Bound' and
     'Upper_Bound' (case-insensitive match also accepts 'lower'/'upper').
     Raises ValueError if no header is found.
+
+    Comment lines are skipped because the bare-token fallback matches ordinary prose: a comment
+    containing the words 'lower' and 'upper' is otherwise indistinguishable from a header.
     """
     with path.open() as f:
         for i, line in enumerate(f):
+            if line.lstrip().startswith('#'):
+                continue
             lower = line.lower()
             has_lower = ('lower_bound' in lower) or ('lower' in lower.split())
             has_upper = ('upper_bound' in lower) or ('upper' in lower.split())

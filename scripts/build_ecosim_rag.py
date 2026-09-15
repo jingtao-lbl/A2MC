@@ -187,6 +187,41 @@ def build_curated_chunks(seed: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Knowledge graph — full param/output surface + curated relationships.
 # ---------------------------------------------------------------------------
+def _source_status() -> tuple:
+    """Classify every parameter-file variable against the source: (file_read, mentioned).
+
+    THREE STATES, AND CONFLATING THE LAST TWO DELETES LIVE PHYSICS. The first cut of this helper
+    returned only the `ncd_getvar` set and dropped everything else, which flagged `CHL4`, `H2KI`
+    and `OAKI`. Only `CHL4` is dead:
+
+      file_read   read by a name-literal `ncd_getvar` -> a file value reaches the model. Normal.
+      mentioned   used in the physics but NOT read from the file -- `H2KI` and `OAKI` are set as
+                  compiled constants in `initNitroPars` (NitroPars.F90:144-145) and used in the
+                  Gibbs free-energy terms (MicBGCFGMod.F90:2597, MicAutoCplxFGMod.F90:1677). They
+                  are LIVE, so they stay in the graph -- but the value in MicrobePars.nc is INERT,
+                  and a calibration slot pointing at one would be a silent no-op. Marked
+                  `file_backed: false` rather than dropped.
+      neither     absent from every .F90 -- genuinely dead. `CHL4` ("bundle sheath(C4)
+                  chlorophyll") is ecosys's parameterization; EcoSIM's F90 uses one `CHL`
+                  partitioned by `fCHLMESO`. Dropped: a dead knob with the file's own long_name as
+                  its description is worse than no node.
+
+    Empty sets when the checkout is unavailable, so the caller degrades to the old behaviour rather
+    than silently emptying the graph.
+    """
+    import os, re, subprocess
+    root = os.environ.get("A2MC_MODEL_PATH")
+    if not root or not os.path.isdir(root):
+        print("  NOTE: $A2MC_MODEL_PATH unset/missing -- cannot classify parameters against source")
+        return set(), None
+    out = subprocess.run(["git", "grep", "-h", "ncd_getvar"], cwd=root,
+                         capture_output=True, text=True).stdout
+    file_read = set(re.findall(r"ncd_getvar\([^,]+,\s*'([A-Za-z0-9_]+)'", out))
+    names = subprocess.run(["git", "grep", "-hoE", r"\b[A-Z][A-Z0-9_]{2,}\b", "--", "*.F90"],
+                           cwd=root, capture_output=True, text=True).stdout
+    return file_read, set(names.split())
+
+
 def build_graph(params: dict, output_cdl: Path, seed: dict) -> FATESKnowledgeGraph:
     kg = FATESKnowledgeGraph()
 
@@ -200,13 +235,58 @@ def build_graph(params: dict, output_cdl: Path, seed: dict) -> FATESKnowledgeGra
                          code_location=m.get("code_reference"))
 
     # All real params as nodes (category from parser; curated overrides)
+    #
+    # TWO THINGS THIS LOOP GETS WRONG IF WRITTEN NAIVELY, both found 2026-09-12:
+    #
+    # (1) A PARAMETER FILE CAN CARRY VARIABLES THE MODEL NO LONGER READS, and promoting one to a
+    #     node publishes a dead knob with the FILE's long_name as its description. EcoSIM's shipped
+    #     sample `ds_input__pft_test__ex1.nc` carries `CHL4` -- "fraction of leaf protein in bundle
+    #     sheath(C4) chlorophyll" -- which appears in ZERO .F90 files. It is ecosys's (the F77
+    #     ancestor's) parameterization: ecosys split C3 and C4 chlorophyll across CHL and CHL4,
+    #     while EcoSIM's F90 uses ONE CHL partitioned by fCHLMESO. The curated YAML never referenced
+    #     it; it entered purely by being parsed. `_read_by_source` filters on the model's own
+    #     `ncd_getvar` calls, so a file variable must be read to become knowledge.
+    #
+    # (2) A PARAMETER CAN HAVE MORE THAN ONE IMPLEMENTATION, selected by a type flag, and until now
+    #     the graph had no way to say so: all 192 Parameter nodes carried `code_location: null` and
+    #     no node or edge encoded a condition. `CHL` is read in C3Photosynthesis AND
+    #     C4Photosynthesis with different formulas; `git grep` returns both and the first hit is a
+    #     coin flip. `guard` is emitted verbatim from the curated seed onto the node so a retrieval
+    #     surfaces the SELECTOR alongside the parameter.
     seed_params = seed.get("parameters", {})
+    file_read, mentioned = _source_status()
+    dropped, inert = [], []
     for name, par in params.items():
         if par.is_string:
             continue
-        cat = seed_params.get(name, {}).get("category", par.category)
+        if mentioned is not None and name not in file_read:
+            if name not in mentioned:
+                dropped.append(name)          # absent from every .F90 -- dead
+                continue
+            inert.append(name)                # live in code, but the FILE value is never read
+        cur = seed_params.get(name, {})
+        cat = cur.get("category", par.category)
         kg.add_parameter(name, category=cat, description=par.long_name,
-                         units=par.units)
+                         units=par.units, code_location=cur.get("code_location"))
+        node = kg.graph.nodes[f"{kg.PARAMETER.lower()}:{name}"]
+        if cur.get("guard"):
+            node["guard"] = cur["guard"]
+        if name in inert:
+            node["file_backed"] = False
+            node["file_backed_note"] = (
+                "Used in the physics but NOT read from the parameter file -- the model uses a "
+                "compiled-in constant. Writing this variable into the file is a SILENT NO-OP, so "
+                "it cannot be calibrated until it is promoted to a file-read parameter.")
+    if dropped:
+        print(f"  dropped {len(dropped)} parameter-file variable(s) absent from every .F90 "
+              f"(dead in this model version): {', '.join(sorted(dropped))}")
+    if inert:
+        print(f"  {len(inert)} variable(s) present in a parameter file but NOT read from it "
+              f"(compiled-in constant; writing them is a silent no-op): {', '.join(sorted(inert))}")
+    n_guard = sum(1 for v in seed_params.values() if v.get("guard"))
+    if n_guard:
+        print(f"  {n_guard} parameter(s) carry a branch GUARD "
+              f"(more than one implementation, selected by a type flag)")
 
     # All real outputs as nodes
     op = EcoSIMOutputParser()

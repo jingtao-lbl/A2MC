@@ -199,11 +199,3 @@ finished.
 - Memory: `feedback_two_machine_configs_cime_vs_noncime`, `feedback_model_source_push_fork_only`,
   `feedback_no_case_state_in_memory`, `feedback_per_model_scripts_not_generic`
 
-## Changelog
-
-- 2026-08-19 — Created (PI). The three setup skills named 47 gates and invoked ~15 tools with **no**
-  definition-of-done anywhere, so "is this stage finished?" had no single answer and a half-built
-  clone was indistinguishable from a finished one. Mirrors `calibration-discipline`, one stage
-  earlier. Stage 3's target-grammar item carries the per-model scoping fixed in `onboard-case` the
-  same day (`20260819e`); Stage 2's milestone-registration and commit-the-index items are the two
-  whose omission silently breaks every *later* clone rather than the current one.

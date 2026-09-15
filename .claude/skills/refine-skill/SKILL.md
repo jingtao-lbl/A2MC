@@ -49,7 +49,10 @@ rewrites a skill on its own.**
    definition/default the edit changed, terminology drift, or an anti-pattern that no longer
    matches the revised recipe. Reconcile every conflict in the SAME pass (this is cheap now,
    expensive once the contradiction misleads a future run). Then append a dated `## Changelog`
-   line stating what changed and which signal drove it; if the edit touched the `name:`, the
+   line stating what changed and which signal drove it — **keeping `## Changelog` the LAST section,
+   never adding a section below it** (the public sync strips the changelog as development history,
+   from its heading to the next `## ` heading; `tools/check_skill_registry.py` CHANGELOG-LAST
+   enforces it); if the edit touched the `name:`, the
    README table, or the catalog, **re-run `python3 tools/check_skill_registry.py`** (must exit 0; Tier-1
    static). If the edit changed a **backing command** the skill documents, also run the **Tier-2 runtime**
    check `python3 tools/smoke_test_skills.py` — it actually executes the read-only backing commands and
@@ -95,18 +98,3 @@ rewrites a skill on its own.**
   PI's cadence call), and no run-journal of per-skill outcomes; the reactive path (grep the
   logs + verify findings) is the working signal source today.
 
-## Changelog
-
-- 2026-09-09: **New guardrail — generic and concise, evidence cross-referenced rather than inlined.** PI-directed, after a day of contract edits that each had to be trimmed: the rule belongs in the skill, the episode in the log, the numbers in the report. Not only length -- a wrong ranking rule sat in the first clause of a bullet whose remaining lines were narrative and was read past twice.
-
-- 2026-08-17: **New guardrail — case references need CONTEXT, because skills SHIP.** `.claude/skills/` is on the public-sync INCLUDE list while the leak-scan gate checks host PATHS only, so case names and round labels reach the public repo unchecked. The rule is deliberately NOT a ban on specifics — `[[memory]]` pointers, log filenames and worked examples are what make a rule traceable; what is banned is a case token dropped with no context, e.g. "the R2 ensemble" where an outside reader has nothing to resolve it against. Signal: a proposed `arm-hpc-monitoring` edit reached the PI carrying a bare "R1/R2" and the PI asked for it to be removed, then clarified that cross-references themselves are welcome. This file's own changelog already recorded scrubbing case filenames during a port, so the practice predated the rule by months.
-- 2026-07-15: Step 5 names `tools/smoke_test_skills.py` as the **Tier-2 runtime** check when an edit changes a skill's backing command (complements Tier-1 `check_skill_registry.py`). Ported from demo `84af889`.
-- 2026-07-09: **Step 5 now requires a full end-to-end `SKILL.md` re-read after applying an edit**
-  (not just the diff) to catch inconsistencies the edit introduced — a stale flag/example, a
-  changed default, terminology drift, or an anti-pattern that no longer matches the recipe;
-  `check_skill_registry.py` can't see these (prose/logic, not dead paths), and multi-edit sessions
-  are the highest-risk. Ported from demo `a2147ff` (v3.13), scrubbed of the Kougarok worked-example
-  filenames.
-- 2026-06-17: Initial version — A2MC counterpart to E2SA's `e2sa-refine-skill`
-  (`End2EndScienceAgent/docs/design/09_skill_evolution.md`), adapted to A2MC's
-  dev_logs/ana_logs signal sources and the `tools/check_skill_registry.py` gate.

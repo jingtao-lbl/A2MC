@@ -99,9 +99,3 @@ grows (peak `SHOOT_C_pft` toward the site's expected biomass), not just that the
 - Worked onboarding: `20260714f` (dead-plant A/B/C ladder), `20260715a` (sanity-check → refine, RCS
   hypothesis falsified — the source of this skill's footguns)
 
-## Changelog
-
-- 2026-07-15: Initial version — distilled from the BioCON dead-plant onboarding (`20260714f`, `20260715a`):
-  learned the ecosim-agent sanity-check method, applied it to our runs' `.desc`, and captured the hard
-  caveats (refine the NC not the `.desc`; a checker ERROR ≠ the growth-limiter; establishment-stage
-  failure sits upstream of leaf-physiology flags; reference by `$MODEL` path, don't port).

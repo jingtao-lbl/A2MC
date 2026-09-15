@@ -63,6 +63,22 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
   after launching a new submitter/restart job.
 - **Modes:** `any` (HPC) — monitors any in-flight A2MC ensemble/experiment; model-agnostic.
 
+### `arm-local-monitoring`
+- **Purpose:** Watch an ensemble running on a WORKSTATION with no scheduler — arm a `Monitor`
+  on the dispatcher log a local submission writes, take liveness from the process table and the
+  filesystem, and say which of the HPC watcher contract does not transfer.
+- **Invoke when:** after an `A2MC_EXEC_MODE=local` submission, when resuming a session with
+  local runs in flight, or when someone asks how to monitor a run on their own machine.
+- **Modes:** `any` (local) — the no-scheduler counterpart of `arm-hpc-monitoring`; model-agnostic.
+- **Backing tools:** the dispatcher artefacts (`local_dispatch.log`, `local_cases.txt`, and the
+  dispatcher PID inside each `job_id.txt`), `ps`, and the backend's own `check_case_status`.
+- **Key discipline:** most of the three-layer watcher contract does NOT port — its heartbeat
+  check is scheduler-aware, and a watcher whose only job is to look at what is already visible
+  would itself need a liveness check. What DOES port is that silence on a crash is identical to
+  silence on a long run, so the filter carries a progress signal alongside error signatures, with
+  `Killed` and `Cannot allocate` added because the OOM killer has no scheduler to record it. The
+  dispatcher exiting is not completion; completion is `check_case_status` over every case.
+
 ### `a2mc-init`
 - **Purpose:** First run in a **clone** — the per-clone half of getting started. Greets + gauges
   experience, verifies the model checkout against the RAG milestone registry (`rag_match.py`),
@@ -276,6 +292,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Purpose:** Construct the RAG/GraphRAG knowledge layer from scratch (new model or fresh build).
 - **Invoke when:** "build the RAG from scratch", "stand up RAG for <model>".
 - **Modes:** `any` — model-agnostic. See `docs/a2mc_reference/rag_build_roadmap.md`.
+
 
 ### `rebuild-rag`
 - **Purpose:** Rebuild/refresh a model's RAG/GraphRAG index (wiki bump, or a `--graph-only` refresh after a curated-YAML injection), and **commit it successfully**.

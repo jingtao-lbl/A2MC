@@ -60,14 +60,50 @@ you plan a soil-BGC calibration.** With `micpar_file_in = ''` the reader returns
 (`if (len_trim(micpar_file_in)==0) return`, `f90src/Modelpars/NitroPars.F90:277`) and the run uses
 **compiled-in Fortran constants** from `initNitroPars` (`NitroPars.F90:137`). So the microbial
 parameters are never absent, they are simply not file-backed, and A2MC perturbs by writing modified
-*files* — meaning there is no surface to reach them through until the file is wired. Wiring it is
-also not a no-op: measured 2026-08-17, the shipped `input_data/MicrobePars.20260211.nc` matches the
-compiled defaults on 72 of 76 entries but differs on 4 (`VMXF` x0.4, `VMXCH4gAcet`/`VMXCH4gH2` x3.2,
-`SPOMC` element 2 x10), so switching it on changes the baseline and needs a fresh reference run.
+*files* — meaning there is no surface to reach them through until the file is wired. Wiring it **CAN** be a no-op, and
+this paragraph said otherwise until 2026-09-12, which cost a case a deferred soil calibration.
 
-Which cases exercise what: **BioCON** uses all three (its R3 config sets all three env vars);
-**Lusignan** uses the primary only. `create_case` repoints `pft_file_in` alone, so the other inputs
-are inherited from the base namelist — see `use_cases/EcoSIM_template/config/ecosim_template_config.sh`.
+Pointing at the SHIPPED `input_data/MicrobePars.20260211.nc` does change the baseline: measured
+2026-08-17 it matches the compiled defaults on 72 of 76 entries and differs on 4 (`VMXF`,
+`VMXCH4gAcet`, `VMXCH4gH2`, `SPOMC` element 2), so that needs a fresh reference run. **But a file
+built FROM the compiled defaults makes wiring FREE** — the run reads the same numbers it would have
+compiled in, so V0 still reproduces the un-wired configuration and the surface becomes calibratable
+at zero cost. `EcoSIM_Lusignan` did exactly that on 2026-09-04
+(`MicrobePars_lusignan_compiled_defaults.nc`; account in that case's `memory/logs/20260904b_*`),
+and `EcoSIM_Kougarok` reuses the same file on 2026-09-12 — **compiled defaults are a property of the
+BINARY, not the site**, so any case binding the same `sha256` can share one. Verify by diffing the
+candidate against the shipped file: exactly those 4 variables should differ.
+
+Which cases exercise what: **BioCON**, **Lusignan** (tertiary wired 2026-09-04) and
+**Kougarok** (2026-09-12) all reach the microbial surface; **TeRaCON** reaches it too.
+
+**`create_case` does NOT repoint `pft_file_in` alone** — this sentence said so until 2026-09-12 and
+it is wrong in the way that matters. `models/ecosim/backend.py:277-311` also **stages
+`tertiary_param_file` and repoints `micpar_file_in`**, and `secondary_param_file` likewise. So **an
+empty `micpar_file_in` in a BASE namelist does not mean the surface is unreachable**:
+`EcoSIM_TeRaCON` runs with exactly that and calibrates `SPOSC`, `SPOMC`, `SPORC`, `RMOM`, `VMXO`,
+`RCCZ` and `GO2X`, because what reaches an ensemble case is `A2MC_BASE_PARAM_FILE_3`. The base
+namelist matters only for the standalone path (a probe or spin-up run outside `create_case`).
+What IS inherited from the base namelist is everything with no A2MC slot — `grid_file_in`,
+`soil_mgmt_in`, `clm_hour_file_in`, `atm_ghg_in`.
+
+## Where the cases run — HPC or this machine
+
+`A2MC_EXEC_MODE` selects the execution path. It defaults to `hpc` and everything about that path is unchanged; local mode is additive.
+
+| | `hpc` (default) | `local` |
+|---|---|---|
+| submission | `sbatch` per case | background processes, `xargs -P` worker pool |
+| run template | `runtemplates/hpc_standalone.sh.tmpl` | `runtemplates/local_serial.sh.tmpl` |
+| concurrency | the scheduler's | `A2MC_LOCAL_WORKERS`, default `min(4, cpu_count)` |
+| job ids | the scheduler's | `LOCAL-<dispatcher pid>-<n>` |
+| what to watch | `sacct` / `squeue` | `local_dispatch.log` beside the cases |
+
+Nothing downstream of submission changes, and that is the reason local mode is small: `check_case_status` reads the **filesystem** — it requires the final restart, not a scheduler record — so status, extraction, scoring and the census already worked off a scheduler. Only submission needed a second path.
+
+**Local submission is non-blocking, like `sbatch`.** A detached dispatcher owns the worker pool and `submit_ensemble` returns immediately, so the phase scripts poll exactly as they do on HPC rather than local mode becoming a different workflow.
+
+**An absent `sbatch` in `hpc` mode is now a refusal, not a dry run.** It used to fall through silently: every case staged, nothing launched, a synthetic `DRYRUN-*` id written to `job_id.txt`, no warning. On a workstation that reads exactly like a successful submission, and a monitor armed on it waits forever for jobs that never existed. `A2MC_DRY_RUN=1` still works and is still silent — only the *implicit* fallback is gone.
 
 ## Version drift — input↔binary compat
 

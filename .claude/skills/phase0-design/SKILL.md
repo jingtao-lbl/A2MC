@@ -425,7 +425,14 @@ question had no home and the reasoning lived in a case folder instead. The split
 - **Reciprocal skills** — the skills that hand off to or from ensemble submission, and which must
   name `phase0-design` back so the pointer cannot rot into a one-directional claim:
   `ecosim-run-workflow`, `pflotran-run-workflow`, `arm-hpc-monitoring`, `restart-adapter-ensemble`, `restart-failed-jobs`,
-  `calibration-goal`. **`tools/check_skill_registry.py::reciprocity_check` enforces this** and fails
+  `calibration-goal`, `build-surrogate`.
+  **`build-surrogate` is here because of a decision this phase owns and can only make once:**
+  whether the round also draws an INDEPENDENT validation lattice (a second Sobol' draw with a
+  different scramble seed, run like any other case and then held). It cannot be recovered later
+  by re-splitting, because every split of one sequence draws train and test from the same point
+  set. `A2MC_SOBOL_SEQ_VALID_SAMPLES` / `_SEED` / `A2MC_VALID_MATRIX_FILE` configure it and
+  `scripts/create_adapter_parameter_sample.py` refuses a validation seed equal to the training
+  seed. **`tools/check_skill_registry.py::reciprocity_check` enforces this** and fails
   the pre-commit gate if any of them stops naming this skill — the same mechanism `plotting` uses,
   and for the same reason: a one-directional cross-reference is invisible from the side that needed
   to read it. Measured 2026-08-21, before this bullet existed: `arm-hpc-monitoring` and
@@ -464,74 +471,7 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 - **Rebuilding a new site/model's knowledge base first** → `build-rag-from-scratch`.
 - **Next:** `phase1-exploration` (extract Y matrix + Morris sensitivity).
 
-## Changelog
-
-- 2026-09-06: **"the KB is meant to be sufficient" removed -- it invited exactly the misreading it warns against.** PI-directed, and the signal is a measured misreading in the session that first followed this rule: the agent paraphrased the sentence as "the KB is assumed sufficient", which reads as permission to stop at the KB, and the PI corrected it -- *"KB is not sufficient, they just let you have a quick understanding, you still need to verify in the source code if needed"*. The sentence already said *and only then confirm in source*, so the instruction was right and one clause of it was pulling the other way. **Evidence that both halves are load-bearing, from the same session:** the wiki DID carry the model's respiration temperature functions with their constants and `file:line`, so one grep would have replaced six source reads of LEARNING -- and the finding that mattered was that NO calibratable array appears in either function body, a claim about ABSENCE that no wiki page can settle. The KB would have oriented in seconds and still not answered it. Replaced with "the KB is where you START and it usually hands you the citation; it does NOT replace verifying in source". Applied identically across nine skills. The five-surface requirement, the query order and every `description` are UNCHANGED, so when each skill fires is unaffected.
-
-
-- 2026-09-05: **KB FIRST, SOURCE TO CONFIRM.** PI-directed, after a session reconstructed the EcoSIM `micresb` slot semantics from Fortran over several turns while `docs/ecosim-knowledge-base/ecosim-codebase-wiki-2dea74d9/microbial_bgc/index.md:133` stated it in one line with the same `MicBGCPars.F90:178-179` citation -- and additionally recorded that the 2-slot NECROMASS axis is not the 3-slot LIVING-biomass axis, a distinction the source read missed and which mattered. Cost: a wrong root-cause diagnosis and two fixes that treated symptoms. The knowledge was in the repo THREE times (the KB, a sibling case's hand-authored parameter list, and the Fortran) and the lowest-level one was reached for. **This is a SEARCH ORDER, not a demotion of source:** source stays ground truth on what the model DOES, and a load-bearing claim still gets a `file:line`; the KB is where you START, because it usually carries that citation already plus context the source does not. `git grep -i <term> -- docs/<model>-knowledge-base/` works with no RAG profile active. Placed beside the SITE knowledge-base read, which was already there while the MODEL one was not. Phase 0 is where this is cheapest and most valuable: a bound or an axis label written from a guess is inherited by every case in the round. `description` untouched.
-- 2026-08-28: **Adds the node-packed submitter as a THIRD submission form, for when the queue rather than the model is the bottleneck.** Signal: `PFLOTRAN_miniLEO` R1 measured 8.8 completions/hour with concurrency never above 6 and then 0 with 4010 queued, projecting 19 days, and the cause was that `--qos=shared` confines a round to a 70-node pool against the node-exclusive partition's 2853 at comparable queue depth (log `20260828a`). The skill already named the batched default and the array alternative, but **both submit one case per job**, so neither addresses a small pool — an array changes the job-record count, not the resource pool, which is the reasoning error this entry exists to pre-empt. Written with its diagnostic commands attached rather than as a recommendation, because on a cluster with a large shared pool the technique is unnecessary. Also states the gate: the core-count arithmetic is not a throughput prediction, since packed cases contend for memory bandwidth. **No correction was needed to the array-template text.** A first pass at this edit believed that text stale and it was not — the stale copy was in a compacted session context, not in the file. Worth recording as its own trap: re-read the file before calling a skill wrong.
-- 2026-08-27 (later): **The PFLOTRAN submission bullet was stale within hours of being written, and its replacement names the real default.** It said miniLEO had no job-array template and that an array was 'an open item, not a solved one' — both written before reading that round's launch log. The actual default is `scripts/submit_adapter_ensemble_batched.py` (queue-aware waves, a reserve, a model-dependent jobs-per-case multiplier, idempotency on `job_id.txt`), which this skill did not mention at all despite owning the launch-mode decision; it is what put 4,097 cases on the scheduler. A template array submitter now also exists, repositioned as the narrow alternative with its cost stated (per-case binary provenance) and one property still unverified (whether an array relieves `MaxSubmitJobsPU`). Found by the 3-hourly self-review, which is the mechanism working: a skill claim invalidated by the same day's work.
-
-- 2026-08-27: **The adapter block names every adapter model's run skill, and states where PFLOTRAN
-  DIFFERS from EcoSIM on four steps** (PI-directed, at the start of the first PFLOTRAN campaign).
-  The block named EcoSIM alone and presented `materialize_adapter_ensemble.py` and
-  `validate_adapter_ensemble.py` as *the* adapter path without qualification — and on the first real
-  PFLOTRAN Phase 0 the first crashed on a text deck and the second could not parse a single
-  parameter id. A summary that looks complete is the more dangerous kind, so the differences are
-  stated rather than left to be discovered: the named grouping axis, the materializer fix, the
-  parallel validator, the input-compat check that reports N/A rather than passing, and the absent
-  job-array template.
-
-- 2026-08-23 (corrected same day): **The job-script archive rule does NOT apply to Phase 0, and was removed from this skill.** PI-corrected. Phase 0 materializes an ENSEMBLE — one R3 round is 59,393 cases — and its submit scripts are generated from the machine and round config by the materializer, so archiving them would be enormous and redundant: the config plus the generator reproduces them exactly. The rule belongs to Phase 5 alone, whose handful of variants are hand-designed and hand-repointed onto a specific binary, so nothing else records what actually ran. Originally added here on the mistaken assumption that any phase putting simulations on a scheduler needed it.
-- 2026-08-23 (superseded): **Phase 0 and Phase 5 archive their JOB SCRIPTS into `phase_results/{stem}/submit_scripts/`.** PI-directed. Copy, never move: the scheduler reads the operative copy from the run directory, but that directory is untracked scratch and gets cleaned, while the submit script is where the binary a run was bound to and its run-time hash assertion are written down. A log claiming a passed V0 gate with no archived submit script cannot show which executable produced the number. Signal: on 2026-08-23 a cycle nearly ran against the wrong binary because the materializer emits the LIVE build path by default. Updates `feedback_plot_scripts_canonical_in_phase_results`, which had said run drivers simply stay in CFS.
-
-- 2026-08-22 (later): **Adds the three-tier script rule**: look in `use_cases/{Model}_{Case}/scripts/` for a canonical script TEMPLATE first, copy it into this phase's `phase_results/{stem}/` and ADAPT it there; write one from scratch when no template exists; a script's SECOND use is the trigger to promote it into `scripts/`. PI-directed, extended to every phase skill after the rule initially landed in only two. Does not conflict with "one canonical script per figure, never two copies" -- the canonical script stays with its figures, the canonical script TEMPLATE stays in `scripts/`. Evidence: 7 byte-identical duplicate script pairs measured across one site's phase_results folders. Checker `tools/check_case_script_tier.py`.
-
-- 2026-08-18: The adapter-model blockquote now points at **`ecosim-run-workflow`** for the end-to-end EcoSIM procedure. The step list here carries the parallel SCRIPTS but not the traps (the 4096-byte namelist buffer, the three parameter surfaces, pre-submission validation), and a summary that looks complete is the more dangerous kind. Signal: PI, on adding the EcoSIM skill.
-- 2026-08-16: **Names the `plotting` skill for any figure this phase produces.** The link was
-  one-directional — `plotting`'s own cross-references claimed the phase skills apply its
-  conventions, while most phase skills never mentioned it, so a session could produce figures
-  for a whole case without the conventions or the view-the-PNG check ever being loaded. That
-  happened: three sets of Lusignan figures were made before it was invoked, and the first
-  invocation immediately caught a stats box drawn over the data. PI-directed ("every phase
-  needs the plotting skill").
-- 2026-08-07: Added **Step 0.5 — design the parameter set (REQUIRED, every Phase 0)**, and the matching
-  logged section `Parameter Set and Bounds` (new optional `log_design(parameter_set_changes=...)`, emitted
-  only when supplied so the gap check can still fire; `_EXPECTED_SECTIONS[0]` updated, parity gated by
-  `check_skill_registry.py::phase_section_check`). The whole design decision had been **one clause** — *"add
-  dominant levers, drop insensitive ones, recenter/widen bounds"* — with no procedure, and the log had no
-  section to carry it. Signal: PI correction (2026-08-07) naming four unanswerable questions, plus a trap
-  that had already fired twice — a **dropped parameter does not take the CSV `default`; it takes whatever
-  `$A2MC_BASE_PARAM_FILE` holds** (`20260716a`, 4 non-calibrated EcoSIM params flowing from the base as-is,
-  one a 10× discrepancy no checker flagged; and the api-31→api-43 port's 61-of-159 default drift). Also
-  brings `bound_source` provenance into this skill — it was required by `onboard-case`/`onboard-model` at
-  list *creation* and silently optional at list *revision*, which is when re-centring discards it — and adds
-  the site-plausibility question (`20260730a`: a ×6 soil-carbon pool is a finding, not a calibration).
-  **Scoped to every Phase 0, not only redesigns** (PI): `20260716a` was a round-1 failure.
-- 2026-08-02: Log step now states the **living-record** contract (start at phase start, enrich as it runs —
-  the operational detail is unrecoverable later), names **this phase's expected sections** so an omission is
-  visible, and shows `set_phase_handshake()` so the chain is traceable. Full contract: `calibration-log`.
-- 2026-07-18: Added **"Opening a NEW round (redesign, Phase 6 → 0)"** — the explicit pre-Step-1 setup to
-  stand up round N+1: the redesign gate (prior round's `phase6_decision == redesign_6to0`), the per-round
-  config **wrapper** `{site}_config_r{N}.sh` (sources base + overrides ensemble/param-list/**base-param-file**),
-  the R{N} param-list CSV + salib_problem, adding round N to `calibration_rounds.yaml` (FATES vs adapter
-  generator), and a fresh `workflow_state_offline_r{RR}.json` — then sample on the corrected base. Distilled
-  from the demo Kougarok multi-round `calibration_rounds.yaml` (r3/r4/r5 wrappers) + the EcoSIM R1→R2 plan.
-- 2026-07-16: Step-3 submit is now a **SLURM job array** (`use_cases/{Model}_{Case}/case_template/submit_ensemble_array.sh`) — parallelism is ACROSS cases (each a serial run; `cpus-per-task` is memory-only), preferred over 821 individual `sbatch` (`backend.submit_ensemble` = fallback). The pre-submit gate now also **dry-runs the submit-script dispatch** (`srun` stubbed) — the check that would have caught the brace-substitution bug that failed every array task (`20260716a`).
-- 2026-07-15: Added the adapter **pre-submit gate** `scripts/validate_adapter_ensemble.py` (parallel to FATES's `tools/validate_submission_plan.py`) to Step 3 + the adapter callout — re-derives every case's edits from the matrix and asserts the on-disk param file/namelist/submit.sh match (value·parameter·PFT·bounds·V0·input-paths), run green with `tools/model_check_input_compat.py` before `backend.submit_ensemble`. `20260715f` (EcoSIM R1: 821/821 pass).
-- 2026-07-15: Named the **parallel adapter scripts** alongside the FATES ones — Step 1 `scripts/create_adapter_parameter_sample.py` (explicit `name`+`pft` list via `parse_pft_param_list`, imports the shared SALib sampler) and Step 2 `scripts/materialize_adapter_ensemble.py` (matrix row → `backend.write_parameter_file` → `create_case`, `--baseline` V0). Rewrote the adapter callout (the old "shorthand `VCMX_<pft>`" + shared-`parse_param_list` pointers were stale — adapters now use the explicit-column format + the parallel scripts, no edit to the byte-locked shared sampler). `20260715e`.
-- 2026-07-15: Three adapter-kit refinements from the EcoSIM R1 onboarding (`20260715d`): (1) an **adapter-model
-  (non-FATES) branch** — Steps 2–3 dispatch through the `ModelBackend` (`write_parameter_file` on the model's
-  own param surface + `create_case` single standalone run, no CIME/ADSP→TRANS/shared-`bld/`), not the FATES
-  path; (2) the **offline logging convention** made explicit (`A2MC_AGENT_MODE=offline` → flat
-  `memory/logs/{stem}.md`, not the online nested `{session_id}/phase0_design/`); (3) a **PREPARED-but-HELD**
-  note — a round can be designed yet un-submittable when the base case doesn't establish (record via
-  `current_phase="design"` + a priority-1 open thread).
-- 2026-07-15: Wired the explicit `set_position(current_phase="exploration")` state-advance in the handoff step (the offline program-counter advance main's generic banner lacked). Ported from demo `d3cbbf5` (offline-workflow enforcement sweep).
-- 2026-07-15: Named the concrete progress-plot tool chain in Step 4 — `ensemble_auto_monitor.sh` → `regen_ensemble_milestone_plot.sh` → `plot_ensemble_cases.py` at each extracted-case checkpoint (was vague "milestone plots"); reworded to **extraction-progress ensemble plots** (in-flight snapshots, not a graduated result). Ported from demo `cd14d24`/`b85fc2c`, adapted — main has no promote-milestone layer to contrast against.
-- 2026-07-02: Created — offline Phase 0 routine mirroring `_run_design()`; drives create_parameter_sample → generate_parameter_files → submit_phase0, delegates monitoring/restart, hands off to `phase1-exploration`.
-
 ## Before you finish
 
 **Discipline self-review (automatic).** Before advancing the state, re-check the [`calibration-discipline`](../calibration-discipline/SKILL.md) items that apply to this phase. This is unprompted and per-phase — the user does not have to ask (memory `feedback_schedule_periodic_reviews_with_a_real_mechanism`).
+

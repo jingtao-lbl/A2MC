@@ -17,7 +17,13 @@ fails on two different regressions with one assertion, and both have happened he
 
 Endpoints that do NOT resolve are reported, not failed: an unresolved driver name is a seed defect
 for a human to fix, and minting a node for it is what put three phantom outputs in this graph in
-2026-09-06. `CNWL` in `outputs.ECO_ET_col.indirect_drivers` is one such name today.
+2026-09-06. `CNWL` in `outputs.ECO_ET_col.indirect_drivers` was the one such name until 2026-09-11,
+and the way it was fixed is the second thing this file now pins. It was never a seed defect: the
+name is real and the INDEXED surface was wrong. The profile parsed only
+`ds_input__pft_test__ex1.nc` (104 variables), the sample deck, while the surface a Lusignan run
+actually reads carries 121 and has `CNWL` among them. Registering the evolved surface in
+`rag/milestones.json` resolved it, and the output-block pass then delivered the 73 edges it had
+always predicted rather than 72.
 """
 from __future__ import annotations
 
@@ -129,10 +135,83 @@ def test_unresolved_driver_names_are_reported_not_minted():
         f"name, not create it.")
 
     unresolved = sorted(n for n in driver_names if f"parameter:{n}" not in nodes)
-    # Not a build failure: this is the seed's own defect list, asserted only to stay small and
-    # visible. `CNWL` (outputs.ECO_ET_col.indirect_drivers) is the one entry today; it matches no
-    # parameter in either parsed surface and needs a human to say what it should have been.
-    assert len(unresolved) <= 1, (
-        f"unresolved output-block driver names grew to {len(unresolved)}: {unresolved}. Each is a "
-        f"name in the seed matching no parameter in any parsed surface. Fix the seed; do not let "
-        f"the builder mint a node for it.")
+    # Held at ZERO since 2026-09-11. It stood at one (`CNWL`) while the profile indexed only the
+    # 104-variable sample surface; registering the 121-variable evolved surface resolved it. The
+    # count is asserted rather than the names, so the next dangling reference fails on its own
+    # instead of joining a tolerated crowd -- but read the diagnosis before editing the seed: a
+    # name that resolves in the model and not in the graph is an INDEXED-SURFACE question first.
+    assert not unresolved, (
+        f"{len(unresolved)} output-block driver name(s) match no parameter in any parsed surface: "
+        f"{unresolved}. Before calling this a seed typo, check whether the name exists in a "
+        f"parameter surface this profile does not index -- `param_files_extra` in "
+        f"rag/milestones.json is where a real-but-unindexed name is fixed. Never mint a node.")
+
+
+def test_the_indexed_parameter_surfaces_cover_the_names_the_seed_uses():
+    """The 2026-09-11 fix, pinned on the axis it actually failed on: WHICH SURFACES ARE INDEXED.
+
+    `CNWL` and `CHL` were both missing from the graph for reasons that look alike from a query and
+    are not alike at all. `CNWL` had no node because the profile parsed the 104-variable sample
+    deck and the name lives only in the 121-variable surface a real run reads -- a registry gap,
+    fixed in `rag/milestones.json`. `CHL` had a node and no outgoing edge because it was not a key
+    in `parameters:`, so the builder's parameter pass never visited it -- a seed gap, fixed in
+    `models/ecosim/curated_seed.yaml`.
+
+    A test that only asserted "both edges exist" would pass again if either fix were reverted and
+    the other widened to cover for it, so each is asserted at its own layer.
+    """
+    seed, nodes, edges = _load()
+    milestones = json.loads((REPO / "rag/milestones.json").read_text())
+    entry = milestones["milestones"]["ecosim-2dea74d9"]
+    surfaces = [entry["param_file"], *entry.get("param_files_extra", [])]
+
+    evolved = [s for s in surfaces if "evolved" in s]
+    assert evolved, (
+        "the profile no longer indexes an evolved parameter surface, so any name present only "
+        f"there is unresolvable again. Indexed surfaces: {surfaces}")
+
+    assert "parameter:CNWL" in nodes, (
+        "CNWL is absent from the graph. It is a real parameter of the surface a Lusignan run "
+        f"reads; if it vanished, the evolved surface stopped being parsed. Indexed: {surfaces}")
+
+    assert ("parameter:CHL", "output:CAN_GPP_pft", "affects") in edges, (
+        "CHL has no outgoing affects edge. The builder's parameter pass iterates the KEYS of "
+        "`parameters:` in the seed, so a parameter described only inside a mechanism's list is "
+        "visited by nothing and fails silently -- it is a node with no edge, not an error.")
+
+
+def test_the_leaf_protein_min_carries_all_four_of_its_parameters():
+    """The 2026-09-11 mis-wiring: a mechanism whose own citation refuted its parameter list.
+
+    `Leaf_Protein_Colimitation` cited `PlantBranchMod.F90:3548`,
+
+        LeafProteinC_node += AMIN1(GrowthElms(ielmn)*rProteinC2LeafN_pft,
+                                   GrowthElms(ielmp)*rProteinC2LeafP_pft)
+
+    and listed `parameters: [CNLF, CPLF]` -- neither of which is in that line. `rProteinC2LeafN_pft`
+    is CNWL (`PlantInfoMod.F90:619`) and `rProteinC2LeafP_pft` is CPWL (`:620`); CNLF is
+    `rNCLeaf_pft` (`:623`), a different variable. CNLF and CPLF are not wrong to be there -- they
+    set the nutrient SUPPLY that each branch multiplies -- but CNWL and CPWL, the coefficients, were
+    absent from the seed's `parameters:` block entirely and so reached no pass.
+
+    The visible consequence was that `CNWL`, rank 1 for GPP in EcoSIM_Lusignan R1b, carried one
+    outgoing edge in the whole graph and it went to `ECO_ET_col`. It now reaches `CAN_GPP_pft`
+    through the chain the mechanism describes.
+
+    All four are asserted, and the GPP edge separately, so that restoring any single half of the
+    fix still fails.
+    """
+    seed, nodes, edges = _load()
+    mech = seed["mechanisms"]["Leaf_Protein_Colimitation"]
+    for pname in ("CNWL", "CPWL", "CNLF", "CPLF"):
+        assert pname in mech["parameters"], (
+            f"{pname} is not on Leaf_Protein_Colimitation. The min() at PlantBranchMod.F90:3548 is "
+            f"a nutrient SUPPLY (CNLF/CPLF) times a protein-per-nutrient COEFFICIENT (CNWL/CPWL) on "
+            f"each branch; all four meet in it.")
+        assert (f"parameter:{pname}", "mechanism:Leaf_Protein_Colimitation", "controls") in edges, (
+            f"{pname} is listed on the mechanism but has no controls edge -- rebuild the graph.")
+
+    assert ("parameter:CNWL", "output:CAN_GPP_pft", "affects") in edges, (
+        "CNWL no longer reaches CAN_GPP_pft. It is the coefficient on the nitrogen branch of the "
+        "leaf-protein min(), and leaf protein sets Rubisco surface density hence Vmax "
+        "(StomatesMod.F90:414, 433, 435) -- which is why it ranks first for GPP.")

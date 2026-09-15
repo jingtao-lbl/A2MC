@@ -61,7 +61,7 @@ VALID_TIERS = ("S0", "S1", "S2", "S3")
 # Gated ascent (docs/41 section 4, restated in tiers.py): a tier may not be built
 # until the tier below has FAILED a WRITTEN acceptance test. So this tuple grows
 # by recording a failure, never by wanting a feature.
-IMPLEMENTED_TIERS = ("S0", "S1")
+IMPLEMENTED_TIERS = ("S0", "S1", "S2", "S3")
 
 
 # =============================================================================
@@ -182,8 +182,8 @@ class SurrogateSpec:
             raise ValueError(
                 f"tier {self.tier!r} is on the ROADMAP ({VALID_TIERS}) but has no "
                 f"implementation; built tiers are {IMPLEMENTED_TIERS}. Tiers are "
-                f"gated: S2 (trajectory) and S3 (knowledge-guided sequence model) "
-                f"may not be built until S1 has FAILED a written acceptance test "
+                f"gated: a tier may not be built until the tier below it has "
+                f"FAILED a written acceptance test "
                 f"and that failure is on record (docs/41 section 4). If you have "
                 f"that record, add the class in tiers.py and this tier to "
                 f"IMPLEMENTED_TIERS in the same commit.")

@@ -79,6 +79,8 @@ per round (loop limit reached OR converged):
   □ round_summary + the Phase-6 gate recorded in state; PAUSE for the PI at the gate
 ```
 
+
+
 # calibration-discipline — keep a long offline campaign stable
 
 **The failure mode this prevents is DRIFT.** A single offline calibration round is 10 experiment
@@ -113,6 +115,8 @@ one is not already loaded, and repairs the wrong one if you sourced it by mistak
 ```bash
 source use_cases/{Model}_{Case}/config/<site>_config_r<N>.sh   # round -> site -> machine
 ```
+
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
 
 Sourcing the machine config first still works and is a no-op. Assert rather than assume:
 `[ -n "$A2MC_MAX_EXPERIMENTS" ]`.
@@ -528,76 +532,3 @@ per-transition checklist reminder would be noise, and noise gets muted.
   on `adapter-kit` from the EcoSIM BioCON R1 ten-cycle onboarding; hand off to `main` (adapter-kit never
   pushes back, `docs/38`).
 
-## Changelog
-
-- 2026-09-09: **Item 2 says where a REPORT's own script lives.** The canonical-script rule was read as forbidding scripts in report folders; it governs a phase's figure scripts. A new script making new artifacts that belong to no stem lives with the report it serves, which is normal for a round report. PI correction, after the rule was applied too broadly.
-
-- 2026-09-08 (later): **New item 3c -- an OUTPUT VARIABLE is verified like a parameter.** PI-directed, after a diagnostic pull applied one `nanmean` to six tape variables with five different temporal semantics and read an `inactive` field as gross production. The standing verify-in-source rule was written about PARAMETERS and mechanisms; output variables are a third category no rule named, so the identical failure mode arrived one category over in the same session that had applied the rule rigorously to a parameter. Two checks now required before reducing anything: is the field ACTIVE (the model's output-info CDL carries `:status`, derived from source), and what are its temporal semantics (a mean of a resetting cumulative returns half its annual total; a mean of a monotone cumulative is meaningless). Notes that the case already does this correctly for SCORED targets via `targets.yaml`'s `reduce:` and that diagnostic reads have no equivalent, which is the gap. No `description` change.
-- 2026-09-08: **New section: a claim about what the ROUND has established is verified at the ARTIFACT, not at the index** (PI-directed, fix-now). The file already required searching before recording a finding as new, and `prior_art.py` for the superseded-log case. What it did not say is what to do with what the search RETURNS: `decisions[]` and the auto-generated reasoning chain are POINTERS -- they name the cycle and the log; the log names its stem; **`phase_results/{stem}/` and the data file the script wrote are what settle it.** A decision entry is prose written at the time, the same kind of object as a phase log, and this project has already measured a bar that lived only in prose and appeared in no artifact anywhere in the round. **Measured the day this landed, and it is the cleanest instance so far:** one refinement log concluded *"nine levers, no exceptions"* and *"the round has never found a negative-rate lever"* while mentioning the refuting parameter **35 times, every one inside its own auto-generated reasoning chain and none in its body** -- the evidence was in the same file as the conclusion. The next cycle overturned it by opening three earlier cycles' Phase-5 data files and recomputing, not by re-reading the chain. Also records the retrieval failure that let it through: `prior_art.py` on a five-word phrase returned 0 of 111 logs while 86 of 111 mention the parameter by name, so **search the bare NOUN first**. Twin clause added to `phase6-refinement` Step 2b, which is where such sentences get written. Reconciled in the same pass: the At-a-glance line calling `decisions` "the RECORD" now says it is the record of what was established and where, not where a claim is verified. No `description` change.
-
-- 2026-08-27: **The self-review cadence is chosen from the model's simulation speed, not fixed at
-  hourly** (PI-directed). An hourly review of a round whose cases take ~15 minutes mostly reports
-  unchanged in-flight state, and a reminder that is usually noise gets ignored — the same failure the
-  file already warns about for monitors. Three-hourly is the stated default for a short-case adapter
-  round. Item 4 also gains `tools/model_ensemble_status.py` as the status source for a
-  standalone-binary model on a scheduler, and the filter rule that goes with it: match the SUMMARY
-  COUNT, not the per-case lines, which reprint every poll (measured: three identical notifications
-  from one four-case run).
-- 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. This file is where it mattered most: it told the reader to source the machine config FIRST because the three loop limits live there and nowhere else, which was the true reason and is now discharged by the chain instead of by the reader. Both the at-a-glance block and the loop-limits section show one command, and the section ends with the assertion to run (`[ -n "$A2MC_MAX_EXPERIMENTS" ]`) rather than an instruction to remember.
-- 2026-08-24: **Item 9 now names the three round-close steps in order, and the At-a-glance box with them.** PI-directed. `summarize-calibration-round` appeared once in this file, in Cross-references, and `compare-calibration-rounds` not at all, so the definition of done for a round never required either — while item 9's four plan bullets are all cross-round questions. Measured cost: a round summary proposed re-adding two parameters earlier rounds had refuted with named mechanisms, and both survived every checker. Both skills were made generic the same day, so the ordering now applies to adapter models too rather than only to FATES.
-
-
-- 2026-08-23 (later): **New item 5b — commit AND PUSH at the same boundary as the state update.** PI-directed after a single session accumulated 30 unpushed commits on a feature branch and pushed only when asked. Item 5 already required the state be updated and validated after every phase, which reads as the whole obligation and is not: it asks whether the state is VALID and never whether the work is SAFE. An unpushed commit exists on one node, on HPC a login node the session can lose, and is invisible to the PI until it lands, so a long unpushed run removes their ability to redirect work while that is still cheap. Destination rules are unchanged and governed elsewhere; public sync stays a separate explicit action. [[feedback_push_at_every_phase_boundary]].
-- 2026-08-23 (later): **Item 6b and the At-a-glance line carry the rethink protocol's SIXTH question** — for each refuted lever, which direction was moved, from a base with which sign of miss, and does that still apply. PI-directed; rationale and evidence in `phase6-refinement`'s own changelog entry of the same day. Stated here because this file enumerates the protocol's questions, so leaving it at five would have made the definition-of-done disagree with the protocol it points at.
-- 2026-08-23: **New per-cycle item 6b — on a 6→3 routing, ANSWER the rethink protocol in the Phase-6 log**, plus the matching At-a-glance line. Numbered 6b rather than 7 following this file's own convention for an inserted item (cf. 2b, 3b), and because the per-ROUND checklist CONTINUES the same sequence at 9 — renumbering the cycle list would have silently collided with 'Write the round summary'. PI-prompted, completing the arc that added the protocol to `phase6-refinement` Step 4, the logging obligation to `calibration-log`, the C9 enforcement, and the propagation into `write-report`. This file was the one place in that arc still silent on it, and its single mention of the route said only that `rethink_6to3` is "auto-taken", which once a protocol existed read as "automatic, nothing to do" and contradicted it. That line now says auto-taken is about the GATE, not the effort: no PI approval needed, protocol still mandatory. Evidence: three consecutive rethinks in one round ran on one base and attacked one target, and the cycle that finally re-examined both found the base already held that target in band with half a band of headroom, so the experiment those cycles kept designing would have broken the target the base held. Details: `memory/dev_logs_adapterkit/20260823e_*` and `20260823f_*`.
-
-
-- 2026-08-22 (later): **New per-cycle item 2b (start from the case script TEMPLATE) and a round-close addition (RECORD the template dir, do not auto-promote).** PI-directed. The template lives in `use_cases/{Model}_{Case}/scripts/`, seeded at onboarding; a phase copies it into its `phase_results/{stem}/` and ADAPTS it there. A script's **second** use is the trigger to template it. This does not conflict with "one canonical script per figure, never two copies": the canonical *script* stays with its figures, the canonical script *TEMPLATE* stays in `scripts/`. Round close records what the template dir holds and what each was used for; promotion to `tools/` stays a separate human-gated decision, since reuse within one case is not evidence of cross-model generality. Measured: 7 byte-identical duplicate pairs. Checker `tools/check_case_script_tier.py`.
-
-- 2026-08-22 (later): **The loop limits are read from the machine config, not quoted as literals.** PI-caught: this file carried the literal `10` in three places (the At-a-glance line, item 3b's measured-cap note, and item 3b's body) while `A2MC_MAX_SKIP_TESTING`, `A2MC_MAX_EXPERIMENTS` and `A2MC_CONFIDENCE_THRESHOLD` live in `a2mc_noncime_config.sh` / `a2mc_config.sh` and **nowhere else** — a site or round config does not set them. `orchestrator.py:3567-3571` reads all three, so a checklist quoting `10` contradicted the online agent the moment the value changed. New section "The loop limits are CONFIG, not literals in this file" names the sourcing command and the three variables; the three literals now quote the variable. Same defect and same day as v2.282, which fixed the hardcoded copies in `tools/check_workflow_state_offline.py`. [[feedback_bind_derived_facts_to_their_source]].
-
-- 2026-08-22: **Two additions, both PI-directed, both for gaps that were invisible because nothing measured them.** (1) **New item 3b: run the inner loop.** `test_with_existing=false` is a property of one hypothesis and was being read as the cycle's exit, so the free Phase-3<->4 loop was never entering while every cycle spent an HPC experiment. Measured across one campaign's three rounds: 46 phase-3/4 logs at `iter01`, 4 at `iter02`, none higher, against a cap of 10. Adds the pre-routing question, the keep-asking-while-Phase-5-runs instruction, and a pointer to the conditioned-screen trap now documented in `phase4-hypothesis` Step 2. (2) **Item 7 gains the cycle report's stated scope**, now that `write-report` names the CYCLE and ROUND reports as structural deliverables (`20260822p`); the At-a-glance box also gains the every-scored-target figure requirement that `phase6-refinement` Step 1b now states model-neutrally. Details: `memory/dev_logs_adapterkit/20260822q_*`.
-
-- 2026-08-21: **The state's `decisions` list is called out as a distinct obligation from its phase
-  position, and "record findings as they are established" replaces the implicit "extract at Phase
-  6".** The checklist said the state must be "updated + validated after EVERY phase", which reads as
-  the program counter and is how it was being used: on 2026-08-21 a day of work produced eight
-  findings and the state recorded two, both from that morning, with everything else in `next_action`
-  prose and commit messages. `PhaseLogger` rebuilds its reasoning chain from `decisions`, so the
-  next phase would have been blind to what it stands on. Paired mechanisms so this is not left to
-  discipline: `check_workflow_state_offline.py::_check_decisions_current()` warns when a case has
-  moved with nothing recorded, and pre-commit check (9) surfaces it when case work is staged.
-  PI-prompted. Details: `memory/dev_logs_adapterkit/20260821m_*`.
-
-- 2026-08-16: **Names the `plotting` skill.** The link was one-directional — `plotting` claimed
-  these skills apply its conventions while they never mentioned it, so a whole case's figures
-  could be produced without the conventions or the view-the-PNG check being loaded. PI-directed.
-- 2026-07-21: **Closed the premature-stop loophole** (R2 c00 drift: `stop_model_dev` declared at
-  `experiment_count 0/10` while a source-verified lever remained; the 3-hour check rubber-stamped it because
-  the wrong decision was written into the state it reads). Hardened item 6 (read the RAW counter, never
-  self-declare exhaustion below the loop limit, your "futile" conviction is the hypothesis the cycles test),
-  added a per-round-checklist banner (a round is done ONLY at loop limit / converged / `human_confirmed_exhaustion`),
-  rewrote the "Stopping early" footgun to kill the "reached a gate" escape hatch, and cross-referenced the new
-  `feedback_never_self_declare_exhaustion`. Paired code guardrail: `validate_phase6_decision` now errors on
-  `stop_model_dev` below the loop limit without `human_confirmed_exhaustion`.
-- 2026-07-18: Item 12 + a footgun: promotion is copy-**then-generalize** — a phase_results/{stem}/ script
-  hardcodes paths/stems/case IDs, so the promoted copy must be edited site/run-agnostic (CLAUDE.md 5+8).
-- 2026-07-18: Item 12's offline promotion is no longer manual — `promote_diagnostic_script.py` now takes
-  `--source <path> --dest tools|phase3_diagnosis`, so a `phase_results/{stem}/` script promotes with one command.
-- 2026-07-18: Added the two round-close housekeeping steps to the per-round checklist (items 11–12):
-  **curate the round's verified knowledge** into `gained_knowledge/*.json` (inject-knowledge / curate-knowledge,
-  human-gated) and **promote reusable scripts** (online `generated/` → `phase3_diagnosis` via
-  `promote_diagnostic_script.py`; offline `phase_results/{stem}/` → `tools/` or `phase3_diagnosis`, manual).
-  Both were implicit / lived only in `phase6-refinement`. Paired: `phase6-refinement` Step 3b.
-- 2026-07-18: Added a one-line workflow orientation to the At-a-glance (the 7 phases + the 3 nested
-  iteration levels: round / experiment cycle / skip-testing) so the checklist's per-cycle/per-round
-  scope is legible without opening `calibration-goal`.
-- 2026-07-18: Reworded item 4 to be run-style-agnostic — "testing-simulation launch" (not "HPC launch"),
-  and split the monitoring mechanism: scheduler/HPC run → `arm-hpc-monitoring`; local/foreground run →
-  watch the process + its log directly (no `squeue`). `arm-hpc-monitoring` is scheduler-specific; a
-  dedicated non-HPC monitoring skill is a TODO for when the first local-run adapter model appears.
-- 2026-07-18: Initial version — distilled from the EcoSIM_BioCON R1 offline onboarding (10 experiment cycles,
-  `memory/dev_logs_adapterkit/2026071*`), where the stable behaviors (self-documenting `phase_results/{stem}/`,
-  per-cycle reports, arm-after-launch, state-validate-after-write, canonical figure scripts, drive-to-limit)
-  were all performed but scattered across many skills/memories with no single definition-of-done. Item 9
-  (round summary MUST propose the next-round plan) added after the R1 summary initially shipped without one.

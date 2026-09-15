@@ -252,6 +252,19 @@ def test_a_missing_knowledge_store_says_what_it_costs(tmp_path):
     assert rc == 1 and "NO model knowledge" in out, out
 
 
+def test_fates_is_checked_against_its_unprefixed_store(tmp_path):
+    """FATES keeps `memory/gained_knowledge/`, with no model name in the path. Until v2.411 the row
+    built `memory/fates/gained_knowledge/`, which never exists, so a seeded FATES store read as
+    absent. The adapter-model rows above still pass through the same resolver."""
+    root = make_clone(tmp_path)
+    gk = root / "memory" / "gained_knowledge"
+    gk.mkdir(parents=True, exist_ok=True)
+    (gk / "discoveries.json").write_text(json.dumps({"discoveries": [{"id": "x"}]}))
+    rc, out = run(root, "--model", "fates")
+    assert "adaptive memory seeded — 1 discovery record(s)" in out, out
+    assert "memory/fates" not in out, out
+
+
 # --------------------------------------------------------------------- the SessionStart branch
 def _hook_lines(root):
     """Call the hook's setup_stage() against a synthetic clone, out of process.

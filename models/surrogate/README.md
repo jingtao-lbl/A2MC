@@ -84,6 +84,7 @@ This is **not** a PINN, and deliberately so — the supplied review is explicit 
 ## Tiers
 
 Ascent is **gated**: a tier may not be built until the tier below has *failed a written acceptance test*.
+S2 was built on 2026-09-12 against the EcoSIM_Lusignan R1b S1 failure, and S3 the same day against S2's.
 **The gate is enforced, not only stated** (v2.332): `spec.py` keeps two tuples — `VALID_TIERS` is the
 roadmap, `IMPLEMENTED_TIERS` is the registry — and a spec declaring an unimplemented tier is refused at
 construction with an error naming what would unblock it. Before that, `tier="S3"` constructed cleanly
@@ -98,8 +99,136 @@ emulation. Inside `models/surrogate/`, `S2` always means the trajectory tier.
 |---|---|---|---|
 | **S0** | `θ → scalar` per target | point estimate | ranking, screening, sensitivity structure |
 | **S1** | viability, then `θ → scalar` | point + conformal interval + viability + hull gate | everything S0 does, plus anything requiring honest uncertainty |
-| S2 | `θ → y(t)` | trajectory | not built — needs a written S1 failure first |
-| S3 | knowledge-guided | trajectory + physics structure | not built — planned for a downstream runtime-emulator use case, not the calibration loop |
+| **S2** | `θ → y(t)` per target, reduced to the S1 scalar | trajectory + point + conformal interval + viability + hull gate | seasonal shape, phase diagnosis, anything a scalar cannot express |
+| **S3** | S2 + process structure | trajectory with composed targets and enforced admissibility | structural admissibility, a derived target that cannot contradict its own components |
+
+
+### S2 — the trajectory tier
+
+`S2Surrogate` emulates `θ → y(t)`, one series per target, and **reduces the predicted series to the
+scalar S1 predicts**. `predict_batch` therefore returns the same `BatchPrediction` every existing
+consumer expects, and the series is available separately:
+
+```python
+m = S2Surrogate(spec, learner="gbm", n_components=24,
+                reduce="annual_mean_sum", time_index=years)   # years: the year label per timestep
+m.fit(X, Y, viable=viable, trajectories=T)                    # T is (N, n_targets, n_steps)
+
+m.predict_batch(X).values     # (N, T) scalars — drop-in for S0/S1
+m.predict_trajectories(X)     # (N, T, D) series — the tier's reason for existing
+```
+
+**Architecture: latent ROM.** Per target, the centred training trajectories are decomposed by SVD,
+the leading `n_components` singular vectors are kept as a basis, and `θ → coefficient` is regressed
+with one learner per component drawn from the same registry S0 and S1 use. The learner axis stays
+orthogonal to the tier axis, so `rf`, `gbm`, `gp` and `mlp` all work here; a recurrent learner is a
+future entry on that axis, not a different tier.
+
+**`trajectories` is required.** A trajectory tier fitted on scalars alone is an S1 with extra steps,
+and `fit` refuses it.
+
+**`Y` is a CHECK, not a second training signal.** `fit` asserts that reducing the supplied
+trajectories reproduces the Y matrix to 1e-4 relative and refuses otherwise. A reducer that does not
+match the one the Y matrix was built with yields a surrogate that is internally consistent and
+answers a different question than the calibration is scored on, which nothing downstream can detect.
+
+**Reducers** live in `tiers.REDUCERS`: `mean`, `sum`, `final`, `max`, `annual_mean_sum`. The last
+needs `time_index` (the year label of every timestep) and is the daily-flux form of a `year_end`
+scalar: a within-year cumulative tape variable, de-cumulated, sums within each year to that year's
+end-of-year value. A reducer is **not** on `TargetSpec`, which carries only the reduced value's
+identity; the module's contract is that reduction happens upstream, and S2 is the one tier that must
+undo and redo it.
+
+**Intervals are on the reduced scalar**, because that is the quantity a caller acts on. A band over
+a multi-thousand-step series is a different object and is not claimed.
+
+
+### S3 — the knowledge-guided tier
+
+`S3Surrogate` subclasses S2 and adds process structure. It uses KGML's **wiring** channel rather
+than its loss channel, and that choice follows this package's own doctrine: `KnowledgeGuidedLoss`
+says *"where a constraint can instead be made STRUCTURAL, prefer [it] ... which holds under any
+weights."* A penalty makes a relation likely; composition makes it true at every point, for every
+learner, including the tree families that have no gradient for a penalty to use.
+
+```python
+m = S3Surrogate(spec, learner="gbm", n_components=24,
+                reduce="annual_mean_sum", time_index=years,
+                compose={"Reco": ["RA", "RH"]},          # derived, never fitted
+                nonneg=["GPP", "RA", "RH", "Reco", "ET"])
+m.fit(X, Y, viable=viable, trajectories=T)
+```
+
+**`compose`** — the derived target is not regressed. Its trajectory is the sum of its components'
+trajectories at every timestep, so the identity survives reduction. Components must themselves be
+targets (so they are fitted and scored), and chained composition is refused because the fit order
+would be ambiguous. **A wrong rule is refused at fit**: the training trajectories are checked
+against the stated identity before anything is learned.
+
+**`nonneg`** — declared targets are clamped at zero, components before the sum so a negative
+component cannot hide inside a positive total. **Violations are counted**, not silently repaired,
+and kept on the model as `nonneg_violation_rate`: a constraint that quietly fixes predictions hides
+how often the unconstrained model was inadmissible.
+
+**What S3 does not claim.** It is not a PINN and adds no PDE residual; EcoSIM has no governing
+equation to differentiate. It does not pretrain-then-finetune: the training set is already
+process-model output, so KGML's "physics as data" arm is satisfied by construction. The soft-penalty
+arm remains available on the `mlp` learner through `KnowledgeGuidedLoss` and is orthogonal to this
+tier.
+
+**What to expect from it.** Measured on EcoSIM_Lusignan R1b, against an S2 differing only in whether
+`Reco` is fitted or composed: the identity residual goes from 4.18 to exactly 0, the fraction of
+predicted daily ET below zero goes from 10.3% to 0, and ranking is unchanged (rho 0.778/0.785/0.627
+against 0.778/0.782/0.655). **Structure buys admissibility, not accuracy** — which is what the
+doctrine above predicts, and worth knowing before reaching for this tier to fix a fit.
+
+
+### The two S3 architectures, and which to reach for
+
+S3 has two implementations. They emulate the same thing and are conditioned on different inputs,
+which is what decides when each is usable.
+
+| | `tiers.S3Surrogate` | `sequence.KGMLEmulator` |
+|---|---|---|
+| conditioned on | theta | theta **and the daily drivers** |
+| trajectory from | latent ROM (SVD basis + per-component regression) | GRU trunk with per-flux branches |
+| learner axis | any registry family (`rf`, `gbm`, `gp`, `mlp`) | torch, fixed |
+| knowledge channel | structural composition + admissibility | branch wiring + mass-balance hinge |
+| can be asked about weather it never saw | **no** | **yes** |
+| needs torch / a GPU | no | yes / strongly preferred |
+
+**The conditioning is the whole difference.** A ROM's basis is tied to the window it was fitted on,
+so it learns one site's one weather history and cannot answer a counterfactual. Feeding the drivers
+at every timestep makes the network an emulator of the MODEL rather than of the RUN. Measured on
+EcoSIM_Lusignan R1b, perturbing radiation by one standard deviation moves the emulator's annual GPP
+by +30% / −34% and precipitation by +18% / −26%, on weather series that were not in training.
+
+**Use the ROM for calibration and the sequence model for emulation.** That is also the `use_mode`
+split: `offline_search` gates on ranking, `online_inference` on pointwise accuracy.
+
+```python
+m = KGMLEmulator(spec, driver_names=met_names, time_index=years,
+                 branch_of={"NEE": ["GPP", "RA", "RH"]},       # NEE computed FROM the others
+                 mass_balance={"GPP": 1.0, "RA": -1.0, "RH": -1.0, "NEE": -1.0},
+                 mass_balance_scale=["RA", "RH"],              # the hinge's denominator
+                 mass_balance_tol=measured_from_the_data,      # NO default, deliberately
+                 nonneg=["GPP", "RA", "RH", "ET"])
+m.fit(X, None, viable=viable, trajectories=T, drivers=MET)
+m.predict_trajectories(X_new, MET_counterfactual)
+```
+
+**`mass_balance_tol` has no default and `mass_balance_scale` is required**, both for the same
+reason: a relative hinge is a claim about how tightly a particular process model closes its own
+budget, and about which term is safe to divide by. KGML's `tol_MB = 0.01` belongs to ecosys.
+EcoSIM's own closure is 0.0384 relative, so importing 0.01 would penalise the model for its own
+behaviour. And measured on this ensemble, using `|GPP|` as the denominator gives a p99 relative
+residual of 74748 against 0.91 for `|RA + RH|`, because GPP reaches exactly zero in winter while
+respiration does not — which is why KGML divides by the respiration terms.
+
+**What the physics term bought**, measured against an otherwise identical fit with it inert: the
+predicted budget violation fell from 0.0900 to 0.0114, an 8x reduction and tighter than the process
+model's own 0.0384, while daily R2 moved by at most 0.012 on any target. The same lesson as the
+structural channel one tier down — **knowledge guidance buys admissibility, not accuracy.**
 
 **S1 is very probably the ceiling for calibration.** S2/S3 are in the plan because a downstream runtime-emulator use case needs S3, not because this loop does.
 

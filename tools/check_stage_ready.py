@@ -33,6 +33,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
 
 PASS, FAIL, NA, INFO = "PASS", "FAIL", "NA", "INFO"
 _MARK = {PASS: "✓", FAIL: "✗", NA: "–", INFO: "ℹ"}
@@ -205,10 +206,22 @@ def stage2_rows(model: str):
     # consumer cannot tell you -- MemoryManager returns 0 chars for a missing store AND for an empty
     # one, raising nothing either way. So check that discoveries.json actually carries entries; the
     # other three stores are legitimately empty on a fresh onboarding (calibration fills them).
-    kb = ROOT / "memory" / model / "gained_knowledge"
+    #
+    # WHERE the store is depends on the model: FATES keeps the unprefixed memory/gained_knowledge/
+    # (it predates the per-model layout), adapter models memory/<model>/gained_knowledge/. Building
+    # memory/<model>/ here, as this did until v2.411, looked for a memory/fates/ that never exists.
+    # The one resolver is tools/model_knowledge_store.py, loaded by FILE PATH rather than through
+    # the `tools` package: importing the package pulls in its FATES utilities and numpy, and this
+    # checker runs with no sourced config and inside session hooks that must stay cheap.
+    import importlib.util
+    _spec = importlib.util.spec_from_file_location(
+        "_a2mc_model_knowledge_store", Path(__file__).resolve().parent / "model_knowledge_store.py")
+    _mks = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mks)
+    kb = _mks.model_store_dir(model, ROOT)
     disc = kb / "discoveries.json"
     if not kb.is_dir():
-        rows.append((FAIL, "adaptive memory seeded", f"memory/{model}/gained_knowledge/ absent — "
+        rows.append((FAIL, "adaptive memory seeded", f"{kb.relative_to(ROOT)}/ absent — "
                      f"the reasoning loop would run with NO model knowledge and never error"))
     elif not disc.is_file():
         rows.append((FAIL, "adaptive memory seeded", f"{disc.relative_to(ROOT)} absent"))
@@ -303,7 +316,19 @@ def main() -> int:
     print(f"  models adapted: {onboarded_models() or '(none)'}")
     print(f"  real cases:     {real_cases() or '(none)'}")
 
+    # THE PER-CLONE ROWS RUN AT EVERY STAGE, and that is a bug fix rather than a nicety.
+    # `detect_stage()` returns 4 as soon as any case carries offline workflow state, and a case
+    # is DELIVERED -- emailed and unpacked under use_cases/. So a clone wired to nothing reports
+    # "setup is done" the moment a finished case lands in it, and these rows, which used to live
+    # only in the stage-1 branch below, were never reached by the one person who most needed
+    # them. The clone's wiring and the case's maturity are independent facts.
     fails = 0
+    try:
+        from check_clone_setup import clone_rows
+        fails += _rows_out(clone_rows(), "Per-clone setup (every stage)")
+    except Exception as exc:                      # never let this break the stage report
+        print(f"\n  (per-clone check unavailable: {exc})")
+
     if stage == 1:
         fails += _rows_out(stage1_rows(), "Stage 1 — a2mc-init (mechanical subset)")
     elif stage == 2:
@@ -317,7 +342,8 @@ def main() -> int:
         for c in targets:
             fails += _rows_out(stage3_rows(c), f"Stage 3 — onboard-case: {c}")
     else:
-        print("\n  Setup is complete and a case has workflow state — use `onboard-session`.")
+        print("\n  A case has workflow state, so the CASE half of setup is done — use `onboard-session`.")
+        print("  The per-clone rows above are a separate question; a delivered case does not wire a clone.")
 
     human = _HUMAN.get(stage, [])
     if human:

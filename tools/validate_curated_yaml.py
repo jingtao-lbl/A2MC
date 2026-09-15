@@ -319,10 +319,20 @@ def parse_output_surface(spec, output_file: Path) -> Set[str]:
 # =============================================================================
 
 def validate_parameter_surface(curated: dict, param_names: Set[str],
-                               param_file: Path) -> DimensionResult:
-    """Dimension A: every referenced parameter exists in the param file."""
+                               param_files: List[Path]) -> DimensionResult:
+    """Dimension A: every referenced parameter exists on SOME parameter surface.
+
+    A MODEL CAN HAVE MORE THAN ONE PARAMETER SURFACE, and checking one of them turns this
+    dimension into noise. Measured on EcoSIM 2026-09-12: it reported `[FAIL] 71/92` with 21 flagged
+    parameters, of which 20 -- SPOSC, RMOM, VMXO, RCCZ, GO2X, OQKA, DCKI and the rest -- were
+    microbial parameters that legitimately live on the TERTIARY surface (`micpar_file_in`) the
+    validator did not know existed. A wall of 20 known-bogus lines is why the output went unread,
+    and a real hit inside that list would have been invisible. So the check now takes the UNION of
+    every surface it is given, and `main` says loudly which declared surfaces it was NOT given.
+    """
     res = DimensionResult(name="A. Parameter surface")
     refs = collect_parameter_refs(curated)
+    shown = ", ".join(p.name for p in param_files) or "<none>"
     for name in sorted(refs):
         res.total += 1
         ok = name in param_names
@@ -331,13 +341,13 @@ def validate_parameter_surface(curated: dict, param_names: Set[str],
         else:
             locs = ", ".join(sorted(set(refs[name]))[:4])
             res.errors.append(
-                f"parameter '{name}' not in {param_file.name} "
-                f"(referenced at: {locs})"
+                f"parameter '{name}' on NONE of the {len(param_files)} surface(s) "
+                f"[{shown}] (referenced at: {locs})"
             )
         res.rows.append((name, ok, ", ".join(sorted(set(refs[name]))[:3])))
     res.notes.append(
         f"{len(refs)} distinct parameters referenced; "
-        f"{len(param_names)} in the param file."
+        f"{len(param_names)} across {len(param_files)} surface(s): {shown}."
     )
     return res
 
@@ -512,8 +522,11 @@ def parse_args() -> argparse.Namespace:
                     help="Curated relationships YAML "
                          "(default: dataset.curated_yaml or "
                          "models/<model>/curated_seed.yaml).")
-    ap.add_argument("--param-file", type=Path, default=None,
-                    help="Parameter file (default: dataset.parameter_file).")
+    ap.add_argument("--param-file", type=Path, default=None, action="append",
+                    help="Parameter file. REPEATABLE -- pass it once per parameter "
+                         "SURFACE the model has (EcoSIM has three: pft_file_in, "
+                         "pft_mgmt_in, micpar_file_in). Default: dataset.parameter_file "
+                         "only, which under-reports any model with more than one.")
     ap.add_argument("--output-file", type=Path, default=None,
                     help="Output surface: .nc reference tape or .cdl registry "
                          "(default: dataset.output_cdl).")
@@ -533,9 +546,9 @@ def _resolve_paths(args, spec, dataset):
         else:
             yaml_path = REPO_ROOT / "models" / model / "curated_seed.yaml"
 
-    param_file = args.param_file
-    if param_file is None and dataset is not None:
-        param_file = dataset.parameter_file
+    param_files = args.param_file or []
+    if not param_files and dataset is not None and dataset.parameter_file:
+        param_files = [dataset.parameter_file]
     output_file = args.output_file
     if output_file is None and dataset is not None:
         output_file = dataset.output_cdl
@@ -547,7 +560,7 @@ def _resolve_paths(args, spec, dataset):
         p = Path(p)
         return p if p.is_absolute() else (REPO_ROOT / p)
 
-    return _abs(yaml_path), _abs(param_file), _abs(output_file)
+    return _abs(yaml_path), [_abs(p) for p in param_files], _abs(output_file)
 
 
 def main() -> int:
@@ -560,11 +573,15 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
-    yaml_path, param_file, output_file = _resolve_paths(args, spec, dataset)
+    yaml_path, param_files, output_file = _resolve_paths(args, spec, dataset)
 
     missing = []
-    for label, p in (("yaml", yaml_path), ("param-file", param_file),
-                     ("output-file", output_file)):
+    if not param_files:
+        missing.append("--param-file (no default available; pass explicitly)")
+    for pf in param_files:
+        if not Path(pf).exists():
+            missing.append(f"--param-file not found: {pf}")
+    for label, p in (("yaml", yaml_path), ("output-file", output_file)):
         if p is None:
             missing.append(f"--{label} (no default available; pass explicitly)")
         elif not Path(p).exists():
@@ -576,23 +593,37 @@ def main() -> int:
 
     print(f"Model:        {args.model}  ({spec.display_name})")
     print(f"YAML:         {yaml_path}")
-    print(f"Param file:   {param_file}")
+    for i, pf in enumerate(param_files):
+        print(f"Param file:   {pf}" if i == 0 else f"              {pf}")
     print(f"Output file:  {output_file}")
+
+    # A model may declare surfaces this invocation was not given. Say so BEFORE the results, so a
+    # dimension-A failure is attributable to a missing surface rather than read as a curation error.
+    declared = [v for v in ("secondary_namelist_var", "tertiary_namelist_var")
+                if getattr(spec, v, None)]
+    if declared and len(param_files) < 1 + len(declared):
+        print(f"\nNOTE: {spec.display_name} declares {1 + len(declared)} parameter surfaces "
+              f"({', '.join(['the primary'] + [getattr(spec, v) for v in declared])}) but only "
+              f"{len(param_files)} was checked. Parameters living on an unchecked surface WILL be "
+              f"reported missing and are false alarms. Pass --param-file once per surface.")
 
     curated = yaml.safe_load(Path(yaml_path).read_text(encoding="utf-8"))
 
-    try:
-        param_names = parse_parameter_surface(spec, Path(param_file))
-    except Exception as e:
-        print(f"ERROR: parameter parsing failed: {e}", file=sys.stderr)
-        return 1
+    param_names: Set[str] = set()
+    for pf in param_files:
+        try:
+            param_names |= parse_parameter_surface(spec, Path(pf))
+        except Exception as e:
+            print(f"ERROR: parameter parsing failed on {pf}: {e}", file=sys.stderr)
+            return 1
     try:
         output_names = parse_output_surface(spec, Path(output_file))
     except Exception as e:
         print(f"ERROR: output parsing failed: {e}", file=sys.stderr)
         return 1
 
-    dim_a = validate_parameter_surface(curated, param_names, Path(param_file))
+    dim_a = validate_parameter_surface(curated, param_names,
+                                       [Path(p) for p in param_files])
     dim_b = validate_output_surface(curated, output_names, Path(output_file))
     dim_c = validate_internal_consistency(curated)
     dims = [dim_a, dim_b, dim_c]
@@ -601,7 +632,7 @@ def main() -> int:
     print_console_report(args.model, dims, verdict)
 
     if args.report:
-        md = build_markdown(args.model, Path(yaml_path), Path(param_file),
+        md = build_markdown(args.model, Path(yaml_path), Path(param_files[0]),
                             Path(output_file), curated, dims, verdict)
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(md, encoding="utf-8")

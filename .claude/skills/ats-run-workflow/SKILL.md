@@ -31,6 +31,9 @@ That is not a reason to avoid the model. It is a reason to (a) run a **single ca
 source use_cases/ATS_<Case>/config/ats_<case>_config.sh    # auto-sources a2mc_noncime_config.sh
 ```
 
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
+
 **`a2mc_config.sh` is the CIME/FATES one and is the wrong file here** ([[feedback_two_machine_configs_cime_vs_noncime]]). The site config chains the right one and repairs a wrong choice, but cannot unset what a mistaken CIME config already exported.
 
 ## Step 1 — the parameter surface is the XML deck, addressed by PATH
@@ -106,6 +109,3 @@ Push model source to the `fork` remote only, never upstream ([[feedback_model_so
 - **Branch fit:** `adapter-kit` and any branch carrying the ATS adapter. Model-specific by design ([[feedback_per_model_scripts_not_generic]]).
 - **Status:** written against a template case, not a worked one. Refine it from the first real ATS campaign rather than trusting it whole — and use `refine-skill` so the change is evidence-backed.
 
-## Changelog
-
-- 2026-08-26: Initial version — written to fill the placeholder the 107-README campaign cited. ATS had **no run-workflow skill at all**, so every case README naming `ats-run-workflow` was pointing at something that did not exist. Distilled from `models/ats/{spec,backend,parameter_parser,output_parser}.py` read directly, and from `use_cases/ATS_template/`. Deliberately states the adapter's own v0.1 status rather than reading as if a worked case existed: parameter/output I/O is complete, the run wiring is functional-minimal, and there is no real ATS case on this machine. PI-directed: placeholders during the campaign, skills immediately after.

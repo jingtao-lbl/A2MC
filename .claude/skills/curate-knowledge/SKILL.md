@@ -102,6 +102,3 @@ matters.
   that the knowledge base is non-empty where the round produced findings — which nothing did before,
   and which is why one case reached thirty experiment cycles with an empty store.
 
-## Changelog
-
-- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

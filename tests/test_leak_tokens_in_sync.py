@@ -94,6 +94,66 @@ def test_templated_paths_are_publishable(safe):
     assert not m, f"templated path wrongly flagged: {safe} (matched {m.group(0)!r} if m)"
 
 
+# ---------------------------------------------------------------------------
+# The EXEMPTIONS (PI, 2026-09-15). The token list is only half the gate: what is subtracted
+# from a line BEFORE the tokens are tested decides what may ship. `jingtao-lbl` is the GitHub
+# ORG — the URL a public reader clones, and in README.md since the first release — so it is
+# exempt, like the contact address. Everything else stays caught.
+#
+# Pinned here for the same reason the token list is: the exemption lives in THREE places
+# (PUBLIC_ORG/PUBLIC_CONTACT in the checker, and a `sed` in each leg's scan pipeline). One of
+# them relaxed alone gives the worst shape — text commits cleanly, then aborts the publish gate.
+# ---------------------------------------------------------------------------
+
+SALESKA_LEG = REPO / "scripts" / "sync_adapterkit_forSaleska.sh"
+EXEMPT_STRINGS = ("jingtao-lbl", r"jingtao@lbl\.gov")
+
+
+def _scan(line: str) -> bool:
+    """Exactly what the checker applies: exemptions subtracted, then the tokens tested."""
+    from tools.validate_agent_surface import LEAK_TOKENS, PUBLIC_CONTACT, PUBLIC_ORG
+    return bool(LEAK_TOKENS.search(PUBLIC_ORG.sub("", PUBLIC_CONTACT.sub("", line))))
+
+
+@pytest.mark.parametrize("exempt", [
+    "clone https://github.com/jingtao-lbl/A2MC.git",
+    "the public `jingtao-lbl/A2MC` repo",
+    "https://github.com/jingtao-lbl/A2MC-Saleska/tree/A2MC-upstream",
+    "questions to jingtao@lbl.gov",
+])
+def test_the_public_org_and_contact_ship(exempt):
+    """A skill that tells you which repo to sync to has to be able to NAME it."""
+    assert not _scan(exempt), f"public identifier wrongly flagged: {exempt}"
+
+
+@pytest.mark.parametrize("leaky", [
+    "~/A2MC-adapter",
+    "~/EcoSIM",
+    "~/run",
+    "export A2MC_HPC_ACCOUNT=m2467",
+    "the m4218 scratch allocation",
+    "branch kougarok_fates_demo",
+    "ssh jingtao@perlmutter.nersc.gov",
+])
+def test_the_exemption_did_not_open_the_gate(leaky):
+    """THE HALF THAT MAKES IT ABLE TO FAIL. An exemption is the easiest way to silently disable a
+    leak gate, so every real leak must still trip AFTER the subtraction — including a bare
+    username, which the org exemption must not swallow."""
+    assert _scan(leaky), f"leak went undetected after the exemptions: {leaky}"
+
+
+@pytest.mark.parametrize("leg", [ADAPTER_LEG, SALESKA_LEG], ids=lambda p: p.name)
+def test_both_legs_carry_the_same_exemptions(leg: Path):
+    """The shell gates must subtract what the Python gate subtracts, or the two disagree."""
+    assert leg.is_file(), f"missing: {leg}"
+    text = leg.read_text()
+    for s in EXEMPT_STRINGS:
+        assert s in text, (
+            f"{leg.name} does not exempt {s!r} before its leak scan, so it will abort on text "
+            "that tools/validate_agent_surface.py passes."
+        )
+
+
 def test_main_leg_drift_is_reported():
     """`scripts/sync_to_public.sh` is MAIN's leg; this branch does not own it. Skip rather than
     fail, but make the drift visible instead of letting it sit silently."""

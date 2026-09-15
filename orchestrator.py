@@ -430,12 +430,10 @@ class CalibrationOrchestrator:
                 logger.info(f"Memory system initialized: {stats['discoveries']['total']} discoveries, "
                            f"{stats['experiments']['total']} experiments "
                            f"(write_mode={self._memory.write_mode})")
-                # Also load generic (framework-level) knowledge
-                generic_dir = Path(__file__).parent / "memory" / "gained_knowledge"
-                if generic_dir.exists() and str(generic_dir.resolve()) != str(Path(memory_dir).resolve()):
-                    self._generic_memory = MemoryManager(str(generic_dir), write_mode=write_mode)
-                    g_stats = self._generic_memory.stats()
-                    logger.info(f"Generic memory loaded: {g_stats['discoveries']['total']} discoveries")
+                # Also load the MODEL layer for the active model: FATES keeps the unprefixed
+                # memory/gained_knowledge/, adapter models memory/<model>/gained_knowledge/.
+                from tools.model_knowledge_store import load_model_memory
+                self._generic_memory = load_model_memory(memory_dir, write_mode, logger)
             except ImportError as e:
                 logger.warning(f"Memory module not available: {e}")
             except Exception as e:

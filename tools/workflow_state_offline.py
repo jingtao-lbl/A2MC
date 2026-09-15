@@ -91,6 +91,33 @@ def limit_from_config(var, files=None, root=None):
 NextAction = namedtuple("NextAction", ["kind", "phase", "detail"])
 
 
+# PRIORITY IS SORTED THROUGH A NORMALISER, because both forms are in live use and a naive
+# `key=lambda x: x.get("priority", 99)` raises `TypeError: '<' not supported between instances of
+# 'int' and 'str'` the moment one state holds both. Measured 2026-09-12 on EcoSIM_Kougarok: threads
+# added with priority="high"/"medium" (this module accepts any value) then one with priority=1, as
+# `phase0-design` documents -- and `add_thread` crashed, so a legitimate call could not record a
+# HOLD. Ordering, not rejection, is the right fix: both spellings are meaningful and neither is
+# wrong enough to refuse a caller mid-phase.
+_PRIORITY_WORDS = {"critical": 0, "blocker": 0, "high": 1, "medium": 2, "normal": 2,
+                   "low": 3, "someday": 4}
+
+
+def _priority_key(thread):
+    """Sort key tolerating int, numeric-string and word priorities; unknown sorts last."""
+    p = thread.get("priority", 99)
+    if isinstance(p, bool):          # bool is an int subclass; not a priority
+        return 99.0
+    if isinstance(p, (int, float)):
+        return float(p)
+    s = str(p).strip().lower()
+    if s in _PRIORITY_WORDS:
+        return float(_PRIORITY_WORDS[s])
+    try:
+        return float(s)
+    except ValueError:
+        return 99.0
+
+
 class WorkflowStateOffline:
     """Per-round offline resume state (load / mutate / save)."""
 
@@ -321,7 +348,7 @@ class WorkflowStateOffline:
             t["refs"] = list(refs)
         threads = self.data["open_threads"]
         threads[:] = [x for x in threads if x.get("id") != thread_id] + [t]
-        threads.sort(key=lambda x: x.get("priority", 99))
+        threads.sort(key=_priority_key)
         return self
 
     def close_thread(self, thread_id):

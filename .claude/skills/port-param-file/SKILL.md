@@ -100,13 +100,3 @@ $PY tools/port_param_file.py verify --source OLD.nc --ported BASE_ported.json --
 - **Adjacent skills:** `add-fates-parameter` (add a new knob — the source of scalar→per-PFT promotions),
   `model-evolution` (source changes), `phase0-design` (uses the ported base file as `A2MC_BASE_PARAM_FILE`).
 
-## Changelog
-
-- 2026-07-14: Added the **version-INACTIVATED-params footgun** — a faithful port carries a source's
-  active value for a knob the target has since disabled/guarded-to-0, and the new build aborts at init on
-  the nonzero value; zero those after porting. Evidence: the #2939 port's api-31 `eca_alpha/lambda_ptase`
-  crashed the api-43 ADSP at 56 s (`EDPftvarcon.F90` `FatesCheckParams`) until zeroed.
-- 2026-07-14: Initial version — distilled from the demo R3 En2939 api-31→api-43 migration (session
-  `memory/dev_logs/20260714*`), generalizing the one-off `migrate_2939_nc_to_api43_json.py` into the
-  version/format-agnostic `tools/port_param_file.py`. Thin by design: defers doctrine to the two cited
-  memories, carries only the mechanical recipe + footguns.

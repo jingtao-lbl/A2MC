@@ -27,6 +27,22 @@ python tools/describe_mode.py --json   # structured fields for branching
 
 This resolves the case's `ConfigMode` (`tools/config.py`): `bgc_mode`, `use_fates` (+ feature flags), `parteh_mode`, `nutrient`, `nutrient_comp_pathway` (`rd`/`eca`), plus the active RAG milestone (model API). Each skill declares its applicability in a `modes:` frontmatter block — honor it: if a skill `requires_fates: true` and FATES is off, it does not apply; if its logic is pathway-specific, branch on `nutrient_comp_pathway`. Do not carry one mode's assumptions into another.
 
+## Source the config and run in the SAME command
+
+**A harness runs each shell call in a fresh process, so `source` does not survive into your next tool call.** Every example in this file and in the skills shows the `source` on its own line, which is correct for a person at a terminal and wrong for you: the variables are set, the call ends, and the next one starts with none of them.
+
+Join them:
+
+```bash
+source use_cases/<Model>_<Case>/config/<site>_config.sh && python tools/check_setup_ready.py
+```
+
+**The failure is misleading rather than obvious, which is why it is stated here.** A2MC's scripts check for their environment and say so plainly — `check_setup_ready.py` exits with *"A2MC_USE_CASE_DIR unset — source the site config first"*. Read from a separate tool call that message is an instruction to do the thing you just did, so the natural responses are to source it again, or to conclude the case is not set up. Neither is true.
+
+It applies to anything downstream of a config: the phase scripts, the census, the samplers, the extractors. If a command needs `A2MC_*` in its environment, it goes in the same invocation as the `source`. Assert rather than assume when a sequence is long: `[ -n "$A2MC_USE_CASE_DIR" ] || exit 1`.
+
+A human reading these docs at a terminal is unaffected — their shell keeps the variables, and the two-step form stays correct for them.
+
 ## Core operating rules
 
 These are the site- and framework-agnostic rules. Follow them on every task.
@@ -79,6 +95,7 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | `curate-knowledge` | any | Review + promote staged Tier-3 knowledge proposals (the write-gate loop) |
 | `round-housekeeping` | any | Post-round curation AFTER the gate, before the next Phase 0 — curate the round's verified findings, promote/discard staged proposals, emit the open-questions list, record bound debt, and ASSERT the KB is non-empty. FULLER on convergence |
 | `arm-hpc-monitoring` | any (HPC) | Set up real-time monitoring of an in-flight ensemble at session start |
+| `arm-local-monitoring` | any | Watch an ensemble running on a workstation with no scheduler — the local counterpart of `arm-hpc-monitoring` |
 | `restart-failed-jobs` | any (HPC) | Restart SLURM jobs that failed in an ensemble/experiment |
 | `restart-adapter-ensemble` | any (HPC) | Recover failed cases in a NON-CIME adapter ensemble (EcoSIM/PFLOTRAN/ATS) — classify why they died, persist the case list, relaunch only what is missing |
 | `diagnose-forensics` | any | Triage ONE anomaly — real or artifact? — then root-cause it (a whole round -> `phase3-diagnosis`) |

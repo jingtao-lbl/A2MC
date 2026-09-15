@@ -144,6 +144,3 @@ from a vector-only one.)
   R is the one relevant here** — reconstructing the api-31-0 FATES knowledge layer from source
   is this branch's reproducibility contract; keep it regenerable.
 
-## Changelog
-
-- 2026-06-17: Initial version — orchestrator over the four KB-build skills (rag_build_roadmap.md Recipe 2 + codebase_wiki_generation_roadmap.md Recipe B3); Step V graph-built gate baked in.

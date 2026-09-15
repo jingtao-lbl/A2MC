@@ -198,7 +198,20 @@ def main() -> int:
     ap.add_argument("--bakeoff", action="store_true",
                     help="compare learner families before fitting and report the ranking")
     ap.add_argument("--test-fraction", type=float, default=0.2)
-    ap.add_argument("--test-matrix", default=None,
+    ap.add_argument("--split", default="random",
+                    choices=["random", "block", "axis", "shell"],
+                    help="how the hold-out is CHOSEN. `random` is the historical default and the "
+                         "weakest: it measures interpolation inside the sampled lattice. `axis` "
+                         "withholds the tail of one named parameter and is the honest "
+                         "extrapolation test in high dimensions. See models/surrogate/splits.py")
+    ap.add_argument("--split-axis", default=None,
+                    help="parameter NAME for --split axis (must be in the param list)")
+    ap.add_argument("--split-side", default="upper", choices=["upper", "lower"],
+                    help="which tail --split axis withholds")
+    # Defaulted from the config so a case that HAS an independent validation design uses it
+    # automatically. Left at None it was opt-in, which meant the weaker random split was the
+    # default even where the stronger test had been designed, drawn and RUN.
+    ap.add_argument("--test-matrix", default=env("A2MC_VALID_MATRIX_FILE"),
                     help="X of an INDEPENDENT validation ensemble (the honest test)")
     ap.add_argument("--test-y", default=None, help="its Y CSV")
     ap.add_argument("--seed", type=int, default=123)
@@ -262,13 +275,31 @@ def main() -> int:
         Xte = align_to_matrix(tc, np.loadtxt(a.test_matrix))
         split_kind = "INDEPENDENT validation ensemble"
     else:
-        perm = rng.permutation(len(X))
-        ntest = max(1, int(round(a.test_fraction * len(X))))
-        te, tr = perm[:ntest], perm[ntest:]
+        # The split is CHOSEN by a named strategy that carries its own description, so what was
+        # measured can no longer be a hand-typed string that drifts from what the code did.
+        from models.surrogate.splits import (axis_split, block_split,      # noqa: E402
+                                             random_split, shell_split)
+        if a.split == "random":
+            sp = random_split(len(X), test_fraction=a.test_fraction, seed=a.seed)
+        elif a.split == "block":
+            sp = block_split(len(X), test_fraction=a.test_fraction)
+        elif a.split == "shell":
+            sp = shell_split(X, test_fraction=a.test_fraction,
+                             lower=spec.input_lower, upper=spec.input_upper)
+        else:
+            if not a.split_axis:
+                raise SystemExit("REFUSING: --split axis needs --split-axis <parameter name>")
+            if a.split_axis not in spec.input_names:
+                raise SystemExit(
+                    f"REFUSING: --split-axis {a.split_axis!r} is not in the parameter list. "
+                    f"Available, first 10: {list(spec.input_names)[:10]}")
+            sp = axis_split(X, axis=list(spec.input_names).index(a.split_axis),
+                            test_fraction=a.test_fraction, side=a.split_side,
+                            axis_name=a.split_axis)
+        tr, te = sp.train, sp.test
         Xtr, Ytr, vtr = X[tr], Y[tr], viable[tr]
         Xte, Yte, vte = X[te], Y[te], viable[te]
-        split_kind = ("random hold-out from the SAME lattice -- optimistic, NOT an independent "
-                      "validation ensemble")
+        split_kind = f"{sp.kind}: {sp.description}. OPTIMISTIC ABOUT: {sp.optimistic_about}"
     print(f"split     : {len(Xtr)} train / {len(Xte)} test  [{split_kind}]")
 
     bakeoff = None

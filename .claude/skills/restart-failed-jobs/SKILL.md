@@ -50,6 +50,9 @@ ROUND=r1                          # label for this round's audit files (adjust)
 TMP="$A2MC_ROOT/tmp"; mkdir -p "$TMP"   # scratch for audit TSV/txt (gitignored)
 ```
 
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
+
 ## Step 1 — Pick the right entry point
 
 ```
@@ -265,27 +268,3 @@ Jobs in `NODE_FAIL` state (distinct from `FAILED`) are typically auto-requeued b
 > The detailed forensic records and worked examples that this workflow was distilled from
 > live in the analysis dev-logs of the manuscript working branch, not on `main`.
 
-## Changelog
-
-- 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. The setup block drops its pick-by-run-style machine-config line, which was a choice the reader no longer has to make correctly.
-
-- 2026-08-14: **Added §Scope — this skill is for ELM and its variants, and said so, because the
-  frontmatter claimed the opposite.** It declared `requires_fates: false  # the SLURM restart
-  workflow is model-agnostic` with a summary saying it "applies to any A2MC ensemble on a SLURM
-  HPC", caveating only that the Step-2 fingerprints are FATES examples. Verified against the
-  tooling (PI observation, 2026-08-14): `tools/diagnose_ensemble_status.py` hardcodes ELM's restart
-  glob `*.elm.r.*.nc` (`:159`, `:226`, `:501`, `:513`) and restart submission goes through
-  `submit_phase0.py --cases-file`, a CIME path. Neither applies to an adapter model — EcoSIM writes
-  `*.ecosim.r.*.nc` and submits via a SLURM array. **The caveat understated the problem twice
-  over:** the fingerprints being FATES-flavoured is cosmetic, whereas the detection plumbing being
-  ELM-only is structural; and it fails **silently**, since a glob that matches nothing reports every
-  case as never-run rather than erroring. §Scope now separates what transfers (the reasoning — infra
-  vs model failure, diagnose-before-restart, zombie cleanup) from what does not (the scripts), and
-  distinguishes an **ELM-like** model (CLM/CTSM: rules apply, expect to adapt or rewrite the scripts
-  for its own restart pattern and submission command) from a **non-CIME adapter** model (follow the
-  reasoning by hand; do not run the commands). Parallel array-aware tool queued in `TODO.md`; PI
-  chose to queue it rather than build speculatively, so R3 designs it against a real failure.
-  **`description` (trigger) UNCHANGED** — the skill should still fire on any restart request and
-  then tell the truth about scope, rather than silently not firing for adapter models.
-- 2026-07-15: Named `tools/diagnose_qos_failures.py` (Step 1 special case) — for a `restart_*.sh` that hit `QOSMaxSubmitJobPerUserLimit` partway (cases prepped but `case.submit` never reached SLURM); emits a resubmit-only script without re-doing the prep. Ported from demo `ce7dc47` (tool copied from demo — it's generic, zero site hardcoding).
-- 2026-06-13 — Ported to `main` (v2.103, Phase 1): scrubbed for the generic public repo, added `modes:` frontmatter.

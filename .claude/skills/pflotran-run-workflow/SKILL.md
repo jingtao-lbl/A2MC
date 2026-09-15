@@ -22,6 +22,9 @@ Everything below is either read from `models/pflotran/` or has already cost a re
 source use_cases/<Case>/config/<case>_config.sh    # auto-sources a2mc_noncime_config.sh
 ```
 
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
+
 **`a2mc_config.sh` is the CIME/FATES one and is the wrong file here** ([[feedback_two_machine_configs_cime_vs_noncime]]). Since v2.306 the site config loads the right machine config itself and repairs a wrong choice, so one command is the whole chain — but it cannot *unset* the ~45 ELM-FATES variables a mistaken `a2mc_config.sh` left behind. A variable count well above the case's clean one means start a fresh shell.
 
 ## Step 1 — the parameter surface is the DECK, and there is only one
@@ -122,6 +125,3 @@ The PFLOTRAN source and docs are **separate Bitbucket repos**; the GitHub mirror
 
 - **Branch fit:** `adapter-kit` and any branch carrying the PFLOTRAN adapter. Model-specific by design ([[feedback_per_model_scripts_not_generic]]): the machinery it drives is generic, the traps are not.
 
-## Changelog
-
-- 2026-08-26: Initial version — written to fill the placeholder the 107-README campaign cited. PFLOTRAN had **no run-workflow skill at all** while EcoSIM had `ecosim-run-workflow` and ELM-FATES had `offline-testing-workflow`, so every case README naming `pflotran-run-workflow` was pointing at something that did not exist. Distilled from `models/pflotran/{spec,backend,parameter_parser,output_parser}.py` read directly, the miniLEO case config and targets, and the three staged findings in that case's knowledge store (the 806-hour offset, the aggregate hiding a per-species inversion, and the V0 gate's real scope). PI-directed: placeholders during the campaign, skills immediately after.

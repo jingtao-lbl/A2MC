@@ -214,11 +214,12 @@ def diagnose(self, results: Dict, targets: Dict,
             if value < target_mean * 0.8 or value > target_mean * 1.2:
                 failing_targets.append(target)
 
-    # Get memory context if available (site-specific + generic)
+    # Get memory context if available (case layer + model layer)
     memory_context = ""
     if self.memory and failing_targets:
         memory_context = self.memory.get_relevant_context(failing_targets)
-    # Also query generic (framework-level) knowledge for broader discoveries
+    # Also query the MODEL layer: the active model's store (tools/model_knowledge_store.py),
+    # unprefixed memory/gained_knowledge/ for FATES, memory/<model>/gained_knowledge/ otherwise
     if self.generic_memory and failing_targets:
         generic_context = self.generic_memory.get_relevant_context(failing_targets)
         if generic_context:

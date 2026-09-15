@@ -61,7 +61,11 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
    - Body: short purpose → decision tree → numbered recipes (ready-to-run bash, use `$PY` for
      Python-3.10 RAG ops) → guardrails/footguns → cross-references.
    - End with a **`## Changelog`** seeded with a dated "Initial version — distilled from
-     <source>." line.
+     <source>." line. **It must be the LAST section — never put a section after it.** The public
+     sync strips a skill's changelog (development history: dated entries naming dev logs, versions
+     and the defects behind each edit), and it strips from the heading to the next `## ` heading, so
+     anything below the changelog is what a strip can silently take with it. Enforced by
+     `tools/check_skill_registry.py` (CHANGELOG-LAST).
    - **Public-sync aware:** skills ship to the public demo via this branch's sync leg (`sync_adapterkit_to_public.sh` here; `sync_to_public.sh` is main's and does not exist on this branch). No
      secrets; host-path tokens are advisory-OK on the demo leg (the leak scan), but prefer
      `$PY` / relative paths / `<placeholders>` over hardcoded personal paths.
@@ -122,26 +126,3 @@ add-only asymmetry is exactly how a deleted skill leaves stale registry rows beh
 - **Human-gated** — propose + review before commit, consistent with the
   `curate-knowledge` / `inject-knowledge` write-gate stance (a skill is a contract).
 
-## Changelog
-
-- 2026-08-29: **Step 3 records that skill visibility is WHOLE-SKILL by decision (PI).** There is no private SECTION inside a skill — `filter_private` runs over a fixed file list that excludes `SKILL.md` bodies, so a `<!-- private -->` block in one ships the text AND the markers. The answer for a step that applies to only one kind of clone is a **mode-aware conditional**, not a split text: `onboard-session`'s framework-log step now runs only if `memory/dev_logs*/` exists, so both clones run the same skill and it is correct in each. Written into the frontmatter step because the mechanism is invisible until someone tries it, and it fails silently when they do.
-
-- 2026-07-15: Step 5 names `tools/smoke_test_skills.py` as the **Tier-2 runtime** skill-contract check (complements the Tier-1 static `check_skill_registry.py`) — runs the read-only backing commands + asserts exit 0. Ported from demo `84af889`.
-- 2026-07-12: Step 5 note — `check_skill_registry.py` now **strict-parses each SKILL.md frontmatter** (`yaml.safe_load`), closing the gap where a colon-space in a `description:` passed the (lenient, regex) registry check but failed the strict pytest frontmatter parse. The checker and `tests/test_offline_agent_mode.py` now agree; avoid `: ` in a `description:` (use ` — `). Signal: colon-space bit twice (calibration-goal, literature-review).
-- 2026-07-09: Step 3 now requires the **`visibility:` + `category:`** frontmatter fields (enum-validated by
-  `check_skill_registry.py`) on every skill — `visibility: private` drives the public-sync exclude (derived
-  from frontmatter, no sync edit needed); `category` groups the skill. Schema table in `.claude/skills/README.md`.
-  Rolled out across all 28 main skills the same day. Ported from demo `a44717d` (v3.13).
-- 2026-07-08: Added a **repo-root path-anchoring note** to the Procedure — all paths are relative to the repo
-  root; anchor via `A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel)}"` and never write `$A2MC_ROOT/…`
-  while it is empty (expands to the filesystem root). Parallels the same hardening in `a2mc-init` / `inject-knowledge`.
-- 2026-07-06: Added the **"Removing / retiring a skill"** section — symmetric de-registration from all
-  three registries + the DRIFT/DEAD-REF verify, closing the add-only asymmetry that let a removed skill
-  leave stale registry rows. `description:` now also fires on "remove/retire a skill". Paired change:
-  `tools/check_memory_bucket.py` gained a dead-`MEMORY.md`-link check (the memory analog). Ported from demo `b28e1dc`.
-- 2026-06-17: Initial version — A2MC counterpart to E2SA's `e2sa-add-skill`
-  (`End2EndScienceAgent/docs/design/09_skill_evolution.md`), adapted for A2MC's registry
-  setup and the `tools/check_skill_registry.py` drift gate.
-- 2026-07-06: Prose corrected from "two/BOTH registries" to the **three** the checker actually
-  enforces (README table + skills_catalog.md + AGENTS.md "At a glance" = 4-way parity with disk).
-  The AGENTS.md leg was already enforced by `check_skill_registry.py`; only the doc lagged.

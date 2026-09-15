@@ -61,6 +61,11 @@ ARCHIVES = {
             # which is the half that matters, since that binary predates
             # `guard_floor_dying_stand`.
             ROOT / "use_cases/EcoSIM_Lusignan/config/binary_archive_manifest.json",
+            # Added 2026-09-11 during EcoSIM_Kougarok onboarding. The case binds
+            # R4base_forkmain_0366560a (the same binary Lusignan and TeRaCON run), and without a
+            # manifest beside it `--generate` silently skipped the case: the tool reported success
+            # for the three cases it knew about, and the fourth was simply not in the list.
+            ROOT / "use_cases/EcoSIM_Kougarok/config/binary_archive_manifest.json",
         ],
         "binary_name": "ecosim.f90.x",
     },

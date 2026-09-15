@@ -162,6 +162,44 @@ def hpc_jobs_in_flight(root, lines):
 
 
 
+def clone_setup(root, lines):
+    """Report per-clone wiring that has not happened, AT EVERY STAGE.
+
+    `setup_stage()` below returns silently at stage 4 -- correct for its own question, and exactly
+    wrong for this one. A case is DELIVERED: emailed as a folder and unpacked under use_cases/. So
+    the first session in a clone wired to nothing reports stage 4 and says nothing, which is the
+    one session where saying something matters most.
+
+    Reuses check_clone_setup.clone_rows() rather than restating the checks, the same way
+    setup_stage() reuses check_stage_ready.detect_stage(); a second copy would drift from the first.
+    """
+    try:
+        import importlib.util
+        path = os.path.join(root, "tools", "check_clone_setup.py")
+        if not os.path.isfile(path):
+            return
+        spec = importlib.util.spec_from_file_location("_ccs", path)
+        if spec is None or spec.loader is None:
+            return
+        m = importlib.util.module_from_spec(spec)
+        sys.modules["_ccs"] = m
+        spec.loader.exec_module(m)
+        bad = [r for r in m.clone_rows() if r[0] == m.FAIL]
+        if not bad:
+            return
+        lines.append("\u26a0 THIS CLONE IS NOT FULLY SET UP (%d item%s). git cannot carry these, so"
+                     % (len(bad), "" if len(bad) == 1 else "s"))
+        lines.append("  every fresh clone starts without them and nothing else will mention it:")
+        for _, label, detail in bad:
+            lines.append("    \u2717 %s \u2014 %s" % (label, detail))
+        lines.append("  Full report: python3 tools/check_clone_setup.py")
+        lines.append("  This is the per-clone half of the `a2mc-init` skill (its Step 1); "
+                     "run that skill to")
+        lines.append("  work through it, and record the user's name rather than inferring it.")
+    except Exception:
+        return                          # a hook must never break a session
+
+
 def setup_stage(root, lines):
     """Surface the SETUP stage when this clone is not yet configured.
 
@@ -198,6 +236,7 @@ def main():
     root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     lines = []
     ensure_memory_symlink(root, lines)
+    clone_setup(root, lines)
     setup_stage(root, lines)
 
     branch = sh(["git", "-C", root, "branch", "--show-current"])

@@ -199,12 +199,3 @@ manuscript knowledge (CLAUDE.md Rule 3); the audit trail matters as much as for
   that the knowledge base is non-empty where the round produced findings — which nothing did before,
   and which is why one case reached thirty experiment cycles with an empty store.
 
-## Changelog
-
-- 2026-09-06: **Step 6 routes the rebuild and the verification BY MODEL, and names the seed-coverage gate.** PI-directed. The step hardcoded FATES's build command and a `HybridRetriever` spot-check, so on an adapter model both are wrong — EcoSIM uses its own builder and PFLOTRAN has no `--graph-only` at all, and adapter profiles are verified with the model-generic `tools/check_ecosim_rag_queries.py`. It also assumed the edited file lives in `rag/data/`, while adapters keep it at `models/<model>/curated_seed.yaml`; measured 2026-09-06, an adapter's curated seed was declared missing on the strength of an `ls rag/data/` when it existed and had built that graph. Adds the arithmetic check that the edge count must rise by exactly the number of edges authored, since a dropped edge logs one line and the build then succeeds, and points at `tools/validate_seed_coverage.py` (previously named by no skill) for the orphan-mechanism case no other check reports. No `description` changed.
-
-- 2026-07-08: Added a **repo-root path-anchoring note** to Step 0 — the KB files you edit are relative to the
-  repo root; anchor via `A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel)}"` so you don't edit a stray
-  copy under the wrong cwd. Parallels the same hardening in `a2mc-init` / `add-skill`.
-- 2026-06-17: Initial version — distilled from graphrag_curated_yaml_roadmap.md + dev log 20260519d (clumping_index injection).
-- 2026-06-17: Verify-pass fix — removed invalid `phase=` kwarg from the Step 5 memory smoke-test command (TypeError on copy-paste).

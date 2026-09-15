@@ -87,6 +87,22 @@ def get_dataset(model_name: str, version: str) -> ModelDataset:
     return versions[version]
 
 
+# The model a run uses when A2MC_MODEL is unset. FATES is A2MC's built-in path, and the FATES
+# site configs rely on this default rather than setting A2MC_MODEL themselves.
+DEFAULT_MODEL = "fates"
+
+
+def active_model_name() -> str:
+    """Return the active model's name: `$A2MC_MODEL`, else `DEFAULT_MODEL`.
+
+    The one place the default lives. `get_active_model()` and the model-layer knowledge-store
+    resolver (`tools/model_knowledge_store.py`) both read it, so they cannot disagree about
+    which model an unset `A2MC_MODEL` means. Needs no adapter registered, unlike
+    `get_active_model()`.
+    """
+    return os.environ.get("A2MC_MODEL", DEFAULT_MODEL)
+
+
 def get_active_model() -> Tuple[ModelBackend, ModelDataset]:
     """Resolve `(backend, dataset)` from environment variables.
 
@@ -94,14 +110,14 @@ def get_active_model() -> Tuple[ModelBackend, ModelDataset]:
         A2MC_RAG_ACTIVE     Highest priority. Set by the orchestrator
                             alignment hook from A2MC_MODEL_PATH detection.
         A2MC_MODEL_VERSION  Explicit override. Rare (mostly for dev/test).
-        A2MC_MODEL          Model name. Default: 'fates'.
+        A2MC_MODEL          Model name. Default: 'fates' (`DEFAULT_MODEL`).
 
     Falls back to the canonical dataset (or most-recently-registered) if no
     version is specified.
 
     Raises `ValueError` if the model or version isn't registered.
     """
-    model_name = os.environ.get("A2MC_MODEL", "fates")
+    model_name = active_model_name()
 
     if model_name not in _MODELS:
         raise ValueError(

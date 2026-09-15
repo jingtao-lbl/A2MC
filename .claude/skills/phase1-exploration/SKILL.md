@@ -140,6 +140,9 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 
 ## Related skills / next phase
 
+- **The Y matrix this phase extracts is what a surrogate TRAINS on** → **`build-surrogate`**,
+  when the round is finished and the question is whether the ensemble can support a learned
+  emulator or a ranking accelerator. It names this skill back.
 - **ANY figure this phase produces** → **`plotting`**. Load it BEFORE the first `savefig`,
   not after: its load-bearing rule is to **open the rendered PNG and look at it**, and an
   overlapping legend, a stats box on the data or an unreadable font are invisible in the code
@@ -150,36 +153,7 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 - **A one-off sensitivity question with a figure + ana_log** → `scientific-analysis`.
 - **Next:** `phase2-screening` (rank the ensemble against targets).
 
-## Changelog
-
-- 2026-09-08: **An OUTPUT VARIABLE is verified like a parameter** (one line appended to the KB-first block; PI-directed). The rule that block states is written about parameters and mechanisms, and a tape field is a third category no rule named -- so in one session the identical failure arrived one category over: a single `nanmean` applied to six variables with five different temporal semantics, and an `inactive` field read as gross production while the model's own output-info CDL carried `status = "inactive"`. Canonical rule and the measured cost: `calibration-discipline` item 3c. No `description` change.
-
-- 2026-09-06: **"the KB is meant to be sufficient" removed -- it invited exactly the misreading it warns against.** PI-directed, and the signal is a measured misreading in the session that first followed this rule: the agent paraphrased the sentence as "the KB is assumed sufficient", which reads as permission to stop at the KB, and the PI corrected it -- *"KB is not sufficient, they just let you have a quick understanding, you still need to verify in the source code if needed"*. The sentence already said *and only then confirm in source*, so the instruction was right and one clause of it was pulling the other way. **Evidence that both halves are load-bearing, from the same session:** the wiki DID carry the model's respiration temperature functions with their constants and `file:line`, so one grep would have replaced six source reads of LEARNING -- and the finding that mattered was that NO calibratable array appears in either function body, a claim about ABSENCE that no wiki page can settle. The KB would have oriented in seconds and still not answered it. Replaced with "the KB is where you START and it usually hands you the citation; it does NOT replace verifying in source". Applied identically across nine skills. The five-surface requirement, the query order and every `description` are UNCHANGED, so when each skill fires is unaffected.
-
-- 2026-08-27: **Says that the adapter parallel does NOT carry PFLOTRAN, and what to use instead**
-  (PI-directed, first PFLOTRAN campaign). `extract_and_plot_adapter_ensemble.py` reduces per-PFT
-  carbon pools to an annual peak and flags establishment — all three meaningless for an abiotic
-  reactive-transport case. Naming it as *the* adapter path would have sent the first PFLOTRAN
-  Phase 1 into reductions that cannot apply. Also gives Step 3's interpretation its non-FATES form:
-  reaction/flow mechanisms rather than FATES mechanisms, cross-TARGET rather than cross-PFT.
-
-- 2026-08-22 (later): **Adds the three-tier script rule**: look in `use_cases/{Model}_{Case}/scripts/` for a canonical script TEMPLATE first, copy it into this phase's `phase_results/{stem}/` and ADAPT it there; write one from scratch when no template exists; a script's SECOND use is the trigger to promote it into `scripts/`. PI-directed, extended to every phase skill after the rule initially landed in only two. Does not conflict with "one canonical script per figure, never two copies" -- the canonical script stays with its figures, the canonical script TEMPLATE stays in `scripts/`. Evidence: 7 byte-identical duplicate script pairs measured across one site's phase_results folders. Checker `tools/check_case_script_tier.py`.
-
-- 2026-08-16: **Names the `plotting` skill for any figure this phase produces.** The link was
-  one-directional — `plotting`'s own cross-references claimed the phase skills apply its
-  conventions, while most phase skills never mentioned it, so a session could produce figures
-  for a whole case without the conventions or the view-the-PNG check ever being loaded. That
-  happened: three sets of Lusignan figures were made before it was invoked, and the first
-  invocation immediately caught a stats box drawn over the data. PI-directed ("every phase
-  needs the plotting skill").
-- 2026-08-02: Log step now states the **living-record** contract (start at phase start, enrich as it runs —
-  the operational detail is unrecoverable later), names **this phase's expected sections** so an omission is
-  visible, and shows `set_phase_handshake()` so the chain is traceable. Full contract: `calibration-log`.
-- 2026-07-16: Named the **adapter parallel** for Step-1 extraction — `scripts/extract_and_plot_adapter_ensemble.py` (backend `extract_history_variables` → annual-peak trajectory + per-case CSV/npz + establishment-overlay plot; no SZPF), next to the FATES `extract_sensitivity_outputs.py`. Morris Y-values come from `backend.reduce_ecosystem`, fed to the same `morris_sensitivity_analysis.py`. EcoSIM R1 (`20260716a`).
-- 2026-07-15: Wired the explicit `set_position(current_phase="screening")` state-advance in the handoff step. Ported from demo `d3cbbf5` (offline-workflow enforcement sweep).
-- 2026-07-15: Made the **per-PFT μ* ranking plot a named REQUIRED deliverable** (not a byproduct) in Step 2, with cross-target/cross-round μ* overlays pointed at `summarize-`/`compare-calibration-rounds`. Ported from demo `cd14d24`.
-- 2026-07-02: Created — offline Phase 1 routine mirroring `reasoning.analyze_sensitivity_results()`; drives extract_sensitivity_outputs → morris_sensitivity_analysis, hands off to `phase2-screening`.
-
 ## Before you finish
 
 **Discipline self-review (automatic).** Before advancing the state, re-check the [`calibration-discipline`](../calibration-discipline/SKILL.md) items that apply to this phase. This is unprompted and per-phase — the user does not have to ask (memory `feedback_schedule_periodic_reviews_with_a_real_mechanism`).
+

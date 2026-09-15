@@ -674,4 +674,39 @@ if git diff --cached --name-only --diff-filter=ACMR \
     fi
 fi
 
+# (20) tools/check_report_figure_freshness.py — a report's embedded figure still matches the
+# canonical figure it cites. `write-report` states the rule (regenerate in the phase_results stem,
+# re-copy the PNG) and nothing enforced it. Measured 2026-09-13: one report's Figure 1 drifted THREE
+# corrections behind its source while the report was re-rendered to PDF and docx three times, each
+# render faithfully re-embedding the stale image. A stale PNG renders perfectly and passes every
+# other check, including check_report_figures.py, which inspects alt text and never the bytes.
+#
+# STAGED-ONLY, and it BLOCKS on exit 2. ENFORCED GOING FORWARD ONLY (PI, 2026-09-15: "existing
+# reports are fine"): a report folder dated before MANIFEST_REQUIRED_FROM is exempt from declaring
+# its sources, because 84 predate the rule and most sit in cases another effort owns. The exemption
+# is counted and printed, never silent, and it covers only the REQUIREMENT to declare -- a
+# grandfathered report that declares a source anyway is drift-checked in full, so opting an old one
+# in is cheap and immediately effective.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '/reports/'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        FIGF_OUT="$("$PY" "$ROOT/tools/check_report_figure_freshness.py" --staged 2>&1)"
+        FIGF_RC=$?
+        set -e
+        if [[ $FIGF_RC -ge 2 ]]; then
+            echo "$FIGF_OUT" >&2
+            echo "" >&2
+            echo "pre-commit: a staged report embeds a figure that no longer matches its source." >&2
+            echo "  Regenerate the figure in its phase_results stem, re-copy the PNG into the" >&2
+            echo "  report, and RE-RENDER: a PDF built from a stale PNG is rebuilt stale." >&2
+            echo "  Map a new report's figures with --init." >&2
+            exit 1
+        fi
+        if [[ $FIGF_RC -eq 1 ]]; then
+            grep -E "^  warn " <<< "$FIGF_OUT" >&2 || true
+        fi
+    fi
+fi
+
 exit 0

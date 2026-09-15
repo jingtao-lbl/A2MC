@@ -166,8 +166,3 @@ Whole pass ~half a working day for a coupled pair; re-runs after fixes are secon
   on a version-pinned manuscript branch its main use is a sanity pass after a curated-YAML
   injection + `--graph-only` rebuild.
 
-## Changelog
-
-- 2026-09-06: **Step 4 routes by model, and gains Step 4b for the curated-seed coverage gate.** PI-directed. Step 4 named only `check_rag_coverage.py`, which is FATES-only by configuration, so on an adapter model it exits 1 and the step read as inapplicable — while `tools/check_ecosim_rag_queries.py` is model-generic despite its filename and covers EcoSIM and PFLOTRAN today. **Signal:** on 2026-09-06 that failure was read as "the silently-missing-KB class is undetectable on the adapter line" and written into a dev log; it was false and was corrected the same day. New Step 4b names `tools/validate_seed_coverage.py`, which was referenced by **no skill at all** despite being the natural gate after a curated-seed edit — the seed builder skips an uncovered category and exits 0, so a partial seed reads as finished. Every claim in both steps was verified before being written: the generic guard runs on `pflotran-157a26f7` (14 assertions), and the seed gate runs on all three seed shapes with two genuine FAILs. No `description` changed, so no trigger moved.
-
-- 2026-06-17: Initial version — distilled from docs/a2mc_reference/rag_validation_workflow.md.

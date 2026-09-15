@@ -328,6 +328,9 @@ python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
      iteration, sampling, RAG dir) and sets NO `A2MC_MODEL_PATH`. The order is still machine→site,
      but since v2.306 the site config **auto-sources** whichever machine config its model needs, so
      `source use_cases/<name>_<site>/config/<...>.sh` alone is enough — give the template you author
+
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
      the same guard (copy it from an existing one; `tests/test_site_config_autosource.py` asserts
      every shipped config has it). (The two
      machine files mirror their AI/iteration/sampling blocks — keep-in-sync comment in both; kept
@@ -542,99 +545,3 @@ complete, promote their provisional lines here to firm.
 - Delegated skills: `generate-codebase-wiki`, `build-rag-from-scratch`, `inject-knowledge`, `validate-rag-chain`, `rebuild-rag`
 - User-facing narrative twin (planned, not yet written — Master Plan §8 #3): a `forking_a2mc_for_a_new_model` roadmap under `docs/a2mc_reference/`
 
-## Changelog
-
-- 2026-09-06: **Step 7 (curated seed) gains its GATE, and a note that the SCORED TARGETS must be curated too.** PI-directed. `tools/validate_seed_coverage.py` was referenced by **no skill at all**, though it exists precisely because `curated_seed_builder.py` prints `[SKIP] category X has no assigned mechanisms` and then exits 0 — so a partial seed reads as a finished one and an unreachable parameter is invisible to Phase 3 forever. It also accepts the builder's work-in-progress `stage_b`/`stage_c` pair, so it can gate the step before the seed is assembled. Verified model-agnostic on all three shapes rather than assumed (EcoSIM PASS, PFLOTRAN FAIL with 4 unreachable, a FATES `curated_relationships_*.yaml` FAIL). **Second half from a measured failure:** graph `affects` edges come from `mechanisms[*].affects`, so an output no mechanism names has zero incoming edges; on 2026-09-06 all four variables one case scored had none, 20 of 581 outputs were wired, and every wired one belonged to a different case — each case's targets had been curated as it was onboarded and this one's never were. Two consecutive diagnosis cycles fell back on ensemble correlations because of it. No `description` changed.
-
-- 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. The model-author step now says to give the site-config TEMPLATE the same guard, copied from an existing one, since a template without it produces cases without it -- and names the test that asserts every shipped config has one.
-
-- 2026-08-19 — **Added Step 0d (orientation run)** (PI). Recorded as a Next item in
-  `20260711a` on 2026-07-11 and never landed, so it evaporated. Framed as work A2MC DOES rather than a
-  precondition it demands: a newcomer cannot supply the sample output Step 0 asks for without first
-  building and running the model, which is the step. The if-the-build-fails guidance cites `20260807f`,
-  where deferring a build to "the team" cost a week and was then closed in an afternoon by trying it.
-
-- 2026-08-19 — **Step 10 gains a gate** (PI). It was the only arc step whose omission
-  nothing could detect: no gate in the table, no successor validator, and `MemoryManager` treats a
-  missing store as an empty one, so a model calibrates with zero knowledge and no error. PFLOTRAN
-  went three weeks without it. Step 11's blank gate was checked at the same time and left as-is —
-  V5 fails on both of its skip modes, so that blank is cosmetic (`20260819h`).
-
-- 2026-08-17: **Step 14 now authors `use_cases/<Model>_template/`, not seeds in `use_cases/TEMPLATE/`**
-  (architecture B, PI call on the `20260816a` audit). The per-model dir is authored source rather than
-  a regenerated snapshot, so a model contributes whatever its run style needs — EcoSIM a
-  `case_template/run.nml` + `OPTIONS.md`, FATES and PFLOTRAN nothing of the kind — with no
-  `EXTRA_TEMPLATE_FILES` row and no suffix convention.
-- 2026-08-13 — **Step 14 now also names `<model>_template_readme.md` /
-  `validation/<model>_template_targets.yaml`** as authoring deliverables, alongside the existing
-  `<model>_template_config.sh` / `<model>_template_calibration_rounds.yaml` pair. Closes a gap the
-  PFLOTRAN branch's `20260812e`/`20260813a` surfaced and the EcoSIM branch confirmed: these two
-  files had NO per-model swap in `tools/create_use_case.py` at all, so every non-FATES case shipped
-  FATES-flavored (`PFT<id>_<vartype>`) starter content. `EXTRA_TEMPLATE_FILES` now performs the same
-  suffix-matching swap `create_use_case.py` already did for config.sh/calibration_rounds.yaml, with
-  fates/ecosim/pflotran seeds authored and the three committed `*_template` cases regenerated.
-  `feedback_per_model_scripts_not_generic`.
-
-- 2026-08-02 — **Step 14 delegates case creation to the new `onboard-case` skill.** Step 14 embedded
-  one case as the arc's last step, which read as one-case-per-model; `a2mc-init` held the same steps
-  and announced itself as first-run-only, so a *second* case had no entry point. The case arc now has
-  one owner. Step 14 keeps the model-side half — **authoring** `<model>_template_config.sh`, the
-  parameter-list schema, the targets contract, the ranking seam — and hands the case itself to
-  `onboard-case`. Audit `20260802e`.
-
-- 2026-08-01 — Three additions from the **ATS onboarding** (`20260801a`–`20260801h`), the first
-  C++/XML-configured/no-history-tape/no-PFT model: (a) new **Step 0b — characterize the codebase**
-  (7 questions: language, parameter ADDRESSING, param format, history tape or not, grouping axis,
-  run invocation, source-enforced bounds) placed BEFORE scaffolding, because each answer propagates
-  into parsers/wiki/seed/RAG/targets and ATS broke an inherited assumption on every one; it also
-  names where Q7 must land (`spec.fraction_param_names`/`signed_param_names`, undeclared → an
-  unclamped ±frac band with NO warning: 3 of 27 ATS bounds unusable). (b) new **Per-model scripts**
-  section recording the PI rule — one script per model in parallel, genericity earned only by
-  covering ALL models, and the axis of genericity is the CASE STUDY within a model; step 9 rewritten
-  to say write `scripts/build_<name>_rag.py`, with the reversed cross-model merge as the worked
-  counter-example, plus the **diff-the-graph-don't-trust-the-counts** rule (the guard only fails on
-  SHRINK, so a noise-adding regression passes silently). (c) Sequencing corollary: **step 13 needs
-  no compiled binary** — only Phases 0/5 submit jobs; I mis-marked it blocked.
-
-- 2026-07-10: Initial version — distilled from the EcoSIM onboarding
-  (`memory/dev_logs_adapterkit/20260707a_*`, `20260505a_*`) + the adapter-kit design docs
-  (`docs/A2MC_Adapter_Kit_Master_Plan.md`, `docs/17`, `docs/19`). Written to be *followed* for
-  EcoSIM steps 7–12 and refined from that run's friction. Encodes the V4 parser-contract catch,
-  the `models/<name>/` vs `rag/<name>_*` reconciliation, and the knowledge-first/execution-last
-  sequencing rule.
-- 2026-07-12: Distillation — folded the EcoSIM onboarding lessons into the footguns (source-verify definitions, input↔binary version-compat, Slurm≠model success) + pointed at the new model-generic tools (model_check_input_compat, model_ensemble_status, model_evaluate_case, model_generate_bounds, run_smoke_ensemble); updated the validators footgun.
-- 2026-07-13 — Added arc step 14 (calibration wiring): site config + validation/targets.yaml + the
-  backend-dispatched screen_ensemble seam, validated by tools/validate_model_targets.py. A new model
-  inherits the ranking machine for free (EcoSIM_BioCON exemplar; dev log 20260713g).
-- 2026-07-15 — Step-14 site config: **SCAFFOLD from the TEMPLATE site config (per-model since 2026-08-02), don't
-  hand-write** — hand-writing is how EcoSIM's config silently dropped `A2MC_ENSEMBLE_MATRIX_FILE`
-  (`20260715e`). Also completed the template itself (it was missing that var) so the scaffold wires a fresh
-  site end-to-end; noted the non-CIME adapter swaps (backend run inputs for the FATES/CIME §5 bits).
-- 2026-07-15 — Step-14: added the two missing pieces from the EcoSIM R1 setup — (a) the **name↔pft/organ
-  RULE** (official name in its own column; pft/organ are separate columns, never baked into the name) +
-  the new `use_cases/TEMPLATE/parameters/parameter_list_template.csv`; (b) the **sample → materialize →
-  submit** step (the "create parameter files from the sampled matrix" step the arc lacked), via the
-  parallel adapter scripts `create_adapter_parameter_sample.py` + `materialize_adapter_ensemble.py`
-  (both IMPORT the shared SALib sampler / dispatch through the backend — no edit to the FATES-shared
-  `create_parameter_sample.py`).
-- 2026-07-15 — Step-14 hardening from the EcoSIM R1 setup (`20260715e`): (a) a non-CIME model sources
-  the parallel **`a2mc_noncime_config.sh`** (generic-only, no E3SM `A2MC_MODEL_PATH` default), NOT the
-  CIME `a2mc_config.sh`; (b) a standalone base namelist needs **absolute input paths** + a site-owned
-  `case_template/` (create_case repoints only the parameter file) and an **exploratory run-length** knob;
-  (c) the **baseline** step — verify base param == param-list defaults (so the unperturbed base IS the
-  documented baseline) and run it as an explicit **V0** case; a "runs-but-decays" base is still the
-  correct baseline when closing that gap is the objective.
-- 2026-07-31 — Added **Step 0b, the model-generic fork-only push guard**, after an audit found the ATS
-  source checkout unguarded through its entire onboarding: `a2mc-init` wires this for E3SM/FATES **by
-  name**, `model-evolution` **assumes** it is already wired, and `onboard-model` — the path every
-  non-FATES model actually takes — never mentioned it. Covers the three things that vary by model
-  (fork vs **mirror** when upstream is not on GitHub; SSH vs HTTPS decided by `gh auth status` scopes
-  rather than by rule of thumb, on ATS evidence; sentinel-string variance being harmless), states the
-  proportion honestly (credentials are the barrier, the sentinel is defence-in-depth), and requires
-  verifying **both** push directions. Paired with a new advisory check in `tools/model_preflight.py`.
-- 2026-07-31 — Step 0b: **standardised the sentinel string on `DISABLED_push_to_fork_not_upstream`**
-  (PI decision). Supersedes the same day's "normalising them is not worth doing" — the string is the
-  message a tripping user sees, so consistency has value. EcoSIM/ATS/PFLOTRAN now all carry it
-  (PFLOTRAN re-aligned from `DISABLED_push_to_fork_instead`); E3SM/FATES keeps its legacy
-  `DISABLED_no_push_to_upstream_*` **deliberately**. The `grep DISABLED_`-not-exact-match audit rule
-  stands, since the legacy exception means a mismatch still is not evidence of an unguarded checkout.

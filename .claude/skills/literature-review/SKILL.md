@@ -149,7 +149,3 @@ resolve to a real DOI from the search results.
 - a2mc-init param-list step ("never invent a bound; anchor to the knowledge base / literature").
 - `markdown-to-pdf` (repo skill) for PDF output; `manuscript-writing-style` for manuscript prose.
 
-## Changelog
-
-- 2026-07-12 — Added the **curated trait & data database** table (TRY, FRED, GRooT, AusTraits, BAAD, sPlot/BIEN) as a primary bounds source before Stage 3, with access + reproducible-citation rules. Mapped each trait to its FATES parameter **verified against the api-43 base file** (SLA→`fates_leaf_slatop`, leaf/root N&P→`fates_stoich_nitr`/`fates_stoich_phos` via the organ dim, Vcmax→`fates_leaf_vcmax25top`, wood density→`fates_wood_density`) and flagged that FATES has **no** fine-root radius parameter (so FRED radius/SRL are context, not a direct knob) — the EcoSIM codes in the adapter-kit source (`SLA1`/`CNLF`/`RRAD1M`/`CNRT`) do not carry over. Ported from the adapter-kit version.
-- 2026-07-12 — Ported to `main` from the `adapter-kit` branch; adapted the parameter-bounds references from EcoSIM (`models/ecosim/reference_bounds/`, `generate_ecosim_bounds.py`, `VCMX`) to the FATES/main param-list CSV (`use_cases/{Model}_{Case}/parameters/FATES_Parameter_List_*.csv` `lower`/`upper` columns; `fates_leaf_vcmax25top` example). Adapter-kit itself distilled it from the user-level `literature-review` skill (Mac/proposal tooling removed).

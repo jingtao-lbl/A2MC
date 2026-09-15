@@ -1,0 +1,58 @@
+#!/bin/bash
+# =============================================================================
+# EcoSIM run template: LOCAL workstation (no scheduler)
+# =============================================================================
+#
+# The laptop / desktop counterpart of `hpc_standalone.sh.tmpl`. Same binary, same
+# invocation, same output tape -- the ONLY differences are that there are no SBATCH
+# directives, no `module load`, and no `srun`.
+#
+# WHY IT EXISTS. EcoSIM is a serial Fortran binary, so nothing about a calibration
+# case actually requires a scheduler; what required one was the template. A
+# collaborator running on their own machine has no `sbatch`, and before this file
+# existed the submit path silently degraded to a dry run that wrote synthetic job
+# ids and launched nothing.
+#
+# SELECTED BY `A2MC_EXEC_MODE=local`. The HPC path is untouched and remains the
+# default: with A2MC_EXEC_MODE unset or `hpc`, nothing here is read.
+#
+# The toolchain lines are deliberately absent rather than emptied. A workstation's
+# compiler environment is whatever built the binary, and a `module` command usually
+# does not exist at all. Set A2MC_ECOSIM_PRE_RUN in the config if your build needs a
+# `conda activate` or a LD_LIBRARY_PATH; it is rendered into {{PRE_RUN_HOOK}} below.
+
+set -euo pipefail
+
+EXE="{{MODEL_BINARY}}"
+WORK="{{OUTPUT_DIR}}"
+RUNFILE="{{OUTPUT_DIR}}/runfile.nml"
+
+# Serial binary. This is the one knob that differs in spirit from the HPC template:
+# there, concurrency is the scheduler's business; here, A2MC's local dispatcher runs
+# N cases at once and each case stays single-threaded.
+export OMP_NUM_THREADS={{OMP_NUM_THREADS}}
+
+# ---- Pre-run hook (environment for a locally built binary) ----
+{{PRE_RUN_HOOK}}
+
+if [ ! -x "$EXE" ]; then
+    echo "ERROR: model binary not executable: $EXE" >&2
+    echo "  Set A2MC_ECOSIM_BINARY to the ecosim.f90.x you built on this machine." >&2
+    exit 2
+fi
+
+cd "$WORK"
+# EcoSIM reads the namelist path from the command argument into a fixed-length
+# buffer, so pass the BASENAME (relative to $WORK, where the runfile lives) -- a
+# long absolute path is truncated and the open fails (namelist_to_buffer IO ERROR 2).
+# This applies identically off the scheduler; the buffer is the binary's, not Slurm's.
+RUNFILE_REL="$(basename "$RUNFILE")"
+echo "EcoSIM start: $(date)  binary=$EXE  runfile=$RUNFILE_REL  (cwd=$WORK)  host=$(hostname)"
+"$EXE" "$RUNFILE_REL"
+echo "EcoSIM end:   $(date)"
+
+# Expected output: <case_name>.ecosim.h0.<start-date>.nc  (h0 history tape)
+ls -la "$WORK"/*.ecosim.h0.*.nc 2>/dev/null || echo "WARN: no h0 tape produced"
+
+# ---- Post-run hook (extraction, target evaluation) ----
+{{POST_RUN_HOOK}}

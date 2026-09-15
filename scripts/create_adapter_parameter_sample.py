@@ -401,6 +401,27 @@ def main() -> int:
                     default=int(os.environ.get("A2MC_N_SAMPLES")
                                 or os.environ.get("A2MC_SOBOL_N_SAMPLES") or 1024))
     ap.add_argument("--seed", type=int, default=123)
+    # THE VALIDATION DESIGN IS A PHASE-0 DECISION, WHICH IS WHY IT IS HERE AND NOT IN THE FITTER.
+    # An independent held-out lattice cannot be recovered later by re-splitting: every split of one
+    # Sobol' sequence draws train and test from the SAME point set, so it measures interpolation
+    # inside that set whatever the split rule. The only way to get an independent test is to DRAW
+    # one, with a different scramble seed, at the time the ensemble is designed, and to run it.
+    #
+    # Measured 2026-09-13: the three env vars below were declared in a site config with 25 lines of
+    # rationale, and NO PYTHON READ ANY OF THEM. PFLOTRAN_miniLEO got its 1024-point validation
+    # design by hand; EcoSIM_Lusignan R1b was designed with no validation set at all, so every
+    # surrogate number for that case is a random hold-out from one lattice and cannot be repaired
+    # without new simulations ([[feedback_exact_strings_are_contracts]]).
+    ap.add_argument("--validation-samples", type=int,
+                    default=int(os.environ.get("A2MC_SOBOL_SEQ_VALID_SAMPLES") or 0),
+                    help="ALSO draw an INDEPENDENT validation design of this many points "
+                         "(A2MC_SOBOL_SEQ_VALID_SAMPLES). 0 disables it, and the run says so.")
+    ap.add_argument("--validation-seed", type=int,
+                    default=int(os.environ.get("A2MC_SOBOL_SEQ_VALID_SEED") or 0),
+                    help="scramble seed for it (A2MC_SOBOL_SEQ_VALID_SEED). MUST differ from "
+                         "--seed: the seed is the independence knob")
+    ap.add_argument("--validation-matrix", default=os.environ.get("A2MC_VALID_MATRIX_FILE"),
+                    help="where to write it (A2MC_VALID_MATRIX_FILE)")
     # SECOND ORDER IS A CONFIG DECISION, NOT A FLAG YOU REMEMBER TO PASS. It doubles-and-then-some
     # the case count -- N*(2P+2) against N*(P+2) -- and decides whether the round can compute the
     # pairwise S_ij at all. Left CLI-only it is a buried choice: the config would describe a design
@@ -447,6 +468,68 @@ def main() -> int:
     print(f"  -> generated {X.shape[0]} cases x {X.shape[1]} parameters")
     print(f"  matrix:  {args.output_matrix}")
     print(f"  problem: {args.output_problem}")
+
+    rc = write_validation_design(problem, args, names)
+    return rc
+
+
+def write_validation_design(problem, args, names) -> int:
+    """Draw and write the INDEPENDENT validation design, or say plainly that there is none.
+
+    Refuses rather than warns on a seed collision, because a validation set drawn with the training
+    seed lands on the same underlying lattice and silently stops being a test while still producing
+    a file, a number and a clean report -- an error in the reassuring direction, which is the worst
+    kind. The point-coincidence assertion is the same check made by hand for PFLOTRAN_miniLEO
+    ("Verified: no validation point coincides with a training point"), done here so it cannot be
+    skipped.
+    """
+    n = args.validation_samples
+    if not n:
+        print("\n  validation design: NONE.")
+        print("    This ensemble will have no independent held-out lattice, so every surrogate")
+        print("    score from it is a hold-out from the SAME point set and measures interpolation")
+        print("    within it. That cannot be fixed later by re-splitting -- only by running more")
+        print("    simulations. Set A2MC_SOBOL_SEQ_VALID_SAMPLES in the site config to draw one.")
+        return 0
+
+    if args.method != "sobol_seq":
+        print(f"ERROR: --validation-samples is only meaningful for --method sobol_seq; "
+              f"this run used {args.method!r}.", file=sys.stderr)
+        return 1
+    if not args.validation_matrix:
+        print("ERROR: --validation-samples was given but --validation-matrix "
+              "(A2MC_VALID_MATRIX_FILE) is unset; there is nowhere to write it.", file=sys.stderr)
+        return 1
+    if not args.validation_seed:
+        print("ERROR: --validation-seed (A2MC_SOBOL_SEQ_VALID_SEED) is unset. The scramble seed is "
+              "what makes the validation set independent; it has no safe default.", file=sys.stderr)
+        return 1
+    if args.validation_seed == args.seed:
+        print(f"ERROR: --validation-seed equals --seed ({args.seed}). Drawn with the training "
+              f"seed the validation set lands on the SAME underlying lattice and stops being an "
+              f"independent test, while still producing a file and a plausible score.",
+              file=sys.stderr)
+        return 1
+
+    V = sample_sobol_sequence(problem, n, args.validation_seed)
+    Xtrain = np.loadtxt(args.output_matrix)
+    # Coincidence is the failure a different seed is supposed to prevent, so assert it rather than
+    # assume it. Row-wise exact match over float64 is the right test: these come from the same
+    # generator and scaling, so a true collision is bit-identical rather than merely close.
+    train_rows = {r.tobytes() for r in np.ascontiguousarray(Xtrain, dtype=float)}
+    dupes = sum(1 for r in np.ascontiguousarray(V, dtype=float) if r.tobytes() in train_rows)
+    if dupes:
+        print(f"ERROR: {dupes} validation point(s) coincide with training points despite the "
+              f"different seed. The two designs are not independent; do not use this set.",
+              file=sys.stderr)
+        return 1
+
+    write_matrix(V, Path(args.validation_matrix))
+    print(f"\n  validation design: {V.shape[0]} INDEPENDENT cases x {V.shape[1]} parameters")
+    print(f"    seed {args.validation_seed} (training seed {args.seed}); no point coincides")
+    print(f"    matrix: {args.validation_matrix}")
+    print("    These must be RUN through the model like any other case, and then HELD until a")
+    print("    surrogate exists -- holding them removes the temptation to look.")
     return 0
 
 

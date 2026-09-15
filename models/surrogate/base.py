@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from .environment import write_environment
 from .spec import SurrogateSpec
 
 
@@ -217,6 +218,7 @@ class SurrogateModel(ABC):
         directory.mkdir(parents=True, exist_ok=True)
         self.spec.write(directory / "spec.json")
         (directory / "tier.json").write_text(json.dumps({"class": type(self).__name__}))
+        write_environment(directory)
         self._save_artifacts(directory)
         return directory
 

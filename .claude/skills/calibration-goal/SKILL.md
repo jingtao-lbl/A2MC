@@ -185,13 +185,3 @@ after `done`.
   `savefig`, since its view-the-rendered-PNG rule is what catches a broken figure.
 - `AGENTS.md` rule 10 (drive-don't-wait) + §"Offline-Agent Operating Discipline" (the FM-1..4 gates).
 
-## Changelog
-
-- 2026-08-16: **Names the `plotting` skill.** The link was one-directional — `plotting` claimed
-  these skills apply its conventions while they never mentioned it, so a whole case's figures
-  could be produced without the conventions or the view-the-PNG check being loaded. PI-directed.
-- 2026-07-15: Driver loop Step 1 now validates the state via `tools/check_workflow_state_offline.py` (exit 0 before driving — the state analog of `check_skill_registry`). Ported from demo `d3cbbf5` (offline-workflow enforcement sweep).
-- 2026-07-11: Initial version — the offline run-to-convergence driver (docs/43, numbered docs/38 at the time). Harness-neutral: the
-  conductor above the phase skills, mirroring `orchestrator.py:1031` via `WorkflowStateOffline` +
-  `resolve_next_action()`, pausing only at the four human gates. Distilled from `docs/43` + the
-  implementation tracker `memory/dev_logs/20260711h_*`.

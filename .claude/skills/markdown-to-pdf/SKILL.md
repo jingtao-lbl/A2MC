@@ -80,11 +80,3 @@ keep this skill's footprint to the generic pandoc + python-docx mechanics.)
   citation fields — use python-docx (Step 4).
 - Prose only; **slide decks go through Marp**, not here.
 
-## Changelog
-
-- 2026-06-23: Repo-vendored, self-contained copy of the general `markdown-to-pdf` converter
-  (the canonical cross-project version stays at user level). Adapted for this repo: stripped
-  the `~/.claude/workflows/` Manuscript_DocxMerge_Workflow + user-level skill references and
-  the hardcoded personal env paths, so it works wherever the repo runs (local / Perlmutter /
-  fresh clone) — it depends only on environment-provided tools (pandoc, a LaTeX engine,
-  python-docx). Referenced by the `scientific-analysis` skill for rendering ana_logs.

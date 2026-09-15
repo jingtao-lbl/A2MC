@@ -57,6 +57,9 @@ logger.set_iteration_context(            # the three-level counters (see CLAUDE.
 )
 logger.log_diagnosis(title="PFT10 Fineroot Root-Cause", content=<markdown>, ...)
 ```
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
+
 
 Per-phase methods: `log_design` (0), `log_exploration` (1), `log_screening` (2),
 `log_diagnosis` (3), `log_hypothesis` (4) / `log_experiment_design`, `log_testing` (5),
@@ -342,68 +345,3 @@ that has since gone stale.
 - Do **not** re-implement the phase naming/section logic here; it lives in `tools/phase_logger.py`
   and this skill follows it.
 
-## Changelog
-- 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. The `create_logger` example's setup comment now names one command instead of two.
-- 2026-08-24 (later): **The case's `use_cases/{Model}_{Case}/memory/model_evolution/` stream also holds the case's MODEL-UPDATE logs.** PI-directed. A passage contrasting it with a repo-root stream was removed: that stream does not ship publicly, so naming it in a public skill only confuses the reader it is meant to help. From now on a model source change made for a case is written up under that case, beside the record of which rounds ran it.
-
-- 2026-08-23 (later): **The Enrichment contract's rethink clause now records SIX items, not five** — the added one is, for each refuted lever, which direction was moved from a base with which sign of miss and whether that still applies. Mirrors the new question 6 in `phase6-refinement` Step 4 (PI-directed); this file states the list, so it had to move with it.
-- 2026-08-23: **A Phase-6 log routing 6→3 must carry the RETHINK, not just the decision** (Enrichment contract). Paired with the new rethink protocol in `phase6-refinement` Step 4, which was PI-directed after the observation that neither skill owning the 6→3 route gave it a method. The log is where the protocol's output has to land, because the next cycle reads the log rather than the state enum: the five questions (this cycle's synthesis separating established from tried, Phases 1 and 2 re-read against it, base still right, binding target moved, lever class exhausted) and the NEW PATHWAYS with their class and falsifier, named in the handshake. Measured on one round: three consecutive rethinks carried one base and one target framing forward unexamined, and the cycle that finally re-examined both found the base already held the target in band with 0.51 of headroom so the experiment those cycles kept designing would have broken it.
-
-
-- 2026-08-23 (corrected same day): the rule is **PHASE 5 ONLY**; Phase 0 is exempt because its ensemble scripts are config-generated and number in the tens of thousands (PI).
-- 2026-08-23: **Phase 5 archives its JOB SCRIPTS into `phase_results/{stem}/submit_scripts/`.** PI-directed. Copy, never move: the scheduler reads the operative copy from the run directory, but that directory is untracked scratch and gets cleaned, while the submit script is where the binary a run was bound to and its run-time hash assertion are written down. A log claiming a passed V0 gate with no archived submit script cannot show which executable produced the number. Signal: on 2026-08-23 a cycle nearly ran against the wrong binary because the materializer emits the LIVE build path by default. Updates `feedback_plot_scripts_canonical_in_phase_results`, which had said run drivers simply stay in CFS.
-
-- 2026-08-22 (later): **The self-documenting folder's `.py` now starts from the case script TEMPLATE.** PI-directed. Copy `use_cases/{Model}_{Case}/scripts/<template>.py` into `phase_results/{stem}/` and adapt it there; the adapted copy is canonical for that figure and ships with its caption and data. Writing a phase's script from scratch when a template exists is what produced 7 byte-identical duplicate scripts across one site's phase_results folders. A script's second use is the trigger to add it to `scripts/`.
-
-- 2026-08-22: **Two rules the PI added after reading a phase log that failed both.** (a) **The log
-  must EMBED its figures**, not merely name the folder — the log and `phase_results/{stem}/` are read
-  as one document, and a log referring to "Figure 1a" while displaying nothing sends the reader
-  hunting. Empty alt + bold `**Figure N.**`, relative `../phase_results/{stem}/…`, plus a closing
-  Artifacts table. Effective 2026-08-22; earlier logs grandfathered (45 of 82 predate it), with the
-  exempt count printed so the backlog stays visible. (b) **Update the state BEFORE writing the log** —
-  `PhaseLogger` bakes the `## Reasoning chain` in at write time, so a stem renamed afterwards stays
-  frozen in the file; it cost 14 stale pointers in one log. Both are enforced:
-  `check_offline_log_evidence.py` WARNs on unembedded figures and ERRORs on a dead
-  `phase_results/<stem>/` pointer, and both now run for EVERY phase rather than only the analysis
-  phases (the early return meant a phase-1 log got a green tick from a function that had inspected
-  nothing). Pre-commit check (11) runs the gate on staged calibration logs. Details:
-  `memory/dev_logs_adapterkit/20260822e_*`.
-
-- 2026-08-16: **Names the `plotting` skill.** The link was one-directional — `plotting` claimed
-  these skills apply its conventions while they never mentioned it, so a whole case's figures
-  could be produced without the conventions or the view-the-PNG check being loaded. PI-directed.
-- 2026-08-02: A phase log is a **living record** started at phase start, not an end-of-phase write-up,
-  and **every** phase now names its expected sections — not only the analysis phases 3/4/6. Phase 0 gains
-  Sampling Design · Cases Materialized · Submission · Monitoring Armed · Failures and Restarts ·
-  Verification Plots (PI: the job IDs, the scheduler hiccups, the restarts and the early check-plots are
-  the record, and they are unrecoverable if deferred). **Phase 5 shares the run-and-watch spine** (Submission ·
-  Simulation Status · Monitoring Armed · Failures and Restarts) but NOT "Cases Materialized", which is phase-0
-  vocabulary — it runs variants from the hypothesis, so it adds Experiments Designed · V0 gate · Results Preview ·
-  Results Summary. Phases 1/2 get their own lists.
-- 2026-08-01: Added **§The phase handshake** and **§Enrichment contract**. A calibration log is a link in
-  the 3→4→5→6→3 chain, not a record of a change: the online agent hands the next phase a typed object
-  (`reasoning/schemas.py`) inside one run, while offline phases are separated by days and sessions, so the
-  log is the only channel — and this skill previously said **nothing** about inheriting or handing on.
-  `PhaseLogger.set_phase_handshake()` now emits the frame in offline mode, plus a `## Sections not provided`
-  list naming every expected section left empty (each is behind an `if <arg>:` guard, so an unfilled one
-  otherwise leaves no trace). Depth is contract, not gate, deliberately: a gate demanding non-empty sections
-  manufactures filler, and filler is indistinguishable from analysis where a placeholder never is. Audit:
-  `memory/dev_logs_adapterkit/20260801e`.
-- 2026-08-01: Added **"Skills and memory invoked"** (both log types): the skills followed, memories applied,
-  knowledge consulted (RAG profile + curated keys), and a **Gaps / misfires** line feeding `refine-skill` and,
-  as a *candidate* only, `inject-knowledge` / `curate-knowledge`. "None" is a legitimate answer. A calibration
-  log recorded the evidence for its conclusion but never which knowledge it was built on, hiding a hypothesis
-  formed without checking the KB and a conclusion inherited from a stale entry. Mirrors the same addition to
-  the A2MC-development log convention.
-- 2026-07-18: Noted the **same-day letter overflow** rule (Type B naming): past `z`, keep the `z` prefix and
-  append a second letter (`za, zb, …`), sort-stable; `tools/phase_logger.py::_offline_letter` auto-assigns it.
-- 2026-07-17: Split the two artifact jobs explicitly — the `log/{stem}.md` carries the ANALYSIS, the `phase_results/{stem}/` is a SELF-DOCUMENTING folder (per figure: figure + caption/NOTES .md + saved generating .py + data), mirroring `write-report`. The evidence gate (`check_offline_log_evidence.py`) now WARNs on a figure missing its caption/script/data.
-- 2026-07-15: Fixed two friction points found in the EcoSIM R1 onboarding (`20260715d`): the code example
-  was missing `set_iteration_context`'s **required `iteration` positional** (use 0 for Phase 0-2) and set
-  no `A2MC_AGENT_MODE`; and the offline flat layout was framed as "optional" when it is **the** convention
-  for the interactive agent (the nested `{session_id}/…` form is online/orchestrator-only). Reframed both.
-- 2026-07-06: Added the offline (interactive-agent) topic-stem layout note now that `PhaseLogger`
-  offline mode landed on main (v2.115, docs/31): `A2MC_AGENT_MODE=offline` → flat `logs/{stem}.md` +
-  `phase_results/{stem}/` + per-round `workflow_state_offline`. Generic; online path unchanged.
-- 2026-07-01: Created — public skill so the interactive agent logs calibration work the same way
-  the autonomous agent does (phase logs) plus a free-form session-log option for exploratory work.

@@ -2,8 +2,8 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of process-based environmental models using AI API + HPC + Adaptive Memory. **This line is the NON-CIME one** (EcoSIM · PFLOTRAN · ATS, via the `models/` adapter registry); the CIME-configured ESMs (ELM, ELM-FATES) are developed in the sibling **[`A2MC-elm`](https://github.com/jingtao-lbl/A2MC-elm/)**. See §"What is A2MC?" below.
-**Status:** Implementation Complete (v2.409)
-**Last Updated:** September 10, 2026
+**Status:** Implementation Complete (v2.425)
+**Last Updated:** September 12, 2026
 ---
 
 
@@ -330,6 +330,7 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 | `plotting` | any | Clean, readable, overlap-free matplotlib figures — verify by viewing the PNG |
 | `write-report` | any | Integrated, self-contained report for a zero-context human reader |
 | `arm-hpc-monitoring` | any (HPC) | Set up real-time monitoring of an in-flight ensemble at session start (Rule #6) |
+| `arm-local-monitoring` | any (local) | Watch an ensemble running on a WORKSTATION with no scheduler — dispatcher log, process-table liveness, and which of the HPC watcher contract does not transfer |
 | `restart-failed-jobs` | any (HPC) | Restart SLURM jobs that failed mid-run or at end-of-run (infra vs model failure) |
 | `restart-adapter-ensemble` | any (HPC) | Recover failed cases in a NON-CIME adapter ensemble (EcoSIM/PFLOTRAN/ATS) — classify why they died, persist the case list, relaunch only what is missing |
 | `pflotran-run-workflow` | any | Run + test PFLOTRAN (deck-driven) — deck-as-parameter-file, case assembly, `*-mas.dat` scoring, the 806-hour observation offset |
@@ -519,7 +520,7 @@ Run/agent discovery → human review gate → Copy to use_cases/{Model}_{Case}/m
 
 **Promotion UP to the model layer is a separate, evidence-gated step**, and the destination is that case's own model — `memory/ecosim/gained_knowledge/`, `memory/pflotran/gained_knowledge/`, or `memory/gained_knowledge/` **for FATES only**. One site showing a pattern is one observation, not evidence the pattern generalizes.
 
-> **`memory/gained_knowledge/` is the FATES store, not a generic one.** All 12 of its discoveries name `fates_cnp_*`, `FATES_L2FR` or ELM variables and its one failed approach is `SUPLPHOS=ALL during TRANSIENT`. It is unprefixed because FATES is A2MC's built-in path rather than an adapter under `models/`, so it occupies the slot from before the model layer existed. **Copying a non-FATES case's discovery there is a cross-model misroute**, and `tools/promote_knowledge.py` still hardcodes it as `GENERIC` — an open defect, harmless only because that tool has never run on a real promotion.
+> **`memory/gained_knowledge/` is the FATES store, not a generic one.** All 12 of its discoveries name `fates_cnp_*`, `FATES_L2FR` or ELM variables and its one failed approach is `SUPLPHOS=ALL during TRANSIENT`. It is unprefixed because FATES is A2MC's built-in path rather than an adapter under `models/`, so it occupies the slot from before the model layer existed. **Copying a non-FATES case's discovery there is a cross-model misroute.** Two tools made exactly that mistake, and both now resolve the store by model through `tools/model_knowledge_store.py` (FATES unprefixed, adapter models by name, no FATES fallback for a model without a store): the online orchestrator on the READ side until v2.410, which loaded this store as the model layer for every model, and `tools/promote_knowledge.py` on the WRITE side until v2.411, which now takes the model from the case's own config declarations.
 ### Session Logging Convention
 
 **Phase Execution logs** (outputs from A2MC runs, session-scoped):

@@ -145,11 +145,3 @@ activation reaches every staged case. **Re-run and confirm the variables now app
   `20260712b_*` (first diagnosis).
 - Generic detection footgun lives in `onboard-model` (Footgun 7); this skill is the EcoSIM remedy.
 
-## Changelog
-
-- 2026-07-13 — Add Recipe §B (missing outputs): EcoSIM registers 117/179 `_pft` fields
-  `default='inactive'`; activate calibration outputs via `hist_fincl1`. The inactive-by-default trap
-  is NOT a schema rename — source-verify before renaming a target. Distilled from `20260713c`.
-- 2026-07-13 — Initial version. Distilled from `20260713a` (input evolution + the `evolve_pft_input`
-  tool + verify-by-run gate) and `20260712b` (first diagnosis). EcoSIM-scoped by design; the PI
-  declined folding it into `onboard-model` since other models don't share the per-PFT input contract.

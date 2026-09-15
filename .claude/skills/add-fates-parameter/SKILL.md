@@ -126,19 +126,3 @@ setting a finite value in the experiment param file — **runtime-tunable, no re
 - Reproducibility contract + fork-push rule + model map: the model checkout's `CLAUDE.md` §1 (path recorded in [[feedback_model_source_push_fork_only]]).
 - Model-dev logging: the case's `use_cases/{Model}_{Case}/memory/model_evolution/{stem}.md`, per `model-evolution` step 6. Source-comment rule: [[feedback_model_code_comment_jing_tao]].
 
-## Changelog
-- 2026-08-24: **Model-dev logging now points at the case's case's `use_cases/{Model}_{Case}/memory/model_evolution/` stream**, per `model-evolution` step 6, and the two worked examples cite the demo branch by date rather than by a repo-root path that does not ship publicly. PI-directed.
-
-
-- 2026-07-10: Ported demo `5d587ce` — extended the "registered ⇒ must be in every param file" gotcha with the
-  **verification / stacked-branch corollary**: a V0/test param file built from the *pristine* ensemble file
-  drops params added by prior changes; stacked experiment branches need the *union* of every lineage's
-  registered params; the failure is a runtime `ENDRUN` at param read, not a build error. Driven by the demo
-  #17 V0 run aborting on the missing #16 `fates_max_plant_density`.
-- 2026-07-09: Gotcha sharpened — a **per-PFT** param goes in **`EDPftvarcon`**, not `EDParamsMod` (no clean
-  array-retrieve; verified via the demo #17 `phen_gddthresh_c` read). Cross-linked the `model-evolution`
-  umbrella. Ported from demo `7c08096`.
-- 2026-07-09: Ported to `main` from demo `a44717d`/`8a8f031` (v3.13), adapted to **api-43**: JSON param
-  file is now the primary (B) path (`.nc` demoted to api-31/demo legacy), model-tree paths point at
-  `E3SM_FATES_api43`, and the fork-push rule + `!Jing Tao:` comment rule are cross-linked. Worked example
-  (`fates_max_plant_density`) kept but labeled as the demo/api-31 origin.

@@ -83,6 +83,13 @@ LEAK_TOKENS = re.compile(r"jingtao|m2467|m5199|m4218|kougarok_fates_demo")
 # tokens stay strict. (2026-08-02: this fired on .claude/skills/README.md's note about
 # requesting the maintainer-side private skills.)
 PUBLIC_CONTACT = re.compile(r"jingtao@lbl\.gov")
+# The GitHub ORG is public by construction: `jingtao-lbl/A2MC` is the URL a public reader clones,
+# and README.md has carried it since the first release. Subtracted before the scan (like the
+# contact address) rather than removed from LEAK_TOKENS, which must stay character-identical to the
+# copies in both sync legs (tests/test_leak_tokens_in_sync.py). A bare `jingtao` path still trips:
+# only the `jingtao-lbl` owner form is exempt. PI decision 2026-09-15, after the gate rejected a
+# skill for naming the very repo it tells you to sync to.
+PUBLIC_ORG = re.compile(r"jingtao-lbl")
 # Markdown links: [text](target). We validate repo-relative targets only.
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 NON_FILE_LINK = re.compile(r"^(https?:|mailto:|#)")
@@ -171,7 +178,7 @@ def validate_agent_surface(repo_root: Path) -> List[Finding]:
     surface_md = ([agents_md] if agents_md.exists() else []) + skills_md
     for f in surface_md:
         for i, line in enumerate(f.read_text().splitlines(), 1):
-            if LEAK_TOKENS.search(PUBLIC_CONTACT.sub("", line)):
+            if LEAK_TOKENS.search(PUBLIC_ORG.sub("", PUBLIC_CONTACT.sub("", line))):
                 findings.append(Finding("ERROR", "L1", f"{f.relative_to(repo_root)}:{i}",
                                         f"private path/username token: {line.strip()[:80]}"))
 

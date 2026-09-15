@@ -52,6 +52,22 @@ from .learners import (
     recommend,
     recommend_goals,
 )
+from .environment import (
+    EnvMismatch,
+    capture_environment,
+    check_environment,
+    enforce_environment,
+    read_environment,
+)
+from .splits import (
+    SPLITTERS,
+    Split,
+    axis_split,
+    block_split,
+    levels_split,
+    random_split,
+    shell_split,
+)
 from .spec import (
     Provenance,
     SurrogateSpec,
@@ -59,7 +75,10 @@ from .spec import (
     hash_file,
     hash_param_list,
 )
-from .tiers import S0Surrogate, S1Surrogate, load
+from .tiers import S0Surrogate, S1Surrogate, S2Surrogate, S3Surrogate, load
+# `sequence` imports torch lazily inside its own methods, but importing the MODULE
+# is still free, so the package keeps importing with no torch installed.
+from .sequence import KGMLEmulator, load_kgml
 
 __all__ = [
     "BatchPrediction",
@@ -77,6 +96,10 @@ __all__ = [
     "RidgeLearner",
     "S0Surrogate",
     "S1Surrogate",
+    "S2Surrogate",
+    "S3Surrogate",
+    "KGMLEmulator",
+    "load_kgml",
     "SurrogateModel",
     "SurrogateSpec",
     "TargetSpec",
@@ -90,4 +113,16 @@ __all__ = [
     "make_learner",
     "recommend",
     "recommend_goals",
+    "EnvMismatch",
+    "capture_environment",
+    "check_environment",
+    "enforce_environment",
+    "read_environment",
+    "SPLITTERS",
+    "Split",
+    "axis_split",
+    "block_split",
+    "levels_split",
+    "random_split",
+    "shell_split",
 ]

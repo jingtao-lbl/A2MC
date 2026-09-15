@@ -11,8 +11,14 @@ optional with sensible fallbacks):
 
     A2MC_ECOSIM_BINARY        path to ecosim.f90.x            (required for a real run)
     A2MC_ECOSIM_BASE_NAMELIST base EcoSIM runfile .nml to stage + repoint
+    A2MC_EXEC_MODE            'hpc' (default) or 'local'      — 'local' runs the cases as
+                              background processes on this machine instead of sbatch-ing
+                              them, for a workstation with no scheduler. Purely additive:
+                              unset or 'hpc' reaches none of the local code.
+    A2MC_LOCAL_WORKERS        local mode only — how many cases run at once
+                              (default: min(4, cpu_count))
     A2MC_ECOSIM_RUNTEMPLATE   submit-script template          (default: this package's
-                              runtemplates/hpc_standalone.sh.tmpl)
+                              hpc_standalone.sh.tmpl, or local_serial.sh.tmpl in local mode)
     A2MC_OUTPUT_DIR           ensemble output root            (default: cwd/ecosim_runs)
     A2MC_HPC_ACCOUNT          slurm account                   (default: m5199)
     A2MC_HPC_QUEUE            slurm qos                       (default: shared)
@@ -34,6 +40,7 @@ import datetime as _dt
 import os
 import re
 import warnings
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -58,6 +65,60 @@ _PFT_MGMT_INT = {"PPI"}             # tokens written as integers (planting densi
 
 def _truthy(v: Any) -> bool:
     return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+
+def _exec_mode(config) -> str:
+    """'hpc' (default) or 'local'. Anything unset behaves exactly as before this existed."""
+    m = str(config.get("A2MC_EXEC_MODE", "") or "hpc").strip().lower()
+    if m not in ("hpc", "local"):
+        raise ValueError(
+            "A2MC_EXEC_MODE=%r is not recognised; use 'hpc' (the default, sbatch) or "
+            "'local' (background processes on this machine)." % m)
+    return m
+
+
+def _local_workers(config) -> int:
+    """How many cases run at once locally. Conservative by default: EcoSIM is a serial
+    binary, so this is a count of whole cases, and a laptop running four of them is
+    already using four cores and four cases' worth of memory."""
+    raw = config.get("A2MC_LOCAL_WORKERS")
+    if raw:
+        n = int(raw)
+        if n < 1:
+            raise ValueError("A2MC_LOCAL_WORKERS must be >= 1, got %r" % raw)
+        return n
+    return min(4, os.cpu_count() or 1)
+
+
+def _dispatch_local(case_paths, workers: int, root: Path) -> int:
+    """Launch the cases in the background with a concurrency cap; return the dispatcher PID.
+
+    WHY A DETACHED DISPATCHER rather than running the cases here. `submit_ensemble` must
+    RETURN so the caller can poll, exactly as it does when sbatch queues a job: the phase
+    scripts, the census and `check_case_status` are all written around submission being
+    non-blocking. Running the cases inline would make local mode a different workflow
+    rather than the same workflow on a different machine.
+
+    `xargs -P` supplies the worker pool, so there is no scheduler and no Python process
+    that has to survive; the dispatcher is a detached shell. Its log is the thing to arm a
+    Monitor on, and each case still writes its own output beside its runfile.
+    """
+    listing = root / "local_cases.txt"
+    listing.write_text("\n".join(str(Path(c).resolve()) for c in case_paths) + "\n")
+    log = root / "local_dispatch.log"
+
+    # setsid detaches from this process group so the runs survive the session that started
+    # them, which is the local equivalent of a job outliving the submitting shell.
+    cmd = ("exec >>%s 2>&1; echo \"local dispatch start: $(date)  workers=%d  cases=%d\"; "
+           "xargs -P %d -I{} bash -c 'cd \"{}\" && bash submit.sh' < %s; "
+           "echo \"local dispatch end:   $(date)\"" % (
+               shlex.quote(str(log)), workers, len(case_paths),
+               workers, shlex.quote(str(listing))))
+    proc = subprocess.Popen(["setsid", "bash", "-c", cmd],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            stdin=subprocess.DEVNULL, start_new_session=True)
+    return proc.pid
 
 
 class EcoSIMBackend(ModelBackend):
@@ -366,9 +427,14 @@ class EcoSIMBackend(ModelBackend):
             )
 
         # Render the submit script from the runtemplate.
+        # An explicit A2MC_ECOSIM_RUNTEMPLATE still wins; otherwise the default follows the
+        # execution mode. The HPC template stays the default, so an unset A2MC_EXEC_MODE
+        # behaves exactly as it always has.
+        _default_tmpl = ("local_serial.sh.tmpl" if _exec_mode(config) == "local"
+                         else "hpc_standalone.sh.tmpl")
         tmpl_path = Path(
             config.get("A2MC_ECOSIM_RUNTEMPLATE")
-            or (Path(__file__).parent / "runtemplates" / "hpc_standalone.sh.tmpl")
+            or (Path(__file__).parent / "runtemplates" / _default_tmpl)
         )
         submit = case_dir / "submit.sh"
         if tmpl_path.exists():
@@ -432,7 +498,36 @@ class EcoSIMBackend(ModelBackend):
         config: Dict[str, Any],
     ) -> List[str]:
         """sbatch each case's submit.sh. Dry-run returns synthetic DRYRUN-* ids."""
-        dry = _truthy(config.get("A2MC_DRY_RUN", "")) or not shutil.which("sbatch")
+        mode = _exec_mode(config)
+        dry = _truthy(config.get("A2MC_DRY_RUN", ""))
+
+        # An ABSENT sbatch used to fall through to a silent dry run: every case staged,
+        # nothing launched, a synthetic id written to job_id.txt, and no warning. On a
+        # workstation that is indistinguishable from a successful submission, and a monitor
+        # armed on it waits forever for jobs that never existed. HPC behaviour is unchanged
+        # -- where sbatch exists this branch is never reached.
+        if mode == "hpc" and not dry and not shutil.which("sbatch"):
+            raise RuntimeError(
+                "no `sbatch` on PATH, so the HPC submit path cannot run.\n"
+                "  To run on this machine instead:  export A2MC_EXEC_MODE=local\n"
+                "  To stage without running:        export A2MC_DRY_RUN=1\n"
+                "Refusing rather than silently staging: a dry run writes plausible job ids "
+                "and launches nothing, which reads exactly like success.")
+
+        if mode == "local" and not dry:
+            for cp in case_paths:
+                if not (Path(cp) / "submit.sh").exists():
+                    raise FileNotFoundError(f"no submit.sh in case {cp}")
+            workers = _local_workers(config)
+            root = Path(case_paths[0]).resolve().parent if case_paths else Path.cwd()
+            pid = _dispatch_local(case_paths, workers, root)
+            job_ids = []
+            for i, cp in enumerate(case_paths):
+                jid = f"LOCAL-{pid}-{i:04d}"
+                (Path(cp) / "job_id.txt").write_text(jid + "\n")
+                job_ids.append(jid)
+            return job_ids
+
         job_ids: List[str] = []
         for i, cp in enumerate(case_paths):
             submit = Path(cp) / "submit.sh"

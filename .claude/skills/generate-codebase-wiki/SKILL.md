@@ -172,33 +172,3 @@ list.
   a version-pinned manuscript branch are the reproducibility anchor; regenerate them only
   with explicit reason.
 
-## Changelog
-
-- 2026-08-14: **Added Workflow C — targeted drift refresh**, plus two new Step-1 rows (skip for an
-  in-flight experiment branch; Workflow C once a verified change lands in the working model). Signal:
-  NERSC's traversal
-  prohibition made the wiki load-bearing for compliance, not just quality — it is the in-repo way to
-  answer a source question without walking a checkout on a shared filesystem
-  ([[feedback_nersc_no_recursive_traversal]]) — which immediately raised "what if the wiki has
-  drifted?". Measured on the api-43 checkout: 14 changed files, and the obvious page-selection filter
-  ("cites a changed file") selected **55 of 56** pages because core modules are cited everywhere,
-  whereas selecting on whether a citation lands **inside a changed hunk** selected **6**. Workflow C
-  encodes that discriminator, the copy-forward-into-a-NEW-pinned-directory rule (editing in place would
-  make the commit suffix a lie), the "what was regenerated vs carried over" disclosure, and the
-  `validate-rag-chain` follow-up that catches carried-over pages whose lines shifted further than the
-  hunk analysis predicted. **Trigger decision (PI):** fire when a **verified change lands in the
-  working model** — an experiment branch merging to the fork's `main` after paired verification — NOT
-  on an api-epoch milestone. FATES milestones are rare and expensive, so milestone-gating would leave
-  the wiki stale for months against the tree `A2MC_MODEL_PATH` actually resolves to, which is the tree
-  the agent reasons about. An in-flight branch stays a **skip**: it may still be reworked or abandoned.
-- 2026-08-12: **Topic sizing now weighted by source LINE COUNT, not just file count** (Step 2 +
-  "Cost & footguns"), plus a new named-output/calibration-variable trap. EcoSIM's `microbial_bgc`
-  topic (9 files, 9,811 lines, including the 4,393-line `MicBGCFGMod.F90`) got the same 2-doc
-  budget as much smaller topics — a calibration-critical mechanism (the `RCCZ` mortality-recycling
-  equation, at line 4132 of 4393) and the site's own calibration target (`CO2_SEMIS_FLX_col`,
-  defined in a different topic entirely, `io_and_forcing`) were both never documented, discovered
-  only when a same-day source investigation went looking for them directly. Root cause + fix in
-  `memory/dev_logs_adapterkit/20260812b_*`; roadmap doc gets the matching detail (topic-decomposition
-  bullet + pitfalls-table row + an "Output-registry extraction" extension covering models with no
-  CDL at all, e.g. PFLOTRAN's text/deck-based output).
-- 2026-06-17: Initial version — distilled from docs/a2mc_reference/codebase_wiki_generation_roadmap.md (Workflow A/B; FATES/ELM/EcoSIM proven examples).

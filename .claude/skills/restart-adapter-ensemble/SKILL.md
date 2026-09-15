@@ -121,12 +121,3 @@ Prefer a **runtime switch** (a namelist variable) over a second build: one binar
 
 - **Branch fit:** adapter-kit. It presumes `models/<name>/` backends and `tools/model_ensemble_status.py`, which exist only where adapter models do.
 
-## Changelog
-
-- 2026-08-21: **`--ensemble-jobs` is now called out as mandatory for arrays and task-farms.** The
-  completion section pointed at `model_ensemble_status.py` as though its scheduler reconciliation
-  always worked; for the two submission layouts this skill is most often used with, it never did —
-  no per-case `job_id.txt` exists, so 1,129 dead EcoSIM_BioCON R3 cases were published as RUNNING
-  against terminal arrays. Signal: reconciling that count at the R3 drain.
-
-- 2026-08-21: Initial version — distilled from the EcoSIM_BioCON R3 prefix recovery, where 853 of 11,425 cases failed and none of it was visible from the exit status. `sacct` reported COMPLETED for every case; the launcher's tape check reported COMPLETE because EcoSIM creates its history tape at initialisation; and the two submission arms recorded the identical SIGFPE two different ways, hiding 230 of them until the `.0` step's ExitCode was read. Sources: the EcoSIM model-dev records of 2026-08-20 and 2026-08-21, and `use_cases/EcoSIM_BioCON/memory/phase_results/20260820a_phase0_design_r03_*/RELAUNCH_FAILED_CASES.md`.

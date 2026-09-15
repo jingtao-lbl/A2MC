@@ -146,7 +146,7 @@
     {
       "node_type": "Mechanism",
       "name": "Leaf_Protein_Colimitation",
-      "description": "Leaf protein, which carries the photosynthetic machinery, accumulates at the LESSER of what the available nitrogen and the available phosphorus allow. Leaf protein per unit leaf area then sets mesophyll Rubisco surface density, which sets Vmax, which sets the CO2-limited carboxylation rate. So the two leaf stoichiometric CEILINGS, CNLF and CPLF, are two branches of ONE min(), and only the branch that is currently smaller has any leverage.",
+      "description": "Leaf protein, which carries the photosynthetic machinery, accumulates at the LESSER of what the available nitrogen and the available phosphorus allow. Leaf protein per unit leaf area then sets mesophyll Rubisco surface density, which sets Vmax, which sets the CO2-limited carboxylation rate. Each branch is a nutrient SUPPLY times a protein-per-nutrient COEFFICIENT: the nitrogen branch is GrowthElms(ielmn) scaled by CNWL and the phosphorus branch GrowthElms(ielmp) scaled by CPWL, with the supplies themselves set by the leaf stoichiometric ceilings CNLF and CPLF. So FOUR parameters meet in ONE min(), two per branch, and only the branch that is currently smaller has any leverage on photosynthetic capacity.",
       "code_location": "PlantBranchMod.F90:3547 (LeafProteinC_node += AMIN1(GrowthElms(ielmn)*rProteinC2LeafN_pft, GrowthElms(ielmp)*rProteinC2LeafP_pft)); StomatesMod.F90:414 (MesophyllRubiscoSurfDensity = LeafRubisco2Protein_pft*ProteinCLeafAreaDensity); StomatesMod.F90:433-435 (Vmax4RubiscoCarboxy_node); StomatesMod.F90:439 (CO2lmtRubiscoCarboxyRate_node). Leaf P supplied by PlantBranchMod.F90:392, Growth_brch(ielmp,leaf) = Growth_brch(ielmc,leaf)*fPCLFW_brch.",
       "module": null,
       "id": "mechanism:Leaf_Protein_Colimitation"
@@ -372,7 +372,17 @@
       "description": "specific C3 rubisco carboxylase",
       "units": "umol C g-1 s-1",
       "bounds": null,
-      "code_location": null,
+      "code_location": "StomatesMod.F90:433 (C3Photosynthesis)",
+      "guard": {
+        "flag": "ICTYP",
+        "flag_variable": "iPlantPhotosynsType_pft",
+        "dispatch": "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)",
+        "selects": {
+          "3": "C3 -- StomatesMod.F90:433 -- Vcmax = VCMX * MesophyllRubiscoSurfDensity * TFN_Carboxy",
+          "4": "C4 -- StomatesMod.F90:631 -- bundle-sheath carboxylation"
+        },
+        "note": "This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the ROUTINE, not just a line: `git grep` returns every branch in source order and reading the first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`."
+      },
       "id": "parameter:VCMX"
     },
     {
@@ -383,7 +393,17 @@
       "description": "specific rubisco oxygenase activity",
       "units": "umol O g-1 s-1",
       "bounds": null,
-      "code_location": null,
+      "code_location": "StomatesMod.F90:434 (C3Photosynthesis)",
+      "guard": {
+        "flag": "ICTYP",
+        "flag_variable": "iPlantPhotosynsType_pft",
+        "dispatch": "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)",
+        "selects": {
+          "3": "C3 -- StomatesMod.F90:434 -- Vomax, feeds the CO2 compensation point",
+          "4": "C4 -- StomatesMod.F90:633"
+        },
+        "note": "This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the ROUTINE, not just a line: `git grep` returns every branch in source order and reading the first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`."
+      },
       "id": "parameter:VOMX"
     },
     {
@@ -444,7 +464,17 @@
       "description": "fraction of leaf protein in rubisco",
       "units": "none",
       "bounds": null,
-      "code_location": null,
+      "code_location": "StomatesMod.F90:414 (C3Photosynthesis)",
+      "guard": {
+        "flag": "ICTYP",
+        "flag_variable": "iPlantPhotosynsType_pft",
+        "dispatch": "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)",
+        "selects": {
+          "3": "C3 -- StomatesMod.F90:414 -- MesophyllRubiscoSurfDensity = RUBP*P",
+          "4": "C4 -- StomatesMod.F90:611 -- bundle-sheath rubisco density"
+        },
+        "note": "This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the ROUTINE, not just a line: `git grep` returns every branch in source order and reading the first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`."
+      },
       "id": "parameter:RUBP"
     },
     {
@@ -466,7 +496,17 @@
       "description": "specific chlorophyll activity",
       "units": "umol e- g-1 s-1",
       "bounds": null,
-      "code_location": null,
+      "code_location": "StomatesMod.F90:453 (C3Photosynthesis)",
+      "guard": {
+        "flag": "ICTYP",
+        "flag_variable": "iPlantPhotosynsType_pft",
+        "dispatch": "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)",
+        "selects": {
+          "3": "C3 -- StomatesMod.F90:453 -- Jmax = ETMX * MesophyllChlDensity",
+          "4": "C4 -- StomatesMod.F90:586 (mesophyll) and :650 (bundle sheath)"
+        },
+        "note": "This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the ROUTINE, not just a line: `git grep` returns every branch in source order and reading the first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`."
+      },
       "id": "parameter:ETMX"
     },
     {
@@ -477,19 +517,18 @@
       "description": "fraction of leaf protein in mesophyll(C3) chlorophyll",
       "units": "none",
       "bounds": null,
-      "code_location": null,
+      "code_location": "StomatesMod.F90:415 (C3Photosynthesis)",
+      "guard": {
+        "flag": "ICTYP",
+        "flag_variable": "iPlantPhotosynsType_pft",
+        "dispatch": "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)",
+        "selects": {
+          "3": "C3 -- StomatesMod.F90:415 -- MesophyllChlDensity = CHL*P/3.5. NO fCHLMESO TERM ON THIS PATH.",
+          "4": "C4 -- StomatesMod.F90:556 mesophyll (*fCHLMESO/3.7) and :612 bundle sheath (*(1-fCHLMESO)/5.5)"
+        },
+        "note": "This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the ROUTINE, not just a line: `git grep` returns every branch in source order and reading the first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`."
+      },
       "id": "parameter:CHL"
-    },
-    {
-      "node_type": "Parameter",
-      "name": "CHL4",
-      "pft": null,
-      "category": "photosynthesis",
-      "description": "fraction of leaf protein in bundle sheath(C4) chlorophyll",
-      "units": "none",
-      "bounds": null,
-      "code_location": null,
-      "id": "parameter:CHL4"
     },
     {
       "node_type": "Parameter",
@@ -1027,7 +1066,17 @@
       "description": "cuticular resistance",
       "units": "s m-1",
       "bounds": null,
-      "code_location": null,
+      "code_location": "PhotoSynsMod.F90:131 (ComputeGPP_C3)",
+      "guard": {
+        "flag": "ICTYP",
+        "flag_variable": "iPlantPhotosynsType_pft",
+        "dispatch": "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)",
+        "selects": {
+          "3": "C3 -- PhotoSynsMod.F90:131-132 -- cuticular resistance in the C3 GPP solve",
+          "4": "C4 -- PhotoSynsMod.F90:328-329 -- the C4 GPP solve"
+        },
+        "note": "This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the ROUTINE, not just a line: `git grep` returns every branch in source order and reading the first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`."
+      },
       "id": "parameter:RSMX"
     },
     {
@@ -1329,6 +1378,193 @@
     },
     {
       "node_type": "Parameter",
+      "name": "IEBTYP",
+      "pft": null,
+      "category": "other",
+      "description": "Embrophyte type",
+      "units": "none",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:IEBTYP"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CNWL",
+      "pft": null,
+      "category": "stoichiometry",
+      "description": "Protein C to leaf N ratio in plant leaves",
+      "units": "gC gN-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CNWL"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CNWR",
+      "pft": null,
+      "category": "roots",
+      "description": "Protein C to root N ratio in plant roots",
+      "units": "gC gN-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CNWR"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CPWL",
+      "pft": null,
+      "category": "stoichiometry",
+      "description": "Protein C to leaf P ratio in plant leaves",
+      "units": "gC gP-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CPWL"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CPWR",
+      "pft": null,
+      "category": "roots",
+      "description": "Protein C to root P ratio in plant roots",
+      "units": "gC gP-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CPWR"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CNRTLIG",
+      "pft": null,
+      "category": "roots",
+      "description": "NC ratio in plant lignified root",
+      "units": "gN gC-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CNRTLIG"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "CPRTLIG",
+      "pft": null,
+      "category": "roots",
+      "description": "PC ratio in plant lignified root",
+      "units": "gP gC-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:CPRTLIG"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "GRW2L",
+      "pft": null,
+      "category": "other",
+      "description": "Prolate spheroid seed width to length at planting",
+      "units": "none",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:GRW2L"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "KLGMAX",
+      "pft": null,
+      "category": "roots",
+      "description": "Maximum lignification rate of coarse roots",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:KLGMAX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "KLGMM",
+      "pft": null,
+      "category": "roots",
+      "description": "Half saturation rate for coarse root lignification",
+      "units": "h-1",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:KLGMM"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "MOPHGEN",
+      "pft": null,
+      "category": "other",
+      "description": "Baseline morphogen signal strength for secondary growth",
+      "units": "%",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:MOPHGEN"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "PhiMAX",
+      "pft": null,
+      "category": "other",
+      "description": "",
+      "units": "unknown",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:PhiMAX"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "PhiMEAN",
+      "pft": null,
+      "category": "roots",
+      "description": "the mean fraction found in the root as lumen for non-tree roots",
+      "units": "m2 m-2",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:PhiMEAN"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "PhiMIN",
+      "pft": null,
+      "category": "other",
+      "description": "Asymptotic limit area fraction of the xyxlem area as lumen for dicots",
+      "units": "m2 m-2",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:PhiMIN"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "R95MAT",
+      "pft": null,
+      "category": "other",
+      "description": "Critical radius where the woody radius is considered 95% mature",
+      "units": "m",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:R95MAT"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "ROOTMAGE",
+      "pft": null,
+      "category": "roots",
+      "description": "Root maturation age to trigger secondary growth",
+      "units": "h",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:ROOTMAGE"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fCHLMESO",
+      "pft": null,
+      "category": "photosynthesis",
+      "description": "Fraction of chlorophyll binded protein in mesophyll",
+      "units": "none",
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fCHLMESO"
+    },
+    {
+      "node_type": "Parameter",
       "name": "DCKI",
       "pft": null,
       "category": "respiration",
@@ -1430,6 +1666,8 @@
       "units": "gH m-3",
       "bounds": null,
       "code_location": null,
+      "file_backed": false,
+      "file_backed_note": "Used in the physics but NOT read from the parameter file -- the model uses a compiled-in constant. Writing this variable into the file is a SILENT NO-OP, so it cannot be calibrated until it is promoted to a file-read parameter.",
       "id": "parameter:H2KI"
     },
     {
@@ -1452,6 +1690,8 @@
       "units": "gC m-3",
       "bounds": null,
       "code_location": null,
+      "file_backed": false,
+      "file_backed_note": "Used in the physics but NOT read from the parameter file -- the model uses a compiled-in constant. Writing this variable into the file is a SILENT NO-OP, so it cannot be calibrated until it is promoted to a file-read parameter.",
       "id": "parameter:OAKI"
     },
     {
@@ -6888,7 +7128,7 @@
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:photosynthesis",
-      "target": "parameter:CHL4"
+      "target": "parameter:fCHLMESO"
     },
     {
       "relation_type": "contains",
@@ -7242,6 +7482,54 @@
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:roots",
+      "target": "parameter:CNWR"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "parameter:CPWR"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "parameter:CNRTLIG"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "parameter:CPRTLIG"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "parameter:KLGMAX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "parameter:KLGMM"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "parameter:PhiMEAN"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:roots",
+      "target": "parameter:ROOTMAGE"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:roots",
       "target": "mechanism:Root_Hydraulic_Architecture"
     },
     {
@@ -7303,6 +7591,18 @@
       "weight": 1.0,
       "source": "category:stoichiometry",
       "target": "parameter:CPRT"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:stoichiometry",
+      "target": "parameter:CNWL"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:stoichiometry",
+      "target": "parameter:CPWL"
     },
     {
       "relation_type": "contains",
@@ -8297,6 +8597,42 @@
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:other",
+      "target": "parameter:IEBTYP"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:GRW2L"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:MOPHGEN"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:PhiMAX"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:PhiMIN"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
+      "target": "parameter:R95MAT"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:other",
       "target": "parameter:RCCX"
     },
     {
@@ -8730,6 +9066,24 @@
       "weight": 1.0,
       "source": "parameter:CHL",
       "target": "mechanism:Grant_Rubisco_C3_Kinetics"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CHL",
+      "target": "output:CAN_GPP_pft"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CHL",
+      "target": "parameter:ETMX"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CHL",
+      "target": "parameter:RUBP"
     },
     {
       "relation_type": "controls",
@@ -9865,6 +10219,91 @@
       "weight": 1.0,
       "source": "parameter:CPND",
       "target": "mechanism:Symbiotic_N2_Fixation"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:CNWL",
+      "target": "mechanism:Leaf_Protein_Colimitation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CNWL",
+      "target": "output:CAN_GPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CNWL",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CNWL",
+      "target": "output:LEAF_C_pft"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CNWL",
+      "target": "parameter:CPWL"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CNWL",
+      "target": "parameter:CNLF"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CNWL",
+      "target": "parameter:CHL"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "driver_kind": "indirect",
+      "source": "parameter:CNWL",
+      "target": "output:ECO_ET_col"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:CPWL",
+      "target": "mechanism:Leaf_Protein_Colimitation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CPWL",
+      "target": "output:CAN_GPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CPWL",
+      "target": "output:NPP_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:CPWL",
+      "target": "output:LEAF_C_pft"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CPWL",
+      "target": "parameter:CNWL"
+    },
+    {
+      "relation_type": "depends_on",
+      "weight": 1.0,
+      "source": "parameter:CPWL",
+      "target": "parameter:CPLF"
     },
     {
       "relation_type": "controls",

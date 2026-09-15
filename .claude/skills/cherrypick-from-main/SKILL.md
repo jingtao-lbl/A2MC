@@ -224,13 +224,3 @@ Worked example, both mechanisms in one session:
 - Memory `project_adapter_kit_branch_strategy` — the decision record.
 - `CLAUDE.md` Rule 11 (verify branch before commit/push) — this skill's Step 0.
 
-## Changelog
-
-- 2026-08-02 — **Step 1 revised (PI): output is a prompt to check, not an automatic violation.** The rule is
-  never FORK a shared file and never break FATES — not never touch it. Generalizing a model-relevant
-  hardcoding is the adapter kit's PURPOSE: `main` may stay FATES-hardcoded because it is the ELM/FATES line,
-  adapter-kit may not, because A2MC must do the same thing for every onboarded model. As written the step
-  would have blocked every future cherry-pick over `tools/yaml_wiki_validator.py` and then been ignored.
-- 2026-08-01 — Added **Step 7: the OTHER inbound direction** (a feature branch landing into `adapter-kit`), where the default is **inverted** — full merge, not cherry-pick, because a feature branch is meant to land back while `main` never is. Covers: read the branch's handoff first (ATS's forbade merging); split a **contaminated** branch by LAYER not by commit; order multi-branch landings by evidence and compute the collision set up front; and two direction-specific traps (a branch that bumped versions — freeze the number until all have landed; carried-over citations to branch-only paths). **Kept the name**: a generic `cherrypick-from-otherbranch` would imply one policy covers both directions when the defaults are opposite, and 13 files cite this name. Also fixed by the required end-to-end re-read: a stale `§5` pointer to what is Step 6, a verify gate that named only EcoSIM when `models/` now holds three adapters, and a title scoped to `main` only. Worked example: `20260801b`.
-- 2026-07-30 — **Renamed `merge-from-main` → `cherrypick-from-main` and inverted the default.** Practice changed on 2026-07-15 (last wholesale merge `f5529f6`): `main` now carries Kougarok site-calibration work that `adapter-kit` deliberately omits, so the transfer is an audited SELECTIVE cherry-pick and a full merge is the rare fallback (new Step 6, with a check that gates it). New Step 3 (audit + categorize by file path, plus the tree-diff pass that catches deltas bundled inside port commits) and Step 4 (batch cherry-pick). States that being "behind main" is the normal correct state, not a backlog. The Step-1 invariant, the 7 conflict-prone files, and the verify gate are unchanged and still apply.
-- 2026-07-12 — Created to guard the docs/38 one-way additive merge (main → adapter-kit): conflict-prone file list, no-FATES-rewrite invariant, verify gate, cherry-pick guidance.

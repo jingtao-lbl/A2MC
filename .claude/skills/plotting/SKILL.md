@@ -176,7 +176,8 @@ Like the ensemble template, this **overrides generic rule 6** within its scope: 
   **All seven phase skills** — `phase0-design`, `phase1-exploration`, `phase2-screening`,
   `phase3-diagnosis`, `phase4-hypothesis`, `phase5-testing`, `phase6-refinement` — plus
   `calibration-discipline`, `calibration-goal`, `calibration-log`, `offline-testing-workflow`,
-  `scientific-analysis`, `summarize-calibration-round`, `compare-calibration-rounds`.
+  `scientific-analysis`, `summarize-calibration-round`, `compare-calibration-rounds`,
+  `build-surrogate`.
 - Downstream of a figure, and NOT part of the reciprocal set above (they consume figures rather
   than produce them, so they carry no obligation to name this skill): `markdown-to-pdf` renders the
   doc that embeds them, `write-report` is the report that embeds them. The biomass time-series
@@ -186,31 +187,3 @@ Like the ensemble template, this **overrides generic rule 6** within its scope: 
 
 - **Branch fit:** generic matplotlib conventions — applies on any branch and any model configuration.
 
-## Changelog
-
-- 2026-09-04: **Adds the A2MC report-figure house style, and a footgun about what the view-check is FOR.** PI-directed, after pointing at a figure and asking that its style be followed. The style was invented in one case, produced five figures across two folders, was promoted to a case template on a second occasion — and was then missed TWICE, once by a session that never loaded this skill and once by a session that did load it but searched `scripts/` for a matching figure TYPE rather than for the STYLE, then re-derived the whole thing from source to a **byte-identical** rcParams block. The conventions lived in six files across two cases while *Okabe-Ito*, *panel letter*, *spines* and *in-panel* appeared here zero times, so the skill could not have helped either session. New: the house-style section (scoped explicitly to NON-ensemble figures, so it cannot be read as overriding the fixed ensemble palette), checklist item 6b (look in `scripts/` for the style, not the quantity), and two footguns — searching by figure type, and treating the view-check as a layout check when its more valuable catch is a false CLAIM on the figure (three of them on one figure the same day). **Reconciled in the same pass (refine-skill step 5), because the edit contradicted three things it did not touch:** the Setup block's `dpi` 135 and its `>200 rarely needed` note, rule 1's *if in doubt, bigger* against the house style's smaller type, and rule 6's *grey = baseline/reference* against the house style's black. The first two are answered by saying the two rcParams blocks are **matched sets, not independent knobs** — take one whole, do not mix — and the third by a carve-out beside the one the ensemble template already needed. **No trigger change:** `description` is untouched, so when this skill fires is unaffected.
-- 2026-08-16 (later): **The reciprocity invariant is now ENFORCED, not just written down.**
-  `tools/check_skill_registry.py::reciprocity_check` reads the `**Reciprocal skills**` bullet and
-  fails the pre-commit gate if any skill named there does not name `plotting` back. The bullet was
-  split so it carries ONLY the reciprocal names — `markdown-to-pdf` and `write-report` moved to a
-  separate bullet, since they consume figures rather than produce them and carry no obligation.
-  7 tests, each asserting a way the check must FAIL. Details: `20260816d_*`.
-- 2026-08-16: **Cross-references made BIDIRECTIONAL, and the list widened to all seven phase skills
-  plus `calibration-discipline` / `calibration-goal` / `calibration-log`.** This section previously
-  claimed `phase0-design`, `phase3-diagnosis` and `scientific-analysis` applied these conventions
-  while none of the three mentioned this skill — a one-directional link, the same shape as the
-  memory-to-log provenance gap `.claude_memory/CLAUDE.md` documents. Consequence, measured: an
-  EcoSIM_Lusignan session produced three sets of figures across two days without ever loading this
-  skill, and the first invocation immediately caught a statistics box drawn over the data — exactly
-  what the view-the-rendered-PNG rule exists for. PI-directed, and PI-widened from the three skills
-  originally proposed to every phase ("every phase needs the plotting skill").
-- 2026-07-16: Added **"The A2MC ensemble figure template (biomass vs targets)"** — the fixed semantic color
-  scheme (purple cloud / red best-fit / blue most-targets / black-dashed control / black obs diamond / yellow
-  ±20% band / gray phase boundaries), the 3-PFT×2-organ layout + `g C m$^{-2}$` units, the zorder law (obs on
-  top), and the alpha-scales-with-case-count footgun, with `tools/plot_ensemble_cases.py` as the reference
-  implementation; rule 6 defers to it. Cross-refs name the ensemble-figure-producing skills. Ported from demo
-  `e247330`; PFT layout labels adapted to api-43 (10/11/12) — main's `plot_ensemble_cases.py` carries the same
-  style constants (verified).
-- 2026-07-09: Ported to `main` from demo `5ef9cc7` (v3.13) — distilled from the R5 mass-balance report
-  figures (demo branch), where a legend-on-annotation overlap was caught only by viewing the rendered PNG.
-  The "verify by viewing" step is the load-bearing rule. Added main's `modes:` block.

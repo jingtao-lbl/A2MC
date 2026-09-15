@@ -2,7 +2,7 @@
 name: a2mc-init
 visibility: public
 category: meta
-description: First-run interactive setup for the offline agent — the per-CLONE half of getting started, run once when A2MC is first used on a machine or in a fresh clone. Greet and gauge the user's experience, verify the model checkout against the RAG milestone registry, offer fork-safe remotes on that checkout, and write the machine config (a2mc_config.sh for a CIME model, a2mc_noncime_config.sh for a standalone one), then ROUTE onward — to onboard-model for a model A2MC has never seen, or to onboard-case to create the calibration case itself. Use when the user says "set up A2MC", "first time using A2MC", "help me get started / onboard me to A2MC", "configure A2MC on this machine". DISTINCT from onboard-session (which resumes an ALREADY-configured setup) and from onboard-case (which creates a case and is repeatable).
+description: First-run interactive setup for the offline agent — the per-CLONE half of getting started, run once when A2MC is first used on a machine or in a fresh clone. Greet and gauge the user's experience, verify the model checkout against the RAG milestone registry, offer fork-safe remotes on that checkout, and write the machine config (a2mc_config.sh for a CIME model, a2mc_noncime_config.sh for a standalone one), then ROUTE onward — to onboard-model for a model A2MC has never seen, or to onboard-case to create the calibration case itself. Use when the user says "set up A2MC", "first time using A2MC", "help me get started / onboard me to A2MC", "configure A2MC on this machine", "wire up my clone", "finish the wire-up steps", "help me finish setting up", or introduces themselves as a new user of this clone. DISTINCT from onboard-session (which resumes an ALREADY-configured setup) and from onboard-case (which creates a case and is repeatable).
 modes:
   requires_fates: false
   nutrient_pathway: any
@@ -96,6 +96,9 @@ example, and have a direct analogue in any adapter model (its own milestone/prof
 grouping axis) — say the analogue, not the FATES word, when the user is on another model:
 
 1. **Two-layer configuration.** `a2mc_config.sh` holds *machine* settings (HPC allocation, output root, model checkout `A2MC_MODEL_PATH`, Python env, AI provider). `use_cases/{Model}_{Case}/config/<site>_config.sh` holds *site* settings **and overrides** the machine defaults for this site (spin-up protocol, PFTs, ensemble name, parameter/target files). Since v2.306 **the site config auto-sources the machine config** it needs (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, so `source <site>_config.sh` alone is enough and the explicit `source a2mc_config.sh` first is a no-op. Either way the machine config loads **first** and the site config wins on any overlap, so nothing site-specific belongs in `a2mc_config.sh`.
+
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
 2. **A2MC is mode-aware.** What it retrieves and how it runs depend on the *configuration* — ELM with or without FATES, carbon-only vs nutrient-enabled (CNP), ECA vs RD, and the FATES **milestone** matched from the checkout's commits (Step 2). Resolve this early so the right knowledge profile loads.
 3. **The goal sets *what you calibrate*, not by itself the *run protocol*.** Your science question + data set the **target granularity** — ecosystem-level fluxes/states (tower/MODIS GPP, ET, NEE) vs per-PFT quantities (per-PFT biomass, phenology). That decides whether you must enumerate PFTs (`onboard-case` step 1.2). It does **not** decide spin-up: **spin-up is a separate decision** (`onboard-case` step 1B) — even a GPP-only run often needs spin-up to equilibrate carbon/soil pools. Ask; never infer "no spin-up" from an ecosystem goal.
 4. **Grouping axis — for ELM-FATES, PFTs, and ELM vs FATES are different systems.** ELM's surface-dataset PFTs are **static** (prescribed fractional cover, fixed in time); FATES's PFTs are **dynamic** (they compete and evolve demographically). They have separate id mappings — a calibration target's PFT id refers to the **FATES** PFT list (read from the base parameter file, Step 2), *not* the ELM surfdata PFTs. Confirm which system the user means when they say "PFT."
@@ -104,6 +107,52 @@ grouping axis) — say the analogue, not the FATES word, when the user is on ano
 **Before anything else — confirm which model, and whether A2MC already has it (else route to `onboard-model` FIRST).** `a2mc-init` sets a *clone* up for a model A2MC already supports; it does **not** teach A2MC a new model. A2MC supports ELM / ELM-FATES plus any model already onboarded in *this* repo — i.e. one with a registered `rag/milestones.json` profile and a `models/<name>/` adapter (run `python scripts/rag_list.py` to see them). Ask the user which model they are calibrating:
 - **ELM / ELM-FATES, or a model already onboarded here** → continue with this skill; the milestone is confirmed mechanically in Step 2, and the case itself is built by `onboard-case` (Step 4).
 - **A brand-new model not yet onboarded** (a different land/ecosystem model — CLM/CTSM, ATS, TEM, ReSOM, … — with no `rag/milestones.json` entry + `models/<name>/` adapter) → **STOP and invoke the `onboard-model` skill first.** It builds the model's adapter + source-grounded knowledge chain (wiki → RAG → curated seed → milestone) so A2MC can reason about it. That is a prerequisite; once the model is onboarded, `onboard-model` hands off to `onboard-case` for the site. Do **not** run the FATES/ELM-specific Step 2 tooling on a non-ELM checkout.
+
+## Step 1 — Wire the clone, and learn who you are working with
+
+**Do this FIRST, before the checkout and the config.** Four things live outside the repository
+tree or in the per-clone git index, so git cannot carry them and every fresh clone starts without
+them. None is a matter of taste: without `core.hooksPath` the repo's own commit checks never fire
+and a malformed message is accepted rather than refused; without the `skip-worktree` flag a
+database file rewritten on every RAG read shows as permanently modified and gets swept into an
+unrelated commit; without the memory symlink the agent's memories go to a personal directory and
+reach nobody; without an author name A2MC stamps the wrong person onto every log it writes.
+
+```bash
+scripts/setup_clone.sh --dry-run     # preview
+scripts/setup_clone.sh               # idempotent; safe to re-run
+python3 tools/check_clone_setup.py   # exit 0 = wired. Setup is NOT done until this passes
+```
+
+**The name is asked, never inferred** ([[feedback_verify_or_ask_hard_stops]]). Ask how the user
+would like to be credited in logs, then record it:
+
+```bash
+python3 tools/whoami.py --set "<the name they gave>"
+```
+
+`tools/whoami.py` resolves `$A2MC_USER_NAME` → `.me` → `git config user.name`, and **fails rather
+than defaulting** when none resolves. It also flags a name taken from git as a GUESS, because that
+field is usually a handle. This matters more than it looks: a case folder is often DELIVERED,
+emailed and unpacked under `use_cases/`, and it arrives full of logs authored by whoever ran the
+previous round, so an agent inferring the convention from neighbouring files has a plausible wrong
+answer sitting in the same directory. `.me` is gitignored and per-clone on purpose; the machine
+configs are TRACKED, so a name written into one travels to everyone who takes that clone.
+
+**Then ask about GitHub, and take no for an answer.** A2MC needs no remote: git is fully
+functional offline, and a user can run every phase, keep full history and never create an account.
+A remote is recommended rather than required, so route on what they say:
+
+| they say | do |
+|---|---|
+| they have an account | record the handle; it is what makes the fork-safe remotes in Step 2b possible |
+| no account, happy local | confirm that nothing in A2MC requires one, and move on without pressing |
+| no account, wary of publishing work | suggest a **PRIVATE** repository: full history and off-machine backup with nothing visible to anyone else. A2MC itself is developed this way, in a private repo with a filtered one-way publish, so the pattern is the project's own |
+
+**This step is easy to skip and nothing downstream will mention it.** `tools/check_stage_ready.py`
+reports stage 4, "setup is done", as soon as any case carries offline workflow state, and a
+delivered case supplies that on the first session. The clone's wiring and the case's maturity are
+independent facts; the per-clone rows now run at every stage for exactly that reason.
 
 ## Step 2 — Verify the checkout and RAG milestone
 
@@ -224,65 +273,3 @@ recreate the drift that split them out.
 - `docs/a2mc_reference/user_guide.md` §1–§3 (install/config/run), §6 (knowledge system); `rag_reference.md` (RAG query how-to + Python-3.10 binary).
 - `docs/a2mc_reference/version_association_howto.md` — **match ELM + FATES commits to a registered RAG milestone** (the Step-2 milestone step: `rag_match.py`, drift tiers, the five scripts); `version_association_workflow.md`, `mode_aware_workflow.md` — deeper milestone + mode detail.
 
-## Changelog
-- 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. Principle 1 said "You always `source a2mc_config.sh` **then** `source <site>_config.sh`"; the always is gone, the precedence it was protecting is restated.
-- 2026-08-24: **The shell placeholder is `$CASE_DIR`, not `$SITE`, and it holds `{Model}_{Case}`.** PI-directed normalisation across the whole shipped surface: `use_cases/{site}`, `use_cases/<site>` and `use_cases/<Model>_<Case>` are gone, one canonical brace form remains. The old name is what the 2026-08-07 entry below flagged and did not fix: a variable called `SITE` invites `use_cases/ELM-FATES_Kougarok` over `use_cases/FATES_Kougarok`, which is exactly the drift the naming rule exists to stop. The entry below keeps `$SITE` because it is describing the old name.
-
-
-- 2026-08-02: **Split — the case arc moved to `onboard-case`.** This skill was two things wearing one
-  name: per-clone setup (greet, checkout, milestone, fork guard, machine config) and per-case setup
-  (interview, research plan, use case, parameter list, preflight, Phase-0 hand-off). Because its
-  description said *first* run, **a second case had no entry point** — and the naming rule drifted, with
-  `use_cases/$SITE` (no model component) on 22 lines here against `use_cases/<name>_<site>/` in
-  `onboard-model`. Steps 1, 4, 4b, 5 and 6 were **moved** (not copied) into `onboard-case`, which now
-  owns case creation alone; Step 4 here is a routing table. Case-specific footguns moved with them.
-  Audit: `20260802e`.
-- 2026-07-11: **Step 0 (gauge experience + orient) + `calibration_rounds.yaml` in the flow + goal-conditional Step-5 gate.**
-  Added **Step 0**: first **gauge the user's ELM/ELM-FATES experience** and adapt session-wide depth
-  (teach + orient novices; defer to experts, don't impose defaults over an explicit choice), then orient
-  (two-layer config where the site config *overrides* the machine config, mode-awareness, the 7-phase
-  loop). Two model-fidelity corrections folded in (PI): **spin-up is a separate decision from target
-  granularity** (even a GPP goal may need spin-up — interviewed in 1B, not inferred), and **ELM's static
-  surfdata PFTs are distinct from FATES's dynamic PFTs** (a target's PFT id is a FATES id from the base
-  file — noted in Step 0 + interview 1.2). Fixed a stale var name (`A2MC_PFT_LIST` → `A2MC_PFTS`). Step 4 (b) now generates the **round
-  record** from the sourced config (`tools/generate_calibration_rounds.py --write` → fill TODO
-  narrative → `check_calibration_rounds.py`) instead of hand-authoring it. **Step 5** replaced with
-  `tools/check_setup_ready.py`, a single **goal-conditional** readiness gate (universal checks +
-  `N/A` for PFT inventory on ecosystem goals, FATES/RAG when FATES off, spin-up reported-not-required;
-  wraps `validate_targets_config.py` + `check_calibration_rounds.py`). New footguns (hand-authoring
-  the round record; naming a milestone without `rag_match.py`; treating `N/A` as a blocker) + cross-ref
-  to `version_association_howto.md`. Distilled from the api-31→api-43 Kougarok migration (dev_logs
-  20260710o–y, 20260711a) — that migration IS the new-site/new-user prep path. Requested by the PI.
-- 2026-07-09: **Step 2b — offer fork-safe model-checkout remotes.** After verifying the checkout, the agent
-  now checks the model repo's git remotes (E3SM root + FATES submodule); if `origin` is an upstream URL with
-  push enabled, it asks the user for their fork URLs and (with consent) adds a `fork` remote + disables push
-  to `origin`, so a stray `git push origin` can't reach upstream. Generic (no host assumptions); prefers SSH
-  (HTTPS PAT without `workflow` scope is refused on `.github/workflows/`). Pairs with the model-dev track
-  (`add-fates-parameter`, `feedback_model_source_push_fork_only`). Requested by the PI.
-- 2026-07-09: **Variant-aware targets.** Interview 1D + research plan + Step-4 `targets.yaml` now classify each
-  target's variant — snapshot / time-series / several-snapshots (an `observations:` list, scored on all points)
-  / several stocks (separate targets) — and match the per-target `cost_method` to it (skill scores like
-  `nse`/`kge` need ≥2 points). Pairs with the `evaluate_case.py` time-series upgrade (`year_start` +
-  `extract_case_series`). Requested by the PI.
-- 2026-07-08: **Cost function folded into setup.** The targets the user gives now also specify the cost
-  function — interview 1D + the research plan + Step-4 `targets.yaml` capture a `cost_config` (error_method,
-  aggregation_method, tolerance) + optional per-target `cost_method`/`weight` (defaults `relative_error` +
-  `rmsre` + ±20%), validated by `validate_targets_config.py`. Paired with the `evaluate_case.py`
-  reconciliation so both scoring paths honor it. Requested by the PI.
-- 2026-07-08: **Research-plan confirmation gate before building (Step 4).** After the interview + milestone,
-  the agent now drafts `$A2MC_ROOT/use_cases/$SITE/research_plan.md` (goal, granularity, targets, mode,
-  milestone, PFTs or ecosystem-only, parameter approach, seed, open gaps), presents it, and gets the user to
-  **confirm** before any config is written; only on confirmation does it record the case memory + propagate
-  the plan into the config files. **Path-safety:** all writes are anchored to `A2MC_ROOT` (derived via
-  `git rev-parse --show-toplevel` — it is unset on a first run, and a bare `$A2MC_ROOT/use_cases/$SITE` with
-  an empty prefix would write to the filesystem root). New footguns (building before confirmation; bare
-  relative path from the wrong cwd). Requested by the PI.
-- 2026-07-08: **Goal-and-data-first interview + guided path for users new to FATES.** Restructured Step 1 to
-  lead with the science goal + **target granularity** (1.0) and a data-inventory helper (1.1): an
-  **ecosystem-level** goal (e.g. MODIS/tower GPP) does NOT require enumerating dominant PFTs or per-PFT
-  biomass, so PFT identification (1.2) + the 1C PFT questions are now conditional on PFT-level targets. Added
-  a **path choice** (know-your-setup vs guided). New footgun (over-asking a new user for detail they don't
-  need). Cross-linked the operating-discipline stance (`AGENTS.md` §Offline-Agent Operating Discipline +
-  `feedback_offline_agent_operating_discipline`). Requested by the PI.
-- 2026-07-07: **Parameter-list building (Step 4b).** Interview D reworded to "do you have an initial list of parameters to be calibrated?" with a 3-case branch (vetted / rough / none). Added **Step 4b** — when the user has no list (or a rough one), the agent studies the mechanisms via `HybridRetriever.get_calibration_context()` + curated `curated_relationships_<profile>.yaml` + the CNP calibration guide + Adaptive Memory to build a target-driven list with source-anchored bounds (no fabricated values), presented for review before writing; a vetted list gets a coverage check instead. New footgun (list-from-names / fabricated bounds). Requested by the PI.
-- 2026-07-07: Initial version — official first-run setup flow for the offline agent (interview → verify checkout/milestone → create + populate use case → hand off to phase0-design). Fills the gap between "cloned the repo" and `phase0-design`; complements `onboard-session` (which assumes an existing setup). Requested by the PI.

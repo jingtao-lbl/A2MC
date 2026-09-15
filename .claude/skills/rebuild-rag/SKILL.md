@@ -292,23 +292,3 @@ compat fix (`20260204a`).
   curated-YAML injection. A pinned (e.g. api-31-0) index is the manuscript-reproducibility anchor
   — don't bump its wiki commit here without reason.
 
-## Changelog
-
-- 2026-09-06: **The VERIFY checkers now route by model, like the build scripts in Step 0 already did.** PI-directed. Step 0 forked the BUILD script per model in 2026-08-07 and this step kept naming only the two FATES-shaped checkers, so on an adapter model the REQUIRED golden-query test read as not-applicable — while `tools/check_ecosim_rag_queries.py` is model-GENERIC (its docstring: "the non-FATES analog ... works for ANY registered model profile") and covers EcoSIM and PFLOTRAN today. **Measured signal:** on 2026-09-06 a curated-seed edit for one adapter model was rebuilt and committed without that required test, by a session following this skill; the FATES filename hid the generic script until the PI asked whether a parallel existed. Verified before writing the table rather than asserted: the generic guard runs on `pflotran-157a26f7` too (14 assertions), and `tools/validate_seed_coverage.py` — previously named by NO skill — works on all three seed shapes (EcoSIM PASS, PFLOTRAN FAIL with 4 unreachable parameters, FATES `curated_relationships_api-43-1` FAIL with an orphan mechanism). Also states that `check_rag_coverage.py` being FATES-only by configuration is a gap in `canary_queries.yaml`, not a hole in adapter coverage, since the generic guard carries its own count-regression check and graph node floors. No `description` changed, so no trigger moved.
-
-- 2026-08-07: **Per-model routing (new Step 0) + the commit step (new Step 4).** The skill was
-  FATES-only in practice — every command was `build_rag_index.py`, and it mentioned PFLOTRAN zero
-  times while `scripts/build_pflotran_rag.py` and `scripts/build_ecosim_rag.py` were referenced by no
-  skill at all. Step 0 now routes to the right script and states that the FLAG SETS DIFFER (PFLOTRAN
-  has no `--graph-only`/`--allow-shrink`, EcoSIM no `--test`, only FATES takes `--profile`), plus the
-  per-model guards (PFLOTRAN refuses an empty graph; EcoSIM's count-regression guard; both write
-  `expected_counts` back). Step 4 adds the step that had no home in any skill: **how to commit a
-  rebuild**, since `chroma.sqlite3` carries `--skip-worktree` so `git add` and `git add -A` stage
-  nothing and print no error — verified on an 11 MB live index, and the mechanism by which the
-  2026-08-01 PFLOTRAN rebuild was lost (committed index stayed at 1314 chunks, zero curated, while
-  the graph landed normally). Steps renumbered; the interpreter note is now per-machine (Perlmutter
-  uses `~/a2mc_env/bin/python`, not the Mac's python.org 3.10). Description + all four registry rows
-  updated in the same pass.
-
-- 2026-06-17: Initial version — distilled from docs/a2mc_reference/rag_build_roadmap.md.
-- 2026-06-17: Verify-pass fix — corrected stats sanity figure (~2,700 → ~2,581 docs / ~1,295 nodes) to match the api-31-0 index.

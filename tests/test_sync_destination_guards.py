@@ -119,6 +119,59 @@ def test_allow_dirty_proceeds_with_a_warning(dest: Path, tmp_path: Path):
     assert "DIRTY" in r.stderr and "--allow-dirty" in r.stderr
 
 
+_BRANCH_GUARD_START = 'EXPECTED_BRANCH="A2MC-upstream"'
+
+
+def _extract_branch_guard() -> str:
+    """Lift the branch guard out of the shipped leg, so this cannot pass against a script that
+    no longer contains it."""
+    if not LEG.is_file():
+        pytest.skip("the Saleska leg is not present in this clone")
+    lines = LEG.read_text().splitlines()
+    try:
+        start = next(i for i, ln in enumerate(lines) if ln.strip() == _BRANCH_GUARD_START)
+    except StopIteration:  # pragma: no cover - only when the guard is removed
+        pytest.fail(
+            "the upstream-branch guard is gone from scripts/sync_adapterkit_forSaleska.sh "
+            f"(looked for {_BRANCH_GUARD_START!r}). Without it a sync can land a one-way "
+            "`rsync --delete` on the Genesis team's `main`. Do not delete this test to make it pass."
+        )
+    end = next(i for i in range(start + 1, len(lines)) if lines[i] == "fi")
+    return "\n".join(lines[start : end + 1])
+
+
+def _run_branch_guard(dest: Path, tmp_path: Path, branch: str):
+    subprocess.run(["git", "-C", str(dest), "switch", "-c", branch], capture_output=True)
+    harness = tmp_path / f"branch_{branch}.sh"
+    harness.write_text(
+        "set -e\n"
+        f'SALESKA_REPO="{dest}"\n'
+        f"{_extract_branch_guard()}\n"
+        'echo "REACHED_THE_SYNC"\n'
+    )
+    return subprocess.run(["bash", str(harness)], capture_output=True, text=True)
+
+
+def test_the_upstream_branch_is_accepted(dest: Path, tmp_path: Path):
+    r = _run_branch_guard(dest, tmp_path, "A2MC-upstream")
+    assert r.returncode == 0 and "REACHED_THE_SYNC" in r.stdout, r.stdout + r.stderr
+
+
+def test_main_is_refused_because_it_belongs_to_the_team(dest: Path, tmp_path: Path):
+    """THE POINT OF THE GUARD (PI, 2026-09-15). The leg syncs to a PR branch; `main` is the
+    Genesis team's, and a one-way `rsync --delete` must never land on it."""
+    r = _run_branch_guard(dest, tmp_path, "main")   # the fixture repo starts on its default branch
+    assert r.returncode == 1, "a sync onto the team's main was NOT refused"
+    assert "REACHED_THE_SYNC" not in r.stdout, "the guard let execution continue past it"
+    assert "A2MC-upstream" in r.stderr, "the refusal must name the branch it expects"
+    assert "git switch" in r.stderr, "the refusal must say how to fix it"
+
+
+def test_any_other_branch_is_refused(dest: Path, tmp_path: Path):
+    r = _run_branch_guard(dest, tmp_path, "some-feature")
+    assert r.returncode == 1 and "some-feature" in r.stderr, r.stdout + r.stderr
+
+
 def test_unknown_argument_is_rejected():
     """The old parser tested "$1" only, so `--allow-dirty --dry-run` would have run a REAL sync.
     Unknown arguments must fail loudly rather than being ignored."""

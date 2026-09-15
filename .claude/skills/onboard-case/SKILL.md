@@ -416,6 +416,9 @@ python tools/describe_mode.py       # confirm the mode A2MC will actually use
 python tools/check_setup_ready.py   # the aggregate, goal-conditional readiness gate
 ```
 
+> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
+
 `check_setup_ready.py` is the single **goal-conditional** readiness gate. It runs the *universal*
 checks — model path + matched milestone, **site config overrides the machine config**, `targets.yaml`
 valid **AND every target mapped to a model output variable with a cost function established**,
@@ -497,47 +500,3 @@ Offer to log the setup with `calibration-log` (a free-form session log under `us
 - `phase0-design` — where this hands off
 - `calibration-log` · `calibration-discipline` — the logging + habits layer for the round that follows
 
-## Changelog
-
-- 2026-08-26: **The two-step source order is now optional, and this file says so.** v2.306 gave every shipped site config a guard that auto-sources its own machine config (`a2mc_config.sh` for CIME/ELM-FATES, `a2mc_noncime_config.sh` for the adapter models) when one is not already loaded, and REPAIRS the wrong one if it was sourced by mistake. Nothing here was wrong -- the explicit machine-then-site order still works and still takes precedence -- so the instruction is shortened and the old form kept as a stated no-op. Asserted by `tests/test_site_config_autosource.py`. PI-directed. The preflight block drops its machine-config line.
-
-- 2026-08-22 (later): **New item 3c and a three-tier section: seed the case's canonical script TEMPLATES at onboarding.** PI-directed. A case now carries `use_cases/{Model}_{Case}/scripts/` holding the reusable plotting/analysis templates, seeded during onboarding rather than mid-round, because the round's phases each copy a template into their own `phase_results/{stem}/` and adapt it there. Seeded at minimum with the sim-vs-obs time-series template, since `phase2-screening` Step 1b, `phase3-diagnosis` and `phase6-refinement` Step 1b all require that figure and would otherwise each write their own. Evidence: one site's `phase_results/` held **7 script names duplicated across stem folders, all 7 byte-identical**, every one a Phase-5 script copied verbatim into its Phase-6 folder because no template tier existed. Checker `tools/check_case_script_tier.py`, pre-commit (15), WARN-only.
-
-- 2026-08-19 — **Scoped the target grammar to ELM-FATES in Step 1.1** (PI). The four key
-  forms (`PFT<id>_<vartype>`/SZPF, `ECO_`, `SNOW_`, `SOIL_`) were stated as if universal, contradicting
-  this skill's own Step-5 dispatch table: SZPF is FATES's size-class x PFT dimension and exists in no
-  other onboarded model, which writes `variable`/`reduce`/`window_years` against its own output
-  registry. An adapter-model user reading 1.1 would have tried to force targets into a FATES shape.
-  1.2's heading now carries the FATES scope too, instead of only its first sentence.
-
-- 2026-08-18: **Step 5 now documents that the targets check is DISPATCHED BY MODEL**, and three places
-  that presented the FATES validator as universal were corrected (Step 4 item 2's authoring
-  instruction, the cost-function bullet's WARN attribution, and the "bad target keys" footgun, whose
-  `PFT<id>_<vartype>` rule is FATES's alone). Until 2026-08-18 `check_setup_ready.py` ran
-  `validate_targets_config.py` unconditionally; two of its rules cannot be satisfied by an adapter
-  target by construction, so the gate emitted `2 x n_targets` spurious errors and could NEVER exit 0
-  for EcoSIM, PFLOTRAN or ATS (BioCON 6, Lusignan 6, PFLOTRAN_miniLEO 22). A reader following the old
-  prose would have run the wrong validator by hand and believed its output. Also records that a
-  `warnings only` result does not block Phase 0, and recommends a top-level `model:` key in
-  `targets.yaml` so the file declares itself. Audit `20260816b`, fix `20260818a`.
-- 2026-08-17: **Architecture B — `use_cases/<Model>_template/` is AUTHORED SOURCE and the default
-  seed** (PI call on the `20260816a` audit). The template section now names the per-model dir instead
-  of `TEMPLATE/config/<model>_template_config.sh`, and says plainly not to regenerate these dirs.
-  Under A they were generated snapshots enforced by a drift test, so a per-model file could not live
-  in one — which is how every scaffolded EcoSIM case came to declare a `case_template/run.nml` that
-  existed nowhere in the template tree (audit F1), failing late inside `create_case()`. EcoSIM's
-  template now ships that namelist plus an `OPTIONS.md` option reference.
-- 2026-08-17: **Parameter-surface enumeration is now a step in the parameter-list stage**, not only a
-  note in the 1A-1D interview preamble. §1A-1D already said to read `models/<model>/spec.py` for a
-  non-FATES model's knobs, but by the parameter-list step a reader is past it, and on the second
-  EcoSIM case (Lusignan) the agent inferred the surfaces from the CASE CONFIG instead, missed two of
-  three, and re-derived from Fortran source a fallback behaviour `models/base.py:291` already stated
-  verbatim. The guidance existed; it was not where the trigger looks. Also requires the list to state
-  which surfaces it covers, since a list spanning one of three reads as complete, and records that a
-  surface can be genuinely unreachable (EcoSIM's microbial file is optional in the model and falls
-  back to compiled-in constants). Audit: `20260817b`.
-- 2026-08-02: Created by **extracting** the repeatable case arc from `a2mc-init` (its steps 1, 4,
-  4b, 5, 6). Two skills previously created a use case, so every rule about naming or templates was
-  stated twice and drifted — `onboard-model` said `use_cases/<name>_<site>/`, `a2mc-init` said
-  `use_cases/$SITE` with no model component on 22 lines. One owner now states it once. Carries the
-  settled `{Model}_{Case}` rule and the per-model site-agnostic templates. Audit: `20260802e`.

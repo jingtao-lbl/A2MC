@@ -33,6 +33,8 @@ WHAT IT CHECKS, against `runfile.nml`'s `start_date`, which is what the model ac
   4. every target's `window_years` lies inside the run's span.                     ERROR
   5. a target with NO `start_year` of its own, which silently depends on the env
      var whose name caused this.                                                   WARN
+  6. every target's `window_years` lies inside the PRODUCTION leg, not the spin-up. ERROR
+     Only applies when `forc_periods` has two or more triplets, where the last is production.
 
 Check 5 is a warning rather than an error because depending on the env var is legal and currently
 normal; it is reported because it is the fragility that turned a one-line config typo into a
@@ -126,19 +128,46 @@ def main() -> int:
     # years, i.e. 1996-2023. Reading only the first pair called its last year 2015 and reported
     # three ERRORS on a correct case. That is the same conflation of two calendar quantities this
     # tool exists to catch, made by the tool itself, which is why the span is now DERIVED.
+    # READ `forc_periods` FROM THE SAME FILE THAT GAVE `start_date` (`src`), not only from a
+    # materialized case. Until 2026-09-12 this looked exclusively at `<case_dir>/runfile.nml`, while
+    # `start_date` fell back to the BASE namelist -- so before Phase 0, when no case has been
+    # materialized, `trips` was empty and checks 4 and 6 SILENTLY DID NOT RUN. The tool printed
+    # "scoring calendar matches the run" having evaluated only the anchors. That is the worst
+    # possible moment for them to be inert: pre-Phase-0 is when the calendar is still being decided
+    # and when a fix is free. Measured on EcoSIM_Kougarok 2026-09-12, where a window sitting 47
+    # years inside the spin-up returned a clean pass.
     span_hi = None
     trips = []
-    if case_dir and os.path.exists(os.path.join(case_dir, "runfile.nml")):
-        txt = Path(case_dir, "runfile.nml").read_text(errors="replace")
-        m = re.search(r"^\s*forc_periods\s*=\s*([0-9,\s]+)", txt, re.M)
+    for cand in ([os.path.join(case_dir, "runfile.nml")] if case_dir else []) + [str(src)]:
+        if not os.path.exists(cand):
+            continue
+        m = re.search(r"^\s*forc_periods\s*=\s*([0-9,\s]+)", Path(cand).read_text(errors="replace"), re.M)
         if m:
             nums = [int(x) for x in re.findall(r"\d+", m.group(1))]
             trips = [tuple(nums[i:i + 3]) for i in range(0, len(nums) - 2, 3)]
+            break
+    prod_lo = None
     if trips:
         nyears = sum((y1 - y0 + 1) * max(1, rep) for y0, y1, rep in trips)
         span_hi = ry + nyears - 1
         print("forc_periods   : %s  -> %d simulated year(s), %d-%d"
               % (", ".join("%d-%d x%d" % t for t in trips), nyears, ry, span_hi))
+        # THE SPAN IS NOT ENOUGH: a window can sit inside it and still be scoring the SPIN-UP.
+        # With two or more triplets the LAST one is the production leg and everything before it is
+        # spin-up, normally a RECYCLED block replayed many times. A window landing there scores
+        # replayed weather while every count, boundary and coverage figure stays correct -- the
+        # same silence as the $A2MC_VALIDATION_START_YEAR defect this tool was written for, reached
+        # from the other direction: that one moves the anchor under a fixed run, this one moves the
+        # run under a fixed anchor. Measured on EcoSIM_Kougarok 2026-09-12: 60 spin-up years
+        # (2000-2002 recycled x20) then a 2000-2016 production leg, from a 2000 start, put the
+        # 2012-2016 window 47 years inside the spin-up. Checks 1-4 ALL PASSED -- the anchors agreed
+        # and the window was inside the span. The fix there was to move `start_date` back to 1940
+        # so the production leg lands on the real years, which is the Lusignan pattern.
+        if len(trips) >= 2:
+            spin_years = sum((y1 - y0 + 1) * max(1, rep) for y0, y1, rep in trips[:-1])
+            prod_lo = ry + spin_years
+            print("                 spin-up %d-%d (%d yr), PRODUCTION %d-%d"
+                  % (ry, prod_lo - 1, spin_years, prod_lo, span_hi))
 
     for name, spec in targets.items():
         sy = spec.get("start_year")
@@ -158,6 +187,13 @@ def main() -> int:
                 errors.append("target `%s` window_years ends %d, after the run's last "
                               "SIMULATED year %d (derived from forc_periods triplets, not from "
                               "any single triplet's range)." % (name, hi, span_hi))
+            if prod_lo is not None and lo < prod_lo:
+                errors.append("target `%s` window_years starts %d, which is inside the SPIN-UP "
+                              "(%d-%d) rather than the production leg (%d-%d). The window is "
+                              "inside the run's span, so checks 1-4 pass, but it would be scored "
+                              "against recycled forcing. Move `start_date` back by the spin-up "
+                              "length so production lands on the real years."
+                              % (name, lo, ry, prod_lo - 1, prod_lo, span_hi))
 
     for e in errors:
         print("ERROR  " + e)

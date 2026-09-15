@@ -171,42 +171,7 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 - **A "best" case looks too good** → `diagnose-forensics` (triage before trusting).
 - **Next:** `phase3-diagnosis`.
 
-## Changelog
-
-- 2026-09-06: **"the KB is meant to be sufficient" removed -- it invited exactly the misreading it warns against.** PI-directed, and the signal is a measured misreading in the session that first followed this rule: the agent paraphrased the sentence as "the KB is assumed sufficient", which reads as permission to stop at the KB, and the PI corrected it -- *"KB is not sufficient, they just let you have a quick understanding, you still need to verify in the source code if needed"*. The sentence already said *and only then confirm in source*, so the instruction was right and one clause of it was pulling the other way. **Evidence that both halves are load-bearing, from the same session:** the wiki DID carry the model's respiration temperature functions with their constants and `file:line`, so one grep would have replaced six source reads of LEARNING -- and the finding that mattered was that NO calibratable array appears in either function body, a claim about ABSENCE that no wiki page can settle. The KB would have oriented in seconds and still not answered it. Replaced with "the KB is where you START and it usually hands you the citation; it does NOT replace verifying in source". Applied identically across nine skills. The five-surface requirement, the query order and every `description` are UNCHANGED, so when each skill fires is unaffected.
-
-- 2026-08-27: **Separates what dispatches for PFLOTRAN from what does not** (PI-directed, first
-  PFLOTRAN campaign). The ranking does — `screen_ensemble.py` has a real backend branch. The Step-1b
-  whole-ensemble figure does not: both plotters assume PFTs and establishment. States the equivalent
-  view for a reactive-transport case and repeats the rule that a missing driver does not excuse a
-  missing figure.
-
-- 2026-08-22 (later): **Adds the three-tier script rule**: look in `use_cases/{Model}_{Case}/scripts/` for a canonical script TEMPLATE first, copy it into this phase's `phase_results/{stem}/` and ADAPT it there; write one from scratch when no template exists; a script's SECOND use is the trigger to promote it into `scripts/`. PI-directed, extended to every phase skill after the rule initially landed in only two. Does not conflict with "one canonical script per figure, never two copies" -- the canonical script stays with its figures, the canonical script TEMPLATE stays in `scripts/`. Evidence: 7 byte-identical duplicate script pairs measured across one site's phase_results folders. Checker `tools/check_case_script_tier.py`.
-
-- 2026-08-22 (later): **Step 1b now routes through the case script TEMPLATE, and a top-N view is a `--cases` FILTER on the same figure, not a separate script.** PI-directed, found when the FATES-only `compare_biomass_topcases.py` turned out to have no EcoSIM counterpart: the answer is not a new adapter script but a case-subset filter on the template that already draws the whole-ensemble figure, since the two views are one figure over different case sets. Part of the three-tier script rule (`calibration-discipline` item 2b).
-
-- 2026-08-16: **Names the `plotting` skill for any figure this phase produces.** The link was
-  one-directional — `plotting`'s own cross-references claimed the phase skills apply its
-  conventions, while most phase skills never mentioned it, so a session could produce figures
-  for a whole case without the conventions or the view-the-PNG check ever being loaded. That
-  happened: three sets of Lusignan figures were made before it was invoked, and the first
-  invocation immediately caught a stats box drawn over the data. PI-directed ("every phase
-  needs the plotting skill").
-- 2026-08-02: Log step now states the **living-record** contract (start at phase start, enrich as it runs —
-  the operational detail is unrecoverable later), names **this phase's expected sections** so an omission is
-  visible, and shows `set_phase_handshake()` so the chain is traceable. Full contract: `calibration-log`.
-- 2026-07-16: Named the **adapter parallel** for the Step-1b whole-ensemble plot — `scripts/extract_and_plot_adapter_ensemble.py` (annual-peak trajectory overlay, highlights ESTABLISHing cases; no SZPF), next to FATES's `plot_ensemble_cases.py`; noted Step-1 ranking already dispatches through `screen_ensemble`'s backend branch (`backend.extract_history_variables` + `model_evaluate_case.reduce_target`). EcoSIM R1 (`20260716a`).
-- 2026-07-15: Wired the explicit `set_position(current_phase="diagnosis")` state-advance in the route step. Ported from demo `d3cbbf5` (offline-workflow enforcement sweep).
-- 2026-07-15: **Added Step 1b — the whole-ensemble biomass-vs-targets time-series comparison plot**
-  (`tools/plot_ensemble_cases.py --combined`) as a REQUIRED deliverable, not optional QA — a single-month
-  RMSRE hides the trajectory (late collapse / overshoot-crash / non-equilibration). Demoted
-  `compare_biomass_topcases.py` to a complementary top-N panel; updated the Deliverable + Related-skills
-  lines. Folded in the per-PFT leaf/fine-root SZPF detail (`fates_utils.get_szpf_range`, ×1000), the
-  api-43 PFT-id caveat (10/11/12), and the one-off-custom-case direct-SZPF-read path (worked example:
-  `20260715a_phase2_screening_r01_api43_p2939uni_*`). Ported from demo `b11162a` + reconciled with main's
-  own biomass-plotter audit-gap edit.
-- 2026-07-02: Created — offline Phase 2 routine mirroring `reasoning.analyze_screening_results()`; drives screen_ensemble, delegates figures to summarize-/compare-calibration-round, routes to `phase3-diagnosis`.
-
 ## Before you finish
 
 **Discipline self-review (automatic).** Before advancing the state, re-check the [`calibration-discipline`](../calibration-discipline/SKILL.md) items that apply to this phase. This is unprompted and per-phase — the user does not have to ask (memory `feedback_schedule_periodic_reviews_with_a_real_mechanism`).
+

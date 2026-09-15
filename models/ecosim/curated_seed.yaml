@@ -448,14 +448,19 @@ mechanisms:
     description: 'Leaf protein, which carries the photosynthetic machinery, accumulates at the
       LESSER of what the available nitrogen and the available phosphorus allow. Leaf protein per
       unit leaf area then sets mesophyll Rubisco surface density, which sets Vmax, which sets the
-      CO2-limited carboxylation rate. So the two leaf stoichiometric CEILINGS, CNLF and CPLF, are
-      two branches of ONE min(), and only the branch that is currently smaller has any leverage.'
+      CO2-limited carboxylation rate. Each branch is a nutrient SUPPLY times a protein-per-nutrient
+      COEFFICIENT: the nitrogen branch is GrowthElms(ielmn) scaled by CNWL and the phosphorus branch
+      GrowthElms(ielmp) scaled by CPWL, with the supplies themselves set by the leaf stoichiometric
+      ceilings CNLF and CPLF. So FOUR parameters meet in ONE min(), two per branch, and only the
+      branch that is currently smaller has any leverage on photosynthetic capacity.'
     code_reference: 'PlantBranchMod.F90:3547 (LeafProteinC_node += AMIN1(GrowthElms(ielmn)*rProteinC2LeafN_pft,
       GrowthElms(ielmp)*rProteinC2LeafP_pft)); StomatesMod.F90:414 (MesophyllRubiscoSurfDensity =
       LeafRubisco2Protein_pft*ProteinCLeafAreaDensity); StomatesMod.F90:433-435 (Vmax4RubiscoCarboxy_node);
       StomatesMod.F90:439 (CO2lmtRubiscoCarboxyRate_node). Leaf P supplied by
       PlantBranchMod.F90:392, Growth_brch(ielmp,leaf) = Growth_brch(ielmc,leaf)*fPCLFW_brch.'
     parameters:
+    - CNWL
+    - CPWL
     - CNLF
     - CPLF
     affects:
@@ -1102,6 +1107,18 @@ parameters:
       plant_bgc/photosynthesis_and_respiration.md for the kinetic form.
 
       '
+    code_location: "StomatesMod.F90:433 (C3Photosynthesis)"
+    guard:
+      flag: ICTYP
+      flag_variable: iPlantPhotosynsType_pft
+      dispatch: "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)"
+      selects:
+        "3": "C3 -- StomatesMod.F90:433 -- Vcmax = VCMX * MesophyllRubiscoSurfDensity * TFN_Carboxy"
+        "4": "C4 -- StomatesMod.F90:631 -- bundle-sheath carboxylation"
+      note: >-
+        This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the
+        ROUTINE, not just a line: `git grep` returns every branch in source order and reading the
+        first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`.
     _source: human
   VOMX:
     category: photosynthesis
@@ -1114,6 +1131,18 @@ parameters:
     - XKO2
     calibration_notes: Specific rubisco oxygenase activity; sets photorespiration. Sample with VCMX (ratio
       matters).
+    code_location: "StomatesMod.F90:434 (C3Photosynthesis)"
+    guard:
+      flag: ICTYP
+      flag_variable: iPlantPhotosynsType_pft
+      dispatch: "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)"
+      selects:
+        "3": "C3 -- StomatesMod.F90:434 -- Vomax, feeds the CO2 compensation point"
+        "4": "C4 -- StomatesMod.F90:633"
+      note: >-
+        This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the
+        ROUTINE, not just a line: `git grep` returns every branch in source order and reading the
+        first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`.
     _source: human
   RUBP:
     category: photosynthesis
@@ -1126,6 +1155,49 @@ parameters:
     - CHL
     calibration_notes: Fraction of leaf protein in rubisco — scales effective carboxylation capacity.
       Partially redundant with VCMX; watch for equifinality.
+    code_location: "StomatesMod.F90:414 (C3Photosynthesis)"
+    guard:
+      flag: ICTYP
+      flag_variable: iPlantPhotosynsType_pft
+      dispatch: "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)"
+      selects:
+        "3": "C3 -- StomatesMod.F90:414 -- MesophyllRubiscoSurfDensity = RUBP*P"
+        "4": "C4 -- StomatesMod.F90:611 -- bundle-sheath rubisco density"
+      note: >-
+        This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the
+        ROUTINE, not just a line: `git grep` returns every branch in source order and reading the
+        first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`.
+    _source: human
+  CHL:
+    category: photosynthesis
+    affects:
+    - CAN_GPP_pft
+    related_to:
+    - ETMX
+    - RUBP
+    calibration_notes: 'Fraction of leaf protein bound as chlorophyll for light harvesting. Source
+      path, traced rather than inferred: CHL -> LeafProtein2Chl_pft (PlantInfoMod.F90:543) ->
+      MesophyllChlDensity = LeafProtein2Chl_pft * ProteinCLeafAreaDensity / 3.5 (StomatesMod.F90:415)
+      -> ElectronTransptJmaxRef_node = SpecLeafChlAct_pft * MesophyllChlDensity (StomatesMod.F90:453),
+      so it sets the LIGHT-LIMITED limb through electron-transport capacity. It is one factor of a
+      product whose other factor is ETMX, which is why the two are equifinal on the light limb and
+      why CHL and RUBP partition one leaf protein pool between light harvesting and carboxylation.
+      NOTE: `controls: Grant_Rubisco_C3_Kinetics` is deliberately NOT declared here. The mechanism
+      block already lists CHL among its parameters and emits that edge; re-asserting it from the
+      parameter side would REPLACE the existing edge''s attributes, since the builder''s parameter
+      pass has no has_edge guard (wire-knowledge-graph, Step 2 decision 3).'
+    code_location: "StomatesMod.F90:415 (C3Photosynthesis)"
+    guard:
+      flag: ICTYP
+      flag_variable: iPlantPhotosynsType_pft
+      dispatch: "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)"
+      selects:
+        "3": "C3 -- StomatesMod.F90:415 -- MesophyllChlDensity = CHL*P/3.5. NO fCHLMESO TERM ON THIS PATH."
+        "4": "C4 -- StomatesMod.F90:556 mesophyll (*fCHLMESO/3.7) and :612 bundle sheath (*(1-fCHLMESO)/5.5)"
+      note: >-
+        This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the
+        ROUTINE, not just a line: `git grep` returns every branch in source order and reading the
+        first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`.
     _source: human
   XKCO2:
     category: photosynthesis
@@ -1147,6 +1219,18 @@ parameters:
     - CHL
     calibration_notes: Specific chlorophyll activity (electron transport). Sets the light-limited GPP
       limb (dCAN_GPP_eLIM_pft).
+    code_location: "StomatesMod.F90:453 (C3Photosynthesis)"
+    guard:
+      flag: ICTYP
+      flag_variable: iPlantPhotosynsType_pft
+      dispatch: "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)"
+      selects:
+        "3": "C3 -- StomatesMod.F90:453 -- Jmax = ETMX * MesophyllChlDensity"
+        "4": "C4 -- StomatesMod.F90:586 (mesophyll) and :650 (bundle sheath)"
+      note: >-
+        This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the
+        ROUTINE, not just a line: `git grep` returns every branch in source order and reading the
+        first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`.
     _source: human
   RSMX:
     category: stomatal
@@ -1158,6 +1242,18 @@ parameters:
     - OSMO
     calibration_notes: Cuticular resistance — the closed-stomata conductance bound. Higher → tighter water
       conservation, lower GPP under stress.
+    code_location: "PhotoSynsMod.F90:131 (ComputeGPP_C3)"
+    guard:
+      flag: ICTYP
+      flag_variable: iPlantPhotosynsType_pft
+      dispatch: "StomatesMod.F90:786-790 / PhotoSynsMod.F90:496-501 (ic3_photo=3, ic4_photo=4, ElmIDMod.F90:45-46)"
+      selects:
+        "3": "C3 -- PhotoSynsMod.F90:131-132 -- cuticular resistance in the C3 GPP solve"
+        "4": "C4 -- PhotoSynsMod.F90:328-329 -- the C4 GPP solve"
+      note: >-
+        This parameter has MORE THAN ONE implementation and ICTYP picks which one runs. Cite the
+        ROUTINE, not just a line: `git grep` returns every branch in source order and reading the
+        first hit is a coin flip. Check with `tools/check_param_branch_sites.py <PARAM>`.
     _source: human
   OSMO:
     category: stomatal
@@ -1289,12 +1385,71 @@ parameters:
       declared ''maximum leaf N:C'', PlantInfoMod.F90:625). Realized leaf N:C = CNLF*(0.33+0.67*CNPG)
       (PlantBranchMod.F90:371), so measured leaf N:C (~0.02-0.08) describes the model OUTPUT, not this
       input — do NOT clamp CNLF to the measured range; calibrate as a ceiling (~0.08-0.20 gN/gC).
-      LEVER SHAPE: CNLF is the NITROGEN branch of the AMIN1 that sets leaf protein
-      (PlantBranchMod.F90:3547) -- see mechanism Leaf_Protein_Colimitation. It and CPLF are two
-      branches of ONE min(), so `related_to: CPLF` understates the coupling: only the SMALLER branch
-      has leverage on photosynthetic capacity, and whichever it is, the other is inert. If nitrogen
-      is currently binding then CNLF is the one with leverage, which is a different claim from any
-      level-based argument about it.'
+      LEVER SHAPE: CNLF feeds the NITROGEN branch of the AMIN1 that sets leaf protein
+      (PlantBranchMod.F90:3548) -- see mechanism Leaf_Protein_Colimitation -- as the SUPPLY term,
+      NOT as the branch coefficient; that coefficient is CNWL. Route: CNLF -> rNCLeaf_pft
+      (PlantInfoMod.F90:623) -> CNLFW (GrosubsMod.F90:438, a fine/woody litter-fraction weighted
+      blend with rNCStalk_pft, so only the fine share carries CNLF) -> CNLFB -> realized leaf N:C
+      fNCLFW_brch = CNLFB*(ZPLFM+ZPLFD*CNPG), ZPLFM=0.33 (PlantBranchMod.F90:382,
+      PlantBGCPars.F90:244) -> the N content of leaf growth GrowthElms(ielmn)
+      (PlantBranchMod.F90:3530) -> the branch value GrowthElms(ielmn)*rProteinC2LeafN_pft. CNLF and
+      CNWL therefore multiply into the SAME branch and neither alone decides it. Only the SMALLER
+      branch has leverage on photosynthetic capacity; whichever it is, the other is inert.'
+    _source: human
+  CNWL:
+    category: stoichiometry
+    controls:
+    - Leaf_Protein_Colimitation
+    affects:
+    - CAN_GPP_pft
+    - NPP_pft
+    - LEAF_C_pft
+    related_to:
+    - CPWL
+    - CNLF
+    - CHL
+    depends_on:
+    - CPWL
+    calibration_notes: 'Protein C per unit leaf N -- the COEFFICIENT on the nitrogen branch of the
+      AMIN1 that sets leaf protein. Source-verified: CNWL -> rProteinC2LeafN_pft
+      (PlantInfoMod.F90:619), used at PlantBranchMod.F90:3548 as LeafProteinC_node +=
+      AMIN1(GrowthElms(ielmn)*rProteinC2LeafN_pft, GrowthElms(ielmp)*rProteinC2LeafP_pft).
+      Leaf protein IS the photosynthetic machinery: it sets ProteinCLeafAreaDensity, hence
+      MesophyllRubiscoSurfDensity = LeafRubisco2Protein_pft*ProteinCLeafAreaDensity
+      (StomatesMod.F90:414), hence VcMaxRubiscoRef_node (StomatesMod.F90:433) and
+      Vmax4RubiscoCarboxy_node (StomatesMod.F90:435). That is the whole reason this parameter
+      reaches GPP, and why it ranked FIRST for GPP in EcoSIM_Lusignan R1b.
+      DISTINCT FROM CNLF: CNLF sets the nitrogen SUPPLY into this branch and CNWL is the multiplier
+      on that supply, so the two multiply into one product and neither alone decides the min().
+      CNWL also governs protein withdrawal and kill-back (PlantBranchMod.F90:314, 1110, 1239, 4048),
+      so it is not photosynthesis-only.
+      LEVER SHAPE: leverage is CONDITIONAL. CNWL moves leaf protein only while the nitrogen branch
+      is the smaller one and is inert otherwise. R1b sampled CNWL (default 2.8, bounds 1.4-4.2) and
+      did NOT sample CPWL, so which branch binds was never established; check that before designing
+      a dose ladder on it.'
+    _source: human
+  CPWL:
+    category: stoichiometry
+    controls:
+    - Leaf_Protein_Colimitation
+    affects:
+    - CAN_GPP_pft
+    - NPP_pft
+    - LEAF_C_pft
+    related_to:
+    - CNWL
+    - CPLF
+    depends_on:
+    - CNWL
+    calibration_notes: 'Protein C per unit leaf P -- the COEFFICIENT on the phosphorus branch of the
+      same AMIN1 as CNWL. Source-verified: CPWL -> rProteinC2LeafP_pft (PlantInfoMod.F90:620), used
+      at PlantBranchMod.F90:3548. The downstream route to GPP is identical to CNWL''s, through
+      ProteinCLeafAreaDensity -> MesophyllRubiscoSurfDensity (StomatesMod.F90:414) -> Vmax
+      (StomatesMod.F90:433-435). Stands to CPLF exactly as CNWL stands to CNLF: CPLF sets the
+      phosphorus SUPPLY and CPWL is the multiplier on it.
+      NOT SAMPLED by EcoSIM_Lusignan R1b, which is precisely why that round could not tell whether
+      its rank-1 GPP parameter CNWL sat on the binding branch. Varying CPWL is the cheapest way to
+      settle that question.'
     _source: human
   CPLF:
     category: stoichiometry
@@ -1314,8 +1469,9 @@ parameters:
       Measured leaf P:C (0.0015-0.006) maps to the realized window, not to CPLF — set CPLF so 0.33*CPLF..CPLF
       overlaps it (~0.005-0.02 gP/gC).
       LEVER SHAPE: inert then lethal, NO usable interior dose -- see mechanism
-      Leaf_Protein_Colimitation. CPLF is the PHOSPHORUS branch of the AMIN1 that sets leaf protein
-      (PlantBranchMod.F90:3547); while NITROGEN is the smaller branch this parameter has no effect on
+      Leaf_Protein_Colimitation. CPLF feeds the PHOSPHORUS branch of the AMIN1 that sets leaf protein
+      (PlantBranchMod.F90:3548) as the SUPPLY term, the coefficient on it being CPWL; while NITROGEN
+      is the smaller branch this parameter has no effect on
       photosynthetic capacity at all. Measured R1 c08: NPP +0.4% at 38% of range, 95.3% collapse by
       70%, dead at the floor. Do not design a dose ladder on it without first checking which branch
       binds. Depends on CNLF: its leverage is conditional on the nitrogen branch being the larger one.'

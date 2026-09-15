@@ -529,8 +529,28 @@ def main():
             problems.append(f"NAME: '{name}' SKILL.md has no `name:` in frontmatter")
         elif fm != name:
             problems.append(f"NAME: '{name}' frontmatter name is '{fm}' (must match dir)")
-        if not re.search(r"^## Changelog", text, re.M):
+        # CHANGELOG-LAST exists because the PUBLIC sync strips a skill's changelog: it is
+        # development history (dated entries naming dev logs, versions, the defects behind each
+        # edit), the same class of content as memory/dev_logs*/ and a <!-- private --> block. The
+        # strip runs from the `## Changelog` heading to the next `## ` heading, and a section sitting
+        # AFTER the changelog is what makes that rule delicate. Measured 2026-09-15 on a staged sync:
+        # `phase5-testing` kept `## Log it as a LIVING record` after its changelog, holding phase 5's
+        # expected-section line, and a truncate-to-EOF strip deleted it -- caught only because the
+        # staged destination then failed PHASE-SECTIONS. Requiring the changelog to be LAST makes the
+        # strip trivially exact and stops a new skill from reintroducing the hazard. A stripped copy
+        # (heading + pointer line, nothing after) satisfies both rules, which it must: this checker
+        # ships and runs in the public repo.
+        cl = re.search(r"^## Changelog\s*$", text, re.M)
+        if cl is None:
             problems.append(f"CHANGELOG: '{name}' SKILL.md has no `## Changelog` section")
+        else:
+            after = [ln for ln in text[cl.end():].splitlines() if ln.startswith("## ")]
+            if after:
+                problems.append(
+                    f"CHANGELOG-LAST: '{name}' SKILL.md has {len(after)} section(s) after "
+                    f"`## Changelog` ({', '.join(a.strip() for a in after[:3])}). The changelog must "
+                    f"be the LAST section: the public sync strips it, and content after it is what "
+                    f"a strip can silently take with it. Move those sections above the changelog.")
         vis = frontmatter_field(text, "visibility")
         if vis is None:
             problems.append(f"FRONTMATTER: '{name}' SKILL.md missing `visibility:` (one of {sorted(VISIBILITY)})")

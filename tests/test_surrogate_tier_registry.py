@@ -37,12 +37,31 @@ def _spec(**kw):
     return SurrogateSpec(**base)
 
 
-@pytest.mark.parametrize("tier", [t for t in VALID_TIERS if t not in IMPLEMENTED_TIERS])
-def test_an_unimplemented_roadmap_tier_is_REJECTED_at_construction(tier):
-    """THE property. Before the fix every one of these constructed silently."""
+def test_an_unimplemented_roadmap_tier_is_REJECTED_at_construction(monkeypatch):
+    """THE property. Before the fix every one of these constructed silently.
+
+    The registry is monkeypatched rather than read, because the whole ladder is
+    implemented as of 2026-09-12 and `VALID_TIERS - IMPLEMENTED_TIERS` is now EMPTY.
+    Parametrising over that difference made this test silently vacuous the moment the
+    last tier was built -- a check that cannot fail, which is the exact defect this
+    file exists to prevent. Shrinking the registry keeps the guard under test forever.
+    """
+    import models.surrogate.spec as spec_mod
+    victim = IMPLEMENTED_TIERS[-1]
+    monkeypatch.setattr(spec_mod, "IMPLEMENTED_TIERS",
+                        tuple(t for t in IMPLEMENTED_TIERS if t != victim))
     with pytest.raises(ValueError) as e:
-        _spec(tier=tier)
+        _spec(tier=victim)
     assert "no implementation" in str(e.value)
+
+
+def test_the_roadmap_and_the_registry_are_currently_IDENTICAL():
+    """A fact worth asserting rather than leaving implicit, because it is what makes the
+    two tests above need a monkeypatch. If a fifth tier is added to the roadmap this goes
+    red, which is the prompt to check that the difference-based tests still mean something."""
+    assert set(VALID_TIERS) == set(IMPLEMENTED_TIERS), (
+        f"roadmap {VALID_TIERS} and registry {IMPLEMENTED_TIERS} have diverged; the "
+        f"monkeypatch in the rejection tests may no longer be necessary")
 
 
 @pytest.mark.parametrize("tier", IMPLEMENTED_TIERS)
@@ -77,11 +96,19 @@ def test_the_registry_matches_the_classes_tiers_py_ACTUALLY_exports():
         f"{sorted(IMPLEMENTED_TIERS)}")
 
 
-def test_the_rejection_message_NAMES_the_gate_not_just_the_fact():
-    """A reader hitting this must learn what would unblock it -- a written S1
-    acceptance failure -- or they will simply add the tier to the tuple."""
+def test_the_rejection_message_NAMES_the_gate_not_just_the_fact(monkeypatch):
+    """A reader hitting this must learn what would unblock it -- a written acceptance
+    failure at the tier below -- or they will simply add the tier to the tuple.
+
+    Monkeypatched for the same reason as the test above: there is no unimplemented tier
+    left to trigger the message with.
+    """
+    import models.surrogate.spec as spec_mod
+    victim = IMPLEMENTED_TIERS[-1]
+    monkeypatch.setattr(spec_mod, "IMPLEMENTED_TIERS",
+                        tuple(t for t in IMPLEMENTED_TIERS if t != victim))
     with pytest.raises(ValueError) as e:
-        _spec(tier="S2")
+        _spec(tier=victim)
     msg = str(e.value)
     assert "FAILED a written acceptance test" in msg
     assert "IMPLEMENTED_TIERS" in msg
