@@ -42,6 +42,7 @@ Env (source a2mc_noncime_config.sh + the site config first):
     A2MC_SECONDARY_PARAM_FILE secondary base file; PER-CASE if the param list samples
                               a name on it, else staged fixed                     (optional)
     A2MC_BASE_PARAM_FILE_3    tertiary base file to perturb + stage per row     (optional)
+    A2MC_BASE_PARAM_FILE_4    quaternary base file to perturb + stage per row   (optional)
     A2MC_PARAM_LIST_FILE      the explicit-column param list (name + pft)        (required)
     A2MC_OUTPUT_DIR           ensemble run root (per-case subdirs land here)     (required)
     A2MC_CASE_NAME_PATTERN    case-dir name; `{N}` = 1-based case index          (required)
@@ -61,9 +62,13 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from scripts.create_adapter_parameter_sample import (  # noqa: E402
+    secondary_base_default, warn_if_legacy_secondary,
     parse_pft_param_list, nc_varnames, route_surfaces, is_netcdf, parse_param_modes,
     bare_name,
 )
+
+
+
 
 
 def _case_name(pattern: str, n) -> str:
@@ -79,9 +84,14 @@ def main() -> int:
     ap.add_argument("--run-root", default=os.environ.get("A2MC_OUTPUT_DIR"))
     ap.add_argument("--base-param", default=os.environ.get("A2MC_BASE_PARAM_FILE"),
                     help="PRIMARY base file, perturbed per row (default $A2MC_BASE_PARAM_FILE)")
-    ap.add_argument("--secondary-param", default=os.environ.get("A2MC_SECONDARY_PARAM_FILE"),
+    _sec_default, _sec_env = secondary_base_default()
+    warn_if_legacy_secondary(_sec_env)
+    ap.add_argument("--secondary-param", default=_sec_default,
                     help="SECONDARY base file. Written PER CASE when the param list samples a name on this surface (e.g. EcoSIM PPI); staged unperturbed into every case when it does not. "
                          "(default $A2MC_SECONDARY_PARAM_FILE; omit for a single/dual-surface model)")
+    ap.add_argument("--quaternary-base", default=os.environ.get("A2MC_BASE_PARAM_FILE_4"),
+                    help="quaternary base file to perturb + stage per row "
+                         "(default $A2MC_BASE_PARAM_FILE_4; EcoSIM = the grid/soil NetCDF)")
     ap.add_argument("--tertiary-base", default=os.environ.get("A2MC_BASE_PARAM_FILE_3"),
                     help="TERTIARY base file, perturbed per row like --base-param "
                          "(default $A2MC_BASE_PARAM_FILE_3; omit for a single-surface model)")
@@ -118,6 +128,10 @@ def main() -> int:
     if secondary is not None and not secondary.exists():
         print(f"ERROR: secondary parameter file not found: {secondary}", file=sys.stderr)
         return 1
+    quaternary_base = Path(args.quaternary_base) if args.quaternary_base else None
+    if quaternary_base is not None and not quaternary_base.exists():
+        print(f"ERROR: quaternary base parameter file not found: {quaternary_base}", file=sys.stderr)
+        return 1
     tertiary_base = Path(args.tertiary_base) if args.tertiary_base else None
     if tertiary_base is not None and not tertiary_base.exists():
         print(f"ERROR: tertiary base parameter file not found: {tertiary_base}", file=sys.stderr)
@@ -140,8 +154,11 @@ def main() -> int:
         if is_netcdf(base):
             primary_vars = nc_varnames(base)
             tertiary_vars = nc_varnames(tertiary_base) if tertiary_base is not None else set()
+            quaternary_vars = nc_varnames(quaternary_base) if quaternary_base is not None else set()
             routing = route_surfaces(
                 names, primary_vars, tertiary_vars, tertiary_base is not None,
+                quaternary_vars=quaternary_vars,
+                quaternary_given=quaternary_base is not None,
                 secondary_names=backend.secondary_param_names(),
                 secondary_given=secondary is not None)
         else:
@@ -161,6 +178,7 @@ def main() -> int:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
     n_tertiary = sum(1 for s in routing.values() if s == "tertiary")
+    n_quaternary = sum(1 for s in routing.values() if s == "quaternary")
     n_secondary = sum(1 for s in routing.values() if s == "secondary")
 
     n_rows = X.shape[0]
@@ -176,9 +194,11 @@ def main() -> int:
     print(f"Run root:     {run_root}")
     print(f"Base params:  primary={base.name}"
           + (f"  secondary({'PER-CASE' if n_secondary else 'fixed'})={secondary.name}" if secondary else "")
-          + (f"  tertiary={tertiary_base.name}" if tertiary_base else ""))
-    print(f"Param list:   {len(names)} params ({len(names) - n_tertiary - n_secondary} primary, "
-          f"{n_secondary} secondary, {n_tertiary} tertiary)"
+          + (f"  tertiary={tertiary_base.name}" if tertiary_base else "")
+          + (f"  quaternary={quaternary_base.name}" if quaternary_base else ""))
+    print(f"Param list:   {len(names)} params "
+          f"({len(names) - n_tertiary - n_secondary - n_quaternary} primary, "
+          f"{n_secondary} secondary, {n_tertiary} tertiary, {n_quaternary} quaternary)"
           f"  |  matrix: {n_rows} rows x {X.shape[1]} cols")
     print(f"Materialize:  rows {start}..{end}  ({end - start + 1} cases)"
           + (f" + V0 baseline (case {args.baseline_index})" if args.baseline else ""))
@@ -197,7 +217,8 @@ def main() -> int:
     base_vals = {}
     if multiplier_ids:
         import netCDF4 as _nc
-        _srcs = {"primary": base, "secondary": secondary, "tertiary": tertiary_base}
+        _srcs = {"primary": base, "secondary": secondary, "tertiary": tertiary_base,
+                 "quaternary": quaternary_base}
         for cid in sorted(multiplier_ids):
             if cid not in routing:
                 continue
@@ -232,6 +253,7 @@ def main() -> int:
         edits = _resolve(edits)
         primary_edits = {k: v for k, v in edits.items() if routing[k] == "primary"}
         tertiary_edits = {k: v for k, v in edits.items() if routing[k] == "tertiary"}
+        quaternary_edits = {k: v for k, v in edits.items() if routing[k] == "quaternary"}
         secondary_edits = {k: v for k, v in edits.items() if routing[k] == "secondary"}
         case_dir = run_root / name
         case_dir.mkdir(parents=True, exist_ok=True)
@@ -240,6 +262,10 @@ def main() -> int:
         backend.write_parameter_file(base, primary_edits, pfile)
 
         tfile = None
+        if quaternary_base is not None:
+            qfile = case_dir / quaternary_base.name
+            backend.write_parameter_file(quaternary_base, quaternary_edits, qfile,
+                                         surface="quaternary")
         if tertiary_base is not None:
             tfile = case_dir / tertiary_base.name
             backend.write_parameter_file(tertiary_base, tertiary_edits, tfile, surface="tertiary")
@@ -262,6 +288,8 @@ def main() -> int:
             extra["secondary_param_file"] = secondary
         if tfile is not None:
             extra["tertiary_param_file"] = tfile
+        if quaternary_base is not None:
+            extra["quaternary_param_file"] = qfile
         return backend.create_case(name, pfile, cfg, **extra)
 
     made = []

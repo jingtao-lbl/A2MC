@@ -169,9 +169,13 @@ def test_write_parameter_file_guards(tmp_path):
     # out-of-range PFT index must raise
     with pytest.raises(IndexError):
         be.write_parameter_file(PFT_FILE, {"VCMX_99": 1.0}, tmp_path / "y.nc")
-    # an unrecognized surface name must raise, not silently no-op
-    with pytest.raises(ValueError, match="primary.*secondary.*tertiary"):
-        be.write_parameter_file(PFT_FILE, {}, tmp_path / "z.nc", surface="quaternary")
+    # an unrecognized surface name must raise, not silently no-op.
+    # "quaternary" was the example here until 2026-09-15, when it became a REAL surface
+    # (the grid/soil file). Using a live surface name as the negative case is how such a
+    # test goes green-to-red the day the thing it names gets implemented, so the example
+    # is now a name no adapter will ever claim.
+    with pytest.raises(ValueError, match="primary.*secondary.*tertiary.*quaternary"):
+        be.write_parameter_file(PFT_FILE, {}, tmp_path / "z.nc", surface="quinary")
 
 
 def _make_micpar_fixture(path):

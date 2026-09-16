@@ -43,6 +43,21 @@ ECOSIM_SPEC = ModelSpec(
     # this namelist input in the runfile, same mechanism as the secondary surface.
     tertiary_namelist_var="micpar_file_in",
 
+    # ---- Quaternary parameter surface ----
+    # EcoSIM has a fourth parameter file (grid-input.nc, the site + soil profile:
+    # CSAND/CSILT/ROCK, BKDSI, FC/WP, SCNV/SCNH, PH/CEC/AEC, CORGC/CORGN/CORGP, the
+    # solute and mineral set, and ALBS). Verified real, not guessed: `grid_file_in`
+    # is an input line in the runfile namelist, and R1b cycle 15 already repointed a
+    # PER-CASE copy of it at that line to change ground albedo -- by hand, because
+    # A2MC had no slot for it. That hand-built variant ships as `rank06_c15_2.grid.nc`
+    # in the round's deliverable and differs from the base in exactly one of its 114
+    # variables, ALBS 0.15 -> 0.05, which is the measurement this slot is built on.
+    quaternary_namelist_var="grid_file_in",
+
+    # The axis alias on this surface is the SOIL LAYER (1-based), because the layered
+    # variables are dimensioned (ntopou, nlevs). `PH_5` is pH in layer 5, not PFT 5.
+    quaternary_axis="soil_layer",
+
     # ---- Parameter naming convention ----
     # EcoSIM parameter names are bare Fortran identifiers with no shared prefix
     # (VCMX, XKCO2, ICTYP). The regex is intentionally permissive; the real

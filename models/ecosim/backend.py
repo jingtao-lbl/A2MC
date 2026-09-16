@@ -202,9 +202,13 @@ class EcoSIMBackend(ModelBackend):
         if surface == "secondary":
             self._write_pft_mgmt_surface(base_param_file, modifications, output_path)
             return
+        if surface == "quaternary":
+            self._write_grid_surface(base_param_file, modifications, output_path)
+            return
         if surface not in ("primary", "tertiary"):
             raise ValueError(
-                f"EcoSIM parameter surfaces are 'primary' | 'secondary' | 'tertiary', got '{surface}'"
+                "EcoSIM parameter surfaces are 'primary' | 'secondary' | 'tertiary' | "
+                f"'quaternary', got '{surface}'"
             )
         import netCDF4 as nc
 
@@ -329,6 +333,84 @@ class EcoSIMBackend(ModelBackend):
 
     # ---- Case creation and submission ----
 
+    def _write_grid_surface(
+        self,
+        base_grid_file,
+        modifications: Dict[str, Any],
+        output_path,
+    ) -> None:
+        """Write the QUATERNARY surface: the site/soil-profile NetCDF (``grid_file_in``).
+
+        WHY THIS IS NOT THE PRIMARY WRITER. That one edits ``arr[idx0]``, the FIRST axis,
+        which is the PFT on the plant surface and the pool slot on the microbial one. The
+        grid file's layered variables are dimensioned ``(ntopou, nlevs)``: axis 0 is the
+        topographic unit and the SOIL LAYER is axis 1. Reusing the primary writer would
+        have indexed the topo unit while the parameter list said layer, edited a value
+        the list never named, and reported success. That is why the fourth surface gets
+        forty lines of its own rather than an extra name in an existing branch.
+
+        TWO SHAPES, both handled, because the file mixes them:
+          * layered    ``(ntopou, nlevs)``  -- ``PH``, ``CORGC``, ``FC``, ``CSAND`` …
+            ``PH_5`` sets layer 5 of every topo unit; a bare ``PH`` broadcasts to all.
+          * per-unit   ``(ntopou,)``        -- ``ALBS``, ``PSIFC``, ``PSIWP``, ``SL0`` …
+            these have no layer axis, so an axis-suffixed id is REFUSED rather than
+            quietly applied to the wrong dimension.
+
+        The axis is 1-BASED in a parameter list and 0-based in the array, the same
+        convention the PFT surfaces use (``spec.quaternary_axis`` names it).
+        """
+        import netCDF4 as nc
+
+        base_grid_file = Path(base_grid_file)
+        output_path = Path(output_path)
+        if base_grid_file.suffix.lower() != ".nc":
+            raise ValueError(
+                f"EcoSIM quaternary surface expects the grid .nc, got "
+                f"{base_grid_file.suffix} ({base_grid_file})"
+            )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(base_grid_file, output_path)
+
+        per_layer: Dict[str, Dict[int, float]] = {}
+        whole: Dict[str, Any] = {}
+        for key, val in modifications.items():
+            m = _MOD_PFT_RE.match(key)
+            if m and m.group("name") not in modifications:
+                per_layer.setdefault(m.group("name"), {})[int(m.group("pft")) - 1] = val
+            else:
+                whole[key] = val
+
+        ds = nc.Dataset(output_path, "a")
+        try:
+            allvars = set(ds.variables)
+            for name, val in whole.items():
+                if name not in allvars:
+                    raise KeyError(f"grid parameter '{name}' not in {base_grid_file.name}")
+                ds.variables[name][:] = val
+
+            for name, lmap in per_layer.items():
+                if name not in allvars:
+                    raise KeyError(f"grid parameter '{name}' not in {base_grid_file.name}")
+                var = ds.variables[name]
+                dims = var.dimensions
+                if len(dims) < 2:
+                    raise ValueError(
+                        f"{name} is dimensioned {dims} and has no soil-layer axis, so "
+                        f"'{name}_<n>' cannot mean a layer. Use a bare '{name}' to set it. "
+                        "Refusing rather than writing to a different dimension."
+                    )
+                arr = var[:]
+                nlev = arr.shape[1]
+                for idx0, v in lmap.items():
+                    if idx0 < 0 or idx0 >= nlev:
+                        raise IndexError(
+                            f"{name}: soil layer {idx0 + 1} out of range (1..{nlev})"
+                        )
+                    arr[:, idx0] = v
+                var[:] = arr
+        finally:
+            ds.close()
+
     def create_case(
         self,
         case_name: str,
@@ -336,6 +418,7 @@ class EcoSIMBackend(ModelBackend):
         config: Dict[str, Any],
         secondary_param_file: Optional[Path] = None,
         tertiary_param_file: Optional[Path] = None,
+        quaternary_param_file: Optional[Path] = None,
     ) -> Path:
         """Create a standalone-run case dir: staged namelist + rendered submit script.
 
@@ -370,6 +453,13 @@ class EcoSIMBackend(ModelBackend):
             staged_tertiary = case_dir / Path(tertiary_param_file).name
             if Path(tertiary_param_file).resolve() != staged_tertiary.resolve():
                 shutil.copy2(tertiary_param_file, staged_tertiary)
+
+        # Stage the QUATERNARY surface file (per-case grid-input with its soil profile).
+        staged_quaternary = None
+        if quaternary_param_file is not None:
+            staged_quaternary = case_dir / Path(quaternary_param_file).name
+            if Path(quaternary_param_file).resolve() != staged_quaternary.resolve():
+                shutil.copy2(quaternary_param_file, staged_quaternary)
 
         # Stage + repoint the namelist if provided.
         runfile = case_dir / "runfile.nml"
@@ -406,6 +496,19 @@ class EcoSIMBackend(ModelBackend):
                 if n == 0:
                     raise KeyError(
                         f"tertiary_param_file given but '{self.spec.tertiary_namelist_var}' "
+                        f"not found in the base namelist to repoint"
+                    )
+            # Repoint the QUATERNARY surface namelist var (spec-declared) at its staged copy.
+            if staged_quaternary is not None and self.spec.quaternary_namelist_var:
+                var = re.escape(self.spec.quaternary_namelist_var)
+                text, n = re.subn(
+                    r'(' + var + r'\s*=\s*(["\']))[^"\']*(["\'])',
+                    r'\1' + str(staged_quaternary) + r'\3',
+                    text,
+                )
+                if n == 0:
+                    raise KeyError(
+                        f"quaternary_param_file given but '{self.spec.quaternary_namelist_var}' "
                         f"not found in the base namelist to repoint"
                     )
             text = self._ensure_output_activation(text)

@@ -41,10 +41,14 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from scripts.create_adapter_parameter_sample import (  # noqa: E402
+    secondary_base_default, warn_if_legacy_secondary,
     parse_pft_param_list, canonical_pft_id, nc_varnames, route_surfaces, parse_param_modes,
 )
 
 _CID_RE = re.compile(r"^(?P<name>[A-Za-z][A-Za-z0-9_]*?)_(?P<pft>\d+)$")
+
+
+
 
 
 def _decompose(cid: str):
@@ -111,9 +115,14 @@ def main() -> int:
     ap.add_argument("--matrix", default=os.environ.get("A2MC_ENSEMBLE_MATRIX_FILE"))
     ap.add_argument("--run-root", default=os.environ.get("A2MC_OUTPUT_DIR"))
     ap.add_argument("--base-param", default=os.environ.get("A2MC_BASE_PARAM_FILE"))
-    ap.add_argument("--secondary-param", default=os.environ.get("A2MC_SECONDARY_PARAM_FILE"),
+    _sec_default, _sec_env = secondary_base_default()
+    warn_if_legacy_secondary(_sec_env)
+    ap.add_argument("--secondary-param", default=_sec_default,
                     help="secondary base file, if the param list samples that surface (e.g. EcoSIM "
                          "pft_mgmt PPI) — default $A2MC_SECONDARY_PARAM_FILE")
+    ap.add_argument("--quaternary-base", default=os.environ.get("A2MC_BASE_PARAM_FILE_4"),
+                    help="quaternary base file, if the param list spans a 4th surface (EcoSIM = the "
+                         "grid/soil NetCDF) — default $A2MC_BASE_PARAM_FILE_4; omit when unused")
     ap.add_argument("--tertiary-base", default=os.environ.get("A2MC_BASE_PARAM_FILE_3"),
                     help="tertiary base file, if the param list spans a 3rd surface (e.g. EcoSIM "
                          "MicrobePars.nc) — default $A2MC_BASE_PARAM_FILE_3; omit for a single-surface ensemble")
@@ -143,6 +152,8 @@ def main() -> int:
 
     tertiary_path = Path(args.tertiary_base) if args.tertiary_base else None
     tertiary_name = tertiary_path.name if tertiary_path else None
+    quaternary_path = Path(args.quaternary_base) if args.quaternary_base else None
+    quaternary_name = quaternary_path.name if quaternary_path else None
     tertiary_base_vals = {}
     # SECONDARY surface: a sampled value here was UNVERIFIED before 2026-09-01, because the
     # surface could only be staged fixed and so never needed checking. Its base value is read
@@ -210,10 +221,12 @@ def main() -> int:
         cdir = run_root / case
         pf = cdir / base_name
         tf = (cdir / tertiary_name) if tertiary_name else None
+        qf = (cdir / quaternary_name) if quaternary_name else None
         nml = cdir / "runfile.nml"
         sub = cdir / "submit.sh"
         # 1. structure
-        for f in [pf, nml, sub] + ([tf] if tf is not None else []):
+        for f in ([pf, nml, sub] + ([tf] if tf is not None else [])
+                  + ([qf] if qf is not None else [])):
             if not f.exists():
                 err(case, f"missing {f.name}")
         if not pf.exists() or (tf is not None and not tf.exists()):
@@ -342,7 +355,19 @@ def main() -> int:
                 m3 = re.search(r"micpar_file_in\s*=\s*['\"]([^'\"]+)['\"]", t)
                 if not m3 or Path(m3.group(1)).name != tertiary_name or str(cdir) not in m3.group(1):
                     err(case, "micpar_file_in does not point at this case's staged tertiary file")
-            for other in re.findall(r"(?:grid_file_in|clm_hour_file_in|soil_mgmt_in|atm_ghg_in|pft_mgmt_in)\s*=\s*['\"]([^'\"]+)['\"]", t):
+            # The grid input is a PASSIVE shared input until the quaternary surface is in use,
+            # at which point it becomes per-case and must point INTO the case like the others.
+            # Checking it only in the passive branch below would pass a case whose grid file was
+            # perturbed and then left pointing at the shared base -- the sampled soil values
+            # written and never read.
+            if quaternary_name is not None:
+                m4 = re.search(r"grid_file_in\s*=\s*['\"]([^'\"]+)['\"]", t)
+                if not m4 or Path(m4.group(1)).name != quaternary_name or str(cdir) not in m4.group(1):
+                    err(case, "grid_file_in does not point at this case's staged quaternary file")
+            _passive = (r"(?:clm_hour_file_in|soil_mgmt_in|atm_ghg_in|pft_mgmt_in)"
+                        if quaternary_name is not None
+                        else r"(?:grid_file_in|clm_hour_file_in|soil_mgmt_in|atm_ghg_in|pft_mgmt_in)")
+            for other in re.findall(_passive + r"\s*=\s*['\"]([^'\"]+)['\"]", t):
                 if not other.startswith("/"):
                     err(case, f"non-absolute input path: {other}")
                 elif not Path(other).exists():

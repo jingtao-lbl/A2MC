@@ -210,6 +210,20 @@ ATS_SPEC = ModelSpec(
     # A declaration without one is how a rationale that was right in v0.1 quietly stops
     # being right. See [[feedback_param_description_can_lie_verify_in_source]].
     spec_na={
+        # ATS is a SINGLE-DECK model. Every calibratable knob is a path into one Teuchos
+        # ParameterList XML, so there is no second, third or fourth parameter FILE to declare
+        # a namelist input for -- the notion of a surface does not partition anything here.
+        # EXPIRES IF: ATS ever reads a separate mesh/subsurface-property file that a round
+        # wants to sample, which is the shape EcoSIM's grid file has.
+        "quaternary_namelist_var":
+            "single-deck model — every calibratable knob is a path into one Teuchos "
+            "ParameterList XML, so there is no separate soil/site parameter FILE to repoint "
+            "and the notion of a fourth surface partitions nothing. EXPIRES IF: ATS reads a "
+            "separate mesh or subsurface-property file that a round wants to sample, which is "
+            "the shape EcoSIM's grid file has.",
+        "quaternary_axis":
+            "no quaternary surface, so no axis to name. EXPIRES IF: quaternary_namelist_var "
+            "is ever populated here, at which point its axis must be named in the same commit.",
         "grouping_axis_dim_name":
             "no per-group array axis. ATS's grouping axis is the mesh region, and an "
             "observation is already reduced over its region by the deck's `functional`, "

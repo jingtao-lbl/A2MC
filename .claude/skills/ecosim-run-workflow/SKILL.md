@@ -2,7 +2,7 @@
 name: ecosim-run-workflow
 visibility: public
 category: calibration
-description: Run and test EcoSIM — the non-CIME analog of offline-testing-workflow. Design a probe or ensemble, materialize cases across EcoSIM's THREE parameter-file surfaces, validate before submitting, monitor, and score against the target's own reduce. Use for "run an EcoSIM experiment/probe/ensemble", "set up EcoSIM cases", "submit the EcoSIM array", "why did my EcoSIM cases fail", "score the EcoSIM run", or any EcoSIM Phase-0/Phase-5 work. Encodes the traps that cost real compute — the 4096-byte namelist buffer, the real Gregorian calendar, multi-surface parameter routing, and sacct COMPLETED not meaning usable output.
+description: Run and test EcoSIM — the non-CIME analog of offline-testing-workflow. Design a probe or ensemble, materialize cases across EcoSIM's FOUR parameter-file surfaces (plant, management, microbial, soil/grid), validate before submitting, monitor, and score against the target's own reduce. Use for "run an EcoSIM experiment/probe/ensemble", "set up EcoSIM cases", "submit the EcoSIM array", "why did my EcoSIM cases fail", "score the EcoSIM run", or any EcoSIM Phase-0/Phase-5 work. Encodes the traps that cost real compute — the 4096-byte namelist buffer, the real Gregorian calendar, multi-surface parameter routing, and sacct COMPLETED not meaning usable output.
 allowed-tools: [Read, Glob, Grep, Write, Edit, Bash]
 modes:
   requires_fates: false
@@ -74,9 +74,11 @@ git grep -i "<term>" -- docs/ecosim-knowledge-base/      # works with no RAG pro
 For EcoSIM specifically, the wiki records that the 2-slot NECROMASS axis (`micresb`, kinetic/recalcitrant) is NOT the 3-slot LIVING-biomass axis (`ibiom_kinetic`/`ibiom_struct`/`ibiom_reserve`) -- a distinction a source read alone missed and which decided a root cause on 2026-09-05. `models/ecosim/spec.py` and [[reference_ecosim_parameter_surfaces]] are the third
 leg: which SURFACE a name lives on.
 
-## Step 1 — the three parameter surfaces
+## Step 1 — the four parameter surfaces
 
-EcoSIM cases are built from up to three NetCDF files. Know which is which before editing anything:
+EcoSIM cases are built from up to **four** NetCDF files. Know which is which before editing anything:
+
+> **The fourth is the grid/soil file** (`grid_file_in`, `A2MC_BASE_PARAM_FILE_4`), wired 2026-09-15. **Its axis is the SOIL LAYER, 1-based**, not a PFT: `PH_5` is layer 5. It is unset by default, so a round samples soil properties only when it says so.
 
 | Surface | Env var | Treatment |
 |---|---|---|

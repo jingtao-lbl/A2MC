@@ -18,10 +18,10 @@ PATTERNS = [
     r"co-authored[- ]by",
     r"\U0001f916\s*generated with",     # 🤖 Generated with
     r"generated with \[?claude",
-    # Session/authorship trailers. Added 2026-09-04 after seven commits in the Saleska
-    # repository carried a `Claude-Session:` URL trailer and this hook matched none of them:
-    # the format simply was not in this list. Kept unanchored because the message reaches us
-    # inside a shell command string, where a line start is not reliably a line start.
+    # Session/authorship trailers. A harness may append a `Claude-Session:` URL, which is an
+    # authorship trailer in everything but name and was not matched by the patterns above.
+    # Kept unanchored because the message reaches us inside a shell command string, where a
+    # line start is not reliably a line start.
     r"claude[- ]session\s*:",
     r"\b(assistant|ai)[- ](session|author)\s*:",
     r"https?://claude\.ai/\S*",

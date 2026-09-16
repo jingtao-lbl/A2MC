@@ -22,8 +22,8 @@ The first non-FATES model adapter, built as the adapter-kit end-to-end dogfood. 
 
 ## Parameter surfaces — what EcoSIM has, vs what A2MC wires
 
-**These are two different lists, and conflating them is a live trap.** A2MC has three
-parameter-file slots; EcoSIM has more parameter-bearing inputs than that. A calibration scoped to
+**These are two different lists, and conflating them is a live trap.** A2MC has four
+parameter-file slots as of 2026-09-15; EcoSIM has more parameter-bearing inputs than that. A calibration scoped to
 "the three surfaces" silently excludes a proven lever.
 
 The runfile namelist names **eight `*_in` entries**: seven NetCDF input slots plus `clm_factor_in`,
@@ -33,13 +33,13 @@ it is what the code reads, so consult it rather than trusting a copy here.
 | Namelist key | Holds | A2MC slot | Perturbed? |
 |---|---|---|---|
 | `pft_file_in` | ~123 per-PFT plant traits (VCMX, VRNLI/VRNXI, CNLF …) | primary, `A2MC_BASE_PARAM_FILE` | yes, per ensemble row |
-| `grid_file_in` | **~114 soil vars** — `CORGC`/`CORGN`/`CORGP` organic pools, `FC`/`WP`/`PSIFC`/`PSIWP`, `SCNH`/`SCNV` Ksat, `BKDSI`, `CSAND`/`CSILT`/`FHOL`, `PH`/`CEC`/`AEC`, initial litter C/N/P | **none** | **not through the param list** — see below |
+| `grid_file_in` | **~114 soil vars** — `CORGC`/`CORGN`/`CORGP` organic pools, `FC`/`WP`/`PSIFC`/`PSIWP`, `SCNH`/`SCNV` Ksat, `BKDSI`, `CSAND`/`CSILT`/`FHOL`, `PH`/`CEC`/`AEC`, `ALBS`, initial litter C/N/P | **quaternary, `A2MC_BASE_PARAM_FILE_4`** | yes, when wired (2026-09-15) |
 | `pft_mgmt_in` | stand management: planting, cuts, fertiliser | secondary, `A2MC_SECONDARY_PARAM_FILE` | PER-CASE when the param list samples a name on it (e.g. `PPI`); staged unperturbed otherwise |
 | `soil_mgmt_in` | soil management: tillage, amendments | **none** | no |
 | `micpar_file_in` | 76 microbial kinetics: RCCZ, VMXO, RMOM, GO2X, SPORC, SPOMC | tertiary, `A2MC_BASE_PARAM_FILE_3` | yes, when wired |
 | `clm_hour_file_in`, `atm_ghg_in` | weather and atmospheric composition | — | forcing, not parameters |
 
-**The grid file is a PROVEN calibration surface, and it has no slot.** BioCON R2 perturbed `CORGC`
+**The grid file is a PROVEN calibration surface, and as of 2026-09-15 it HAS a slot** (`quaternary`, `A2MC_BASE_PARAM_FILE_4`; the axis is the SOIL LAYER, 1-based, so `PH_5` is layer 5). Set that variable only for a round that deliberately samples soil properties; left unset, the grid file stays the shared unmodified site input, which is what every round through R1b ran. The history below is why the slot exists. BioCON R2 perturbed `CORGC`
 (per-layer soil organic carbon, scaled with `CORGN`/`CORGP` for stoichiometry) across ×1-6 and found
 it the decisive soil-respiration lever: cycle 4's `CB6` (pool ×6 crossed with a microbial rate ×4)
 was the first configuration to reach two of three targets. That was done with purpose-built probe

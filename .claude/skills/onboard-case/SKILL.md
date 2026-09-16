@@ -337,7 +337,7 @@ does, not just the files:
 > lists exist and they are NOT the same:
 >
 > 1. **What A2MC wires** — `models/<model>/spec.py` is the authority. `secondary_namelist_var` and
->    `tertiary_namelist_var` (`models/base.py:282-291`) name the extra slots, set per case through
+>    `tertiary_namelist_var` and `quaternary_namelist_var` name the extra slots, set per case through
 >    `A2MC_SECONDARY_PARAM_FILE` / `A2MC_BASE_PARAM_FILE_3`. FATES uses one slot; EcoSIM three.
 > 2. **What the MODEL actually reads** — the model adapter's `README.md` surfaces table, or the
 >    input files its runfile/deck names. **This list is usually longer**, and the difference is
@@ -352,7 +352,7 @@ does, not just the files:
 > have silently excluded the winning parameter ([[reference_ecosim_parameter_surfaces]]).
 >
 > Then **state in the list which surfaces it covers and which it does not**, because a list that
-> silently spans one of three surfaces reads as complete. A surface can be unreachable for a real
+> silently spans one of four surfaces reads as complete. A surface can be unreachable for a real
 > reason: EcoSIM's microbial file is *optional in the model*, and when its namelist entry is blank
 > the run uses compiled-in Fortran constants, so there is no file for A2MC to perturb and that whole
 > process is uncalibratable until the file is wired — with nothing in the run to hint at it

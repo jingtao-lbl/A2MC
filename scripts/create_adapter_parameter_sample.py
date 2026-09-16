@@ -238,13 +238,59 @@ def parse_param_modes(path) -> dict:
     return out
 
 
+
+# ---------------------------------------------------------------------------------------------
+# The secondary surface answers to TWO env names, and every script must resolve them IDENTICALLY
+# ---------------------------------------------------------------------------------------------
+# `A2MC_SECONDARY_PARAM_FILE` is the current name. `A2MC_BASE_PARAM_FILE_2` is the older one,
+# still set by EcoSIM_BioCON's R2 config (R3 and EcoSIM_TeRaCON use the current name); the
+# convention changed and the old name was never retired.
+#
+# WHY THIS LIVES HERE, BESIDE route_surfaces, AND NOT IN EACH SCRIPT. Until 2026-09-15 the two
+# names were honoured by DIFFERENT scripts -- the ensemble materializer and validator read the
+# current one, the crossed materializer read only the legacy one -- so the same config produced a
+# sampled secondary surface in one script and a silently unperturbed one in another. A per-script
+# copy of the resolution rule is how that happened, and three copies of the fix would be the same
+# mistake with better intentions. One definition, imported by all three.
+#
+# PRECEDENCE IS PART OF THE CONTRACT: the current name wins when both are set. Different
+# precedence in different scripts would reintroduce the original defect in a subtler form -- the
+# same config resolving to a different FILE depending on which script ran.
+SECONDARY_ENV_NAMES = ("A2MC_SECONDARY_PARAM_FILE", "A2MC_BASE_PARAM_FILE_2")
+LEGACY_SECONDARY_ENV = "A2MC_BASE_PARAM_FILE_2"
+
+
+def secondary_base_default():
+    """Return (path_or_None, env_name_or_None) for the secondary base file.
+
+    The legacy name is a FALLBACK, never a synonym: callers should say when it is what resolved,
+    because it is also the name that still behaves differently elsewhere.
+    """
+    for name in SECONDARY_ENV_NAMES:
+        val = os.environ.get(name)
+        if val:
+            return val, name
+    return None, None
+
+
+def warn_if_legacy_secondary(env_name, stream=None):
+    """Print a notice when the secondary base came from the legacy name. Silent otherwise."""
+    if env_name != LEGACY_SECONDARY_ENV:
+        return
+    print(f"NOTE: secondary base taken from the LEGACY ${LEGACY_SECONDARY_ENV}. The current name "
+          f"is $A2MC_SECONDARY_PARAM_FILE; both are read by the ensemble materializer, the "
+          f"validator and the crossed materializer, and the current name wins if both are set.",
+          file=stream or sys.stderr)
+
+
 def route_surfaces(names, primary_vars: set, tertiary_vars: set, tertiary_given: bool,
                    declared: dict = None,
-                   secondary_names: set = None, secondary_given: bool = False) -> dict:
-    """canonical id -> "primary" | "secondary" | "tertiary".
+                   secondary_names: set = None, secondary_given: bool = False,
+                   quaternary_vars: set = None, quaternary_given: bool = False) -> dict:
+    """canonical id -> "primary" | "secondary" | "tertiary" | "quaternary".
 
-    Primary and tertiary are resolved by PROBING each base file's own variable names (never
-    assumed or hand-listed). Refuses loudly (raises ValueError) if a name resolves to neither or
+    Primary, tertiary and quaternary are resolved by PROBING each base file's own variable names
+    (never assumed or hand-listed). Refuses loudly (raises ValueError) if a name resolves to neither or
     several surfaces, or would-be-tertiary but no tertiary base was supplied.
 
     THE SECONDARY SURFACE CANNOT BE PROBED, and that is why it takes a declared set rather than a
@@ -265,25 +311,30 @@ def route_surfaces(names, primary_vars: set, tertiary_vars: set, tertiary_given:
     files it describes.
     """
     secondary_names = secondary_names or set()
+    quaternary_vars = quaternary_vars or set()
     routing = {}
     problems = []
     for cid in names:
         bare = bare_name(cid)
         in_primary = bare in primary_vars
         in_tertiary = tertiary_given and bare in tertiary_vars
+        in_quaternary = quaternary_given and bare in quaternary_vars
         # Declared, not probed -- see the docstring. Checked BEFORE the not-found branch so a
         # writable secondary name with no base file gets its own explicit error rather than the
         # generic "not found", which would send a reader looking in the wrong file.
         is_secondary = bare in secondary_names
-        n_hits = int(in_primary) + int(in_tertiary) + int(is_secondary)
+        n_hits = int(in_primary) + int(in_tertiary) + int(is_secondary) + int(in_quaternary)
         if n_hits > 1:
             where = [w for w, hit in (("primary", in_primary), ("secondary", is_secondary),
-                                      ("tertiary", in_tertiary)) if hit]
+                                      ("tertiary", in_tertiary),
+                                      ("quaternary", in_quaternary)) if hit]
             problems.append(f"{cid}: '{bare}' resolves to MORE THAN ONE surface ({', '.join(where)})")
         elif in_primary:
             routing[cid] = "primary"
         elif in_tertiary:
             routing[cid] = "tertiary"
+        elif in_quaternary:
+            routing[cid] = "quaternary"
         elif is_secondary and secondary_given:
             routing[cid] = "secondary"
         elif is_secondary:
@@ -293,7 +344,9 @@ def route_surfaces(names, primary_vars: set, tertiary_vars: set, tertiary_given:
                 f"Refusing rather than staging the surface unchanged, which would silently drop "
                 f"a sampled value.")
         else:
-            where = "the primary base file" if not tertiary_given else "either supplied base file"
+            n_bases = 1 + int(tertiary_given) + int(quaternary_given)
+            where = ("the primary base file" if n_bases == 1
+                     else f"any of the {n_bases} supplied base files")
             extra = (f" (this model's secondary surface accepts: {', '.join(sorted(secondary_names))})"
                      if secondary_names else "")
             problems.append(f"{cid}: '{bare}' not found in {where}{extra}")

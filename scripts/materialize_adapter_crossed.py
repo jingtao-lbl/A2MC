@@ -19,7 +19,9 @@ Writes files ONLY (no sbatch). Optionally a V0 baseline (unperturbed primary × 
 Env (source a2mc_noncime_config.sh + the site config first):
     A2MC_MODEL, A2MC_BASE_PARAM_FILE (primary base), A2MC_PARAM_LIST_FILE (trait list),
     A2MC_ENSEMBLE_MATRIX_FILE (trait matrix), A2MC_OUTPUT_DIR, A2MC_CASE_NAME_PATTERN (uses {N} and {M}),
-    A2MC_BASE_PARAM_FILE_2 (secondary base), A2MC_SECONDARY_SWEEP ("PPI:40,120,200,280").
+    A2MC_SECONDARY_PARAM_FILE (secondary base; the legacy name A2MC_BASE_PARAM_FILE_2 is
+    still accepted and the current name wins if both are set),
+    A2MC_SECONDARY_SWEEP ("PPI:40,120,200,280").
 """
 
 from __future__ import annotations
@@ -35,7 +37,9 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from scripts.create_adapter_parameter_sample import parse_pft_param_list  # noqa: E402
+from scripts.create_adapter_parameter_sample import (  # noqa: E402
+    parse_pft_param_list, secondary_base_default, warn_if_legacy_secondary,
+)
 
 
 def _case_name(pattern: str, n, m) -> str:
@@ -73,7 +77,12 @@ def main() -> int:
     ap.add_argument("--matrix", default=os.environ.get("A2MC_ENSEMBLE_MATRIX_FILE"))
     ap.add_argument("--run-root", default=os.environ.get("A2MC_OUTPUT_DIR"))
     ap.add_argument("--base-param", default=os.environ.get("A2MC_BASE_PARAM_FILE"))
-    ap.add_argument("--secondary-base", default=os.environ.get("A2MC_BASE_PARAM_FILE_2"))
+    # BOTH env names, resolved exactly as the ensemble materializer and the validator do.
+    # This script read ONLY the legacy name until 2026-09-15, which is the other half of the
+    # defect: a config written with the CURRENT name ran here with no secondary base at all.
+    _sec_default, _sec_env = secondary_base_default()
+    warn_if_legacy_secondary(_sec_env)
+    ap.add_argument("--secondary-base", default=_sec_default)
     ap.add_argument("--secondary-sweep", default=os.environ.get("A2MC_SECONDARY_SWEEP"))
     ap.add_argument("--case-pattern", default=os.environ.get("A2MC_CASE_NAME_PATTERN"))
     ap.add_argument("--start", type=int, default=1, help="1-based first trait (TR) row")

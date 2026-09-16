@@ -71,6 +71,20 @@ fi
 # ========================
 # RAG / VERSION ASSOCIATION (generic — see docs/18)
 # ========================
+# Parameter-surface base files are SITE settings, not machine ones, and there are up to four:
+#   A2MC_BASE_PARAM_FILE    primary     (EcoSIM: the plant-trait NetCDF)
+#   A2MC_SECONDARY_PARAM_FILE  secondary  (EcoSIM: the stand-management NetCDF)
+#     ^ ALSO answers to the legacy name A2MC_BASE_PARAM_FILE_2. The two are the same surface:
+#       the convention changed between EcoSIM_BioCON R2 and R3 and the old name was never
+#       retired, so R2's config sets _2 while R3's and EcoSIM_TeRaCON's set the current name.
+#       materialize_adapter_ensemble.py and validate_adapter_ensemble.py read BOTH (current
+#       name wins, and a run taking the legacy one says so); materialize_adapter_crossed.py
+#       still reads ONLY _2. Prefer the current name in anything new.
+#   A2MC_BASE_PARAM_FILE_3  tertiary    (EcoSIM: the microbial-kinetics NetCDF)
+#   A2MC_BASE_PARAM_FILE_4  quaternary  (EcoSIM: the site/soil-profile grid NetCDF)
+# Each is optional; a surface with no base file set is staged unchanged and cannot be sampled.
+# Listed here so the set is discoverable in one place -- they are SET in the site config.
+
 # A2MC_MODEL_PATH is INTENTIONALLY NOT set here — the site config sets it to the model's
 # checkout root, and the orchestrator's alignment hook selects the RAG profile from it.
 export A2MC_RAG_DIR="${A2MC_RAG_DIR:-${A2MC_ROOT}/rag}"

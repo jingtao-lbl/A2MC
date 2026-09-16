@@ -311,6 +311,26 @@ class ModelSpec:
     # optional in the model itself, an empty path falls back to hardcoded defaults).
     tertiary_namelist_var: str = ""
 
+    # --- Quaternary parameter surface (models with a fourth parameter file) ---
+    # Same contract again, one surface further (see ModelBackend.write_parameter_file
+    # surface="quaternary" + create_case quaternary_param_file). Empty = model has at
+    # most three surfaces. e.g. EcoSIM = "grid_file_in" (the site/soil-profile NetCDF:
+    # texture, bulk density, field capacity, Ksat, pH, CEC, the organic-matter pools,
+    # the solute and mineral set, and the surface albedo).
+    #
+    # THIS SURFACE'S AXIS IS THE SOIL LAYER, not a plant type, and that is the reason
+    # it needs its own writer rather than reusing the primary one: its variables are
+    # dimensioned (ntopou, nlevs), so the first axis is the topographic unit and the
+    # LAYER is the second. A writer that indexed axis 0 would silently edit the wrong
+    # dimension. See ModelSpec.quaternary_axis.
+    quaternary_namelist_var: str = ""
+
+    # What the trailing `_<n>` of a canonical id means ON THE QUATERNARY SURFACE.
+    # The axis column is an ALIAS across A2MC -- plant type on a PFT surface, pool slot
+    # on a microbial one -- and naming it here keeps a parameter list readable and a
+    # bounds table checkable. Empty when no quaternary surface is declared.
+    quaternary_axis: str = ""
+
     # --- Out-of-scope / external-boundary references (wiki validation) ---
     # A model built ON a framework or coupled INTO a host legitimately references
     # symbols the wiki does NOT document (they live in the host/framework, out of
@@ -432,7 +452,7 @@ class ModelBackend(ABC):
         file, or a separate microbial-kinetics file). ``"primary"`` (default) is
         the main parameter file and is the only surface most models have; an
         adapter that supports a second surface handles ``surface="secondary"``,
-        and a third handles ``surface="tertiary"`` (each writes ``base_param_file``
+        a third handles ``surface="tertiary"`` and a fourth ``surface="quaternary"`` (each writes ``base_param_file``
         = that surface's own base). Adapters with fewer surfaces should raise on
         any ``surface`` they don't support. The mapping of a surface to its base
         file and the namelist input it repoints is model-specific and stays
@@ -451,6 +471,7 @@ class ModelBackend(ABC):
         config: Dict[str, Any],
         secondary_param_file: Optional[Path] = None,
         tertiary_param_file: Optional[Path] = None,
+        quaternary_param_file: Optional[Path] = None,
     ) -> Path:
         """Create a model run case directory. Returns the case path.
 
@@ -462,7 +483,8 @@ class ModelBackend(ABC):
         file (see `write_parameter_file` surface="secondary"); the adapter stages
         it and repoints `spec.secondary_namelist_var` at the staged copy.
         `tertiary_param_file` is the same contract one surface further
-        (`spec.tertiary_namelist_var`). Both are ignored by models with fewer
+        (`spec.tertiary_namelist_var`), and `quaternary_param_file` one
+        further again (`spec.quaternary_namelist_var`). Both are ignored by models with fewer
         surfaces; a model that stages an ensemble's shared secondary/tertiary
         files itself (rather than per-case) may instead repoint the case's
         runfile directly after `create_case` returns — see
