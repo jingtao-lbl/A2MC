@@ -91,6 +91,24 @@ export A2MC_RAG_DIR="${A2MC_RAG_DIR:-${A2MC_ROOT}/rag}"
 export A2MC_RAG_AUTO_REBUILD="${A2MC_RAG_AUTO_REBUILD:-false}"
 
 # ========================
+# AUTHOR STAMPED ON CALIBRATION LOGS
+# ========================
+# `calibration-log` stamps "{A2MC_USER_NAME} with {coding-agent name}" on every log under
+# use_cases/{Model}_{Case}/memory/logs/. RESOLVED per clone, NEVER hardcoded: this file is on the
+# INCLUDE list of both sync legs, so a literal name here would travel to every downstream repo and
+# stamp their users' logs with someone else's name -- and a wrong author looks exactly like a right
+# one, so nothing downstream catches it.
+#
+# tools/whoami.py owns the resolution order ($A2MC_USER_NAME -> .me -> git config -> exit 1) and
+# explains why `.me` (per-clone, gitignored) rather than this tracked file. An explicit export in
+# the shell still wins: the guard below only fills an UNSET variable.
+if [ -z "${A2MC_USER_NAME:-}" ]; then
+    _a2mc_who="$(python3 "${A2MC_ROOT}/tools/whoami.py" 2>/dev/null || true)"
+    [ -n "${_a2mc_who}" ] && export A2MC_USER_NAME="${_a2mc_who}"
+    unset _a2mc_who          # last statement, so an unresolved name does not make `source` fail
+fi
+
+# ========================
 # ITERATION CONTROL   (mirrors a2mc_config.sh — keep in sync)
 # ========================
 export A2MC_MAX_SKIP_TESTING=10

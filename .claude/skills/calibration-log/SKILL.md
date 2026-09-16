@@ -209,7 +209,7 @@ use_cases/{Model}_{Case}/memory/logs/{stamp}/YYYYMMDDx_Topic.md
   free-form reasoning — what you looked at, what you found, evidence (cite specific cases/values),
   and any open question. No fixed section list; it is a working note, not a phase deliverable.
 - **Author field** = `{A2MC_USER_NAME} with {coding-agent name}` — e.g. *"Jing Tao with Claude Code"*.
-  `A2MC_USER_NAME` is captured at first run by `a2mc-init` (the greeting) and stored in the machine config (`a2mc_config.sh`, or `a2mc_noncime_config.sh` for a non-CIME model);
+  `A2MC_USER_NAME` is captured at first run by `a2mc-init` (the greeting) and stored in the per-clone, gitignored `.me` via `python3 tools/whoami.py --set "<name>"`; both machine configs resolve the variable from there rather than carrying a name, because they are tracked and ship downstream, where a literal name would stamp someone else's logs;
   the coding-agent name is whatever harness you're running in. Fall back to the user's stated name, or
   `A2MC user with {coding-agent name}` if none was given. This is the **calibration-user** convention and
   it governs every log under `use_cases/{Model}_{Case}/memory/logs/`. A2MC *framework-development* logs use a

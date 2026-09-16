@@ -17,7 +17,7 @@ Legend: **[novice]** = explain the concept when asking; **[expert]** = just capt
 
 > "Hi! I'm your A2MC agent — I'll work with you as your science assistant to calibrate your model. What's your name, and how should I address you?"
 
-Record the answer as **`A2MC_USER_NAME`** (written to `a2mc_config.sh` in Step 3). Beyond personalizing the session, it sets the **Author field** for every log written during the user's work: **`{A2MC_USER_NAME} with {coding-agent name}`** — e.g. *"Jing Tao with Claude Code"*. The coding-agent name is whatever harness the offline agent runs in. If the user declines to give a name, fall back to a neutral author (`A2MC user with {coding-agent name}`). `[→ A2MC_USER_NAME]`
+Record the answer with **`python3 tools/whoami.py --set "<name>"`**, which writes the per-clone, gitignored `.me`; the machine configs resolve `A2MC_USER_NAME` from it rather than carrying a name, since they are tracked and ship downstream. Beyond personalizing the session, it sets the **Author field** for every log written during the user's work: **`{A2MC_USER_NAME} with {coding-agent name}`** — e.g. *"Jing Tao with Claude Code"*. The coding-agent name is whatever harness the offline agent runs in. If the user declines to give a name, fall back to a neutral author (`A2MC user with {coding-agent name}`). `[→ A2MC_USER_NAME]`
 
 **Q0.1 — How would you describe your experience with ELM / ELM-FATES?**
 - (a) New to it — please explain the concepts as we go

@@ -925,3 +925,71 @@ def test_compare_learners_ranks_families_and_records_failures():
     assert "error" in cmp["results"]["nosuchlearner"]
     assert cmp["ranking"][-1] == "nosuchlearner"
     assert "learner" in bakeoff_summary(cmp)
+
+
+# ---------------- 2026-09-15: the R2 normalisation contract, now in code not only in prose
+
+def test_per_case_r2_is_not_the_pooled_r2_when_levels_differ():
+    """THE REGRESSION THIS EXISTS FOR.
+
+    Two cases at very different levels, each predicted as a flat line at its own mean. The pooled
+    R2 is near 1 because between-case spread dominates; the per-case R2 is 0 because neither
+    trajectory is tracked at all. A metric that cannot tell these apart cannot gate an emulator.
+    """
+    import numpy as np
+    from models.surrogate.validate import per_case_r2, r2_score
+    t = np.linspace(0, 1, 200)
+    y = np.stack([1.0 + 0.05 * np.sin(20 * t), 100.0 + 5.0 * np.sin(20 * t)])
+    p = np.stack([np.full_like(t, y[0].mean()), np.full_like(t, y[1].mean())])
+    pooled = r2_score(y.ravel(), p.ravel())
+    pc = per_case_r2(y, p)
+    assert pooled > 0.99, pooled
+    assert np.allclose(pc, 0.0, atol=1e-9), pc
+
+
+def test_per_case_r2_rejects_a_mismatched_or_1d_shape():
+    import numpy as np
+    import pytest as _pt
+    from models.surrogate.validate import per_case_r2
+    with _pt.raises(ValueError, match="n_cases, n_steps"):
+        per_case_r2(np.zeros(10), np.zeros(10))
+    with _pt.raises(ValueError, match="n_cases, n_steps"):
+        per_case_r2(np.zeros((2, 10)), np.zeros((2, 11)))
+
+
+def test_per_case_r2_is_nan_for_a_case_with_no_variance_or_too_few_points():
+    import numpy as np
+    from models.surrogate.validate import per_case_r2
+    flat = np.ones((1, 50))
+    assert np.isnan(per_case_r2(flat, flat))[0]
+    short = np.arange(4.0).reshape(1, 4)
+    assert np.isnan(per_case_r2(short, short))[0]
+
+
+def test_summarise_per_case_r2_sets_r2_to_the_median_and_keeps_the_pooled_value():
+    import numpy as np
+    from models.surrogate.validate import summarise_per_case_r2
+    rng = np.random.default_rng(0)
+    y = rng.normal(size=(20, 300)) + np.arange(20)[:, None] * 50.0
+    p = y + rng.normal(scale=0.1, size=y.shape)
+    d = summarise_per_case_r2(y, p, min_r2=0.9)
+    assert d["r2_normalisation"] == "within_case"
+    assert d["r2"] == d["r2_percase_median"]
+    assert "r2_pooled" in d and d["n_cases_scored"] == 20
+    assert 0.0 <= d["frac_cases_above_bar"] <= 1.0
+
+
+def test_require_r2_normalisation_refuses_a_trajectory_report_carrying_a_pooled_r2():
+    """A report could previously carry a pooled value under `r2` and read as a pointwise pass."""
+    import pytest as _pt
+    from models.surrogate.validate import require_r2_normalisation
+    bad = {"outflow_Fe": {"r2": 0.98}}                       # no normalisation stamp
+    with _pt.raises(ValueError, match="r2_normalisation"):
+        require_r2_normalisation(bad, "trajectory")
+    require_r2_normalisation(bad, "scalar")                  # scalar battery is unaffected
+
+
+def test_mode_criteria_declare_which_r2_they_mean():
+    from models.surrogate.validate import MODE_CRITERIA
+    assert MODE_CRITERIA["offline_search"]["r2_normalisation"] == "across_cases"
+    assert MODE_CRITERIA["online_inference"]["r2_normalisation"] == "within_case_for_trajectories"

@@ -133,19 +133,46 @@ def test_a_clone_with_no_memory_bucket_is_NA(monkeypatch, tmp_path):
     assert C._memory_row()[0] == C.NA
 
 
-def test_an_unresolvable_author_is_a_FAIL(monkeypatch, tmp_path):
+def _isolate_whoami(monkeypatch, tmp_path, git_name):
+    """Point `_author_row()` at the FIXTURE, not at the real clone.
+
+    `check_clone_setup` puts `<repo>/tools` on sys.path and does `from whoami import resolve`,
+    while this file does `import tools.whoami as W`. Those are TWO DISTINCT module objects for one
+    file, so patching `W` alone never reached the code under test: the two tests below asserted
+    FAIL while actually measuring the developer's own clone. They passed only because no `.me`
+    existed here, and both turned red the moment one was created -- a check that could not fail
+    ([[feedback_a_check_that_cannot_fail]]). Aliasing `whoami` to `W` in sys.modules makes the
+    function-local import resolve to the patched module.
+    """
+    monkeypatch.setitem(sys.modules, "whoami", W)
     monkeypatch.delenv("A2MC_USER_NAME", raising=False)
     monkeypatch.setattr(W, "ME", tmp_path / ".me")
-    monkeypatch.setattr(W, "_git_name", lambda: "")
+    monkeypatch.setattr(W, "_git_name", lambda: git_name)
+
+
+def test_the_author_fixture_actually_reaches_the_code_under_test(monkeypatch, tmp_path):
+    """The guard for the aliasing bug above: a fixture `.me` must drive the row to PASS.
+
+    Without it the two tests below can pass while measuring the real environment, which is exactly
+    what happened. If this one fails, they are not testing what they claim.
+    """
+    me = tmp_path / ".me"
+    me.write_text("Fixture Person\n")
+    _isolate_whoami(monkeypatch, tmp_path, "")
+    monkeypatch.setattr(W, "ME", me)
+    status, _, detail = C._author_row()
+    assert status == C.PASS and "Fixture Person" in detail
+
+
+def test_an_unresolvable_author_is_a_FAIL(monkeypatch, tmp_path):
+    _isolate_whoami(monkeypatch, tmp_path, "")
     assert C._author_row()[0] == C.FAIL
 
 
 def test_a_GUESSED_author_is_also_a_FAIL(monkeypatch, tmp_path):
     """PI, 2026-09-15: fail loudly. A guess is not an answer, and it is the case that produces a
     wrong name rather than an absent one."""
-    monkeypatch.delenv("A2MC_USER_NAME", raising=False)
-    monkeypatch.setattr(W, "ME", tmp_path / ".me")
-    monkeypatch.setattr(W, "_git_name", lambda: "somehandle")
+    _isolate_whoami(monkeypatch, tmp_path, "somehandle")
     status, _, detail = C._author_row()
     assert status == C.FAIL and "guess" in detail
 

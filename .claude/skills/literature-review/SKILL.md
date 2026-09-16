@@ -148,4 +148,7 @@ resolve to a real DOI from the search results.
   explicit-column format) — the provisional (default-anchored) bounds this refines.
 - a2mc-init param-list step ("never invent a bound; anchor to the knowledge base / literature").
 - `markdown-to-pdf` (repo skill) for PDF output; `manuscript-writing-style` for manuscript prose.
+- **Reciprocal skills** — `write-report`: its References section is governed by the no-fabrication and
+  DOI-validation rule in Stage 2/4 above, which it points here for rather than restating. A report that
+  cites published literature is subject to this skill's cardinal rule whether or not a full review was run.
 

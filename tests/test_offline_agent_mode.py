@@ -32,7 +32,7 @@ SKILLS_DIR = _REPO_ROOT / ".claude" / "skills"
 # failing on text the PI had explicitly asked for. A test asserting a contract must read the
 # contract, not a snapshot of it. The remaining shell copies are pinned by
 # tests/test_leak_tokens_in_sync.py. (2026-08-14)
-from tools.validate_agent_surface import LEAK_TOKENS  # noqa: E402
+from tools.validate_agent_surface import line_leaks  # noqa: E402
 
 
 class TestDescribeMode(unittest.TestCase):
@@ -129,7 +129,11 @@ class TestAgentSurfaceLeakClean(unittest.TestCase):
         offenders = []
         for f in surface:
             for i, line in enumerate(f.read_text().splitlines(), 1):
-                if LEAK_TOKENS.search(line):
+                # `line_leaks`, NOT a raw `LEAK_TOKENS.search`: the public-contact and
+                # public-org subtractions are part of the check, and re-applying the token
+                # alone reintroduced a failure on `jingtao-lbl/A2MC` after that form was
+                # deliberately exempted (PI, 2026-09-15).
+                if line_leaks(line):
                     offenders.append(f"{f.relative_to(_REPO_ROOT)}:{i}: {line.strip()}")
         self.assertEqual(offenders, [], "leak tokens in agent surface:\n" + "\n".join(offenders))
 

@@ -709,4 +709,34 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '/reports/'; the
     fi
 fi
 
+# (21) tools/check_report_references.py (a staged REPORT's References section carries a resolvable
+# identifier per published work) when one is staged. FOURTH member of the report family, beside
+# (16) structure, check_report_figures.py alt text and (20) figure drift, and separate for the same
+# reason those are separate: it asks a different question of a different section, and folding it in
+# would make one exit code mean two unrelated things.
+# THE FAILURE: a methodology report cited a paper nobody had opened, with a real author and year
+# lifted from a module docstring, an invented title and a placeholder where the venue goes. Nothing
+# could see it -- `write-report` had no reference step, and the only DOI regex in tools/ governed
+# parameter bounds. It cannot verify a DOI RESOLVES (that is Crossref, and `literature-review`
+# owns it); it demands that something resolvable is present, which a fabricated entry cannot supply.
+# DATE-SCOPED from 2026-09-15, the day References entered the skill, so existing reports keep what
+# they have. STAGED-ONLY, EXIT 0 clean / 1 WARN / 2 ERROR, same `|| _rc=$?` idiom as (16).
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^use_cases/[^/]+/reports/.+\.md$'; then
+    PY="$(pick_py)"
+    _crr_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_report_references.py" --staged || _crr_rc=$?
+    fi
+    if [[ $_crr_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: a staged report cites a work with no resolvable identifier -- see above." >&2
+        echo "  A published reference is a paper you OPENED, and it carries a DOI or URL. Never" >&2
+        echo "  assemble one from a docstring, a code comment or a recollection of a title." >&2
+        echo "  See .claude/skills/write-report/SKILL.md and .claude/skills/literature-review/SKILL.md" >&2
+        echo "  (Stage 2/4: validate the DOI before including it). Bypass with --no-verify only if" >&2
+        echo "  you know why." >&2
+        exit 1
+    fi
+fi
+
 exit 0

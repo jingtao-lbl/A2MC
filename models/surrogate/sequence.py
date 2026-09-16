@@ -93,6 +93,7 @@ class KGMLEmulator(SurrogateModel):
                  reduce: str = "annual_mean_sum",
                  time_index: Optional[np.ndarray] = None,
                  hidden: int = 64, layers: int = 2, dropout: float = 0.2,
+                 cell: str = "gru",
                  branch_of: Optional[Dict[str, List[str]]] = None,
                  mass_balance: Optional[Dict[str, float]] = None,
                  mass_balance_scale: Optional[Sequence[str]] = None,
@@ -111,6 +112,17 @@ class KGMLEmulator(SurrogateModel):
         self.reduce = reduce
         self.time_index = None if time_index is None else np.asarray(time_index)
         self.hidden, self.layers, self.dropout = hidden, layers, dropout
+        # THE RECURRENT CELL IS A CHOICE, NOT A CONSTANT (2026-09-15). This class was hardwired to
+        # nn.GRU in both the trunk and every branch, which is faithful to KGML-ag-Carbon's
+        # RecoGRU_KGML. It is not a property of the ARCHITECTURE: the trunk-plus-branches shape,
+        # the hierarchical wiring and the physics terms are all cell-agnostic. LSTM carries a
+        # separate cell state, which is the reason to want it on a system whose memory is a slowly
+        # evolving mineral inventory rather than a fast seasonal cycle. The two have identical
+        # module signatures in torch, so this selects and nothing else changes.
+        cell = str(cell).lower()
+        if cell not in ("gru", "lstm"):
+            raise ValueError(f"cell must be 'gru' or 'lstm', got {cell!r}")
+        self.cell = cell
         self.branch_of = {k: list(v) for k, v in (branch_of or {}).items()}
         self.mass_balance = dict(mass_balance or {})
         # The DENOMINATOR of the relative hinge, declared rather than inferred. KGML uses
@@ -174,11 +186,12 @@ class KGMLEmulator(SurrogateModel):
 
         names, branch_of, hidden = self._names, self.branch_of, self.hidden
         layers, dropout = self.layers, self.dropout
+        RNN = nn.LSTM if self.cell == "lstm" else nn.GRU
 
         class Net(nn.Module):
             def __init__(self):
                 super().__init__()
-                self.trunk = nn.GRU(n_in, hidden, layers, dropout=dropout, batch_first=True)
+                self.trunk = RNN(n_in, hidden, layers, dropout=dropout, batch_first=True)
                 self.drop = nn.Dropout(dropout)
                 self.branch = nn.ModuleDict()
                 self.head = nn.ModuleDict()
@@ -186,7 +199,7 @@ class KGMLEmulator(SurrogateModel):
                     extra = len(branch_of.get(n, []))
                     # a plain branch sees [trunk, inputs]; a wired one additionally sees its
                     # parents' PREDICTED values, which is KGML's hierarchical arm
-                    self.branch[n] = nn.GRU(n_in + hidden + extra, hidden, 1, batch_first=True)
+                    self.branch[n] = RNN(n_in + hidden + extra, hidden, 1, batch_first=True)
                     self.head[n] = nn.Linear(hidden, 1)
 
             def forward(self, x):
@@ -381,7 +394,7 @@ class KGMLEmulator(SurrogateModel):
                     "cfg": {"driver_names": self.driver_names, "reduce": self.reduce,
                             "time_index": None if self.time_index is None
                             else self.time_index.tolist(),
-                            "hidden": self.hidden, "layers": self.layers,
+                            "hidden": self.hidden, "layers": self.layers, "cell": self.cell,
                             "dropout": self.dropout, "branch_of": self.branch_of,
                             "mass_balance": self.mass_balance,
                             "mass_balance_scale": self.mass_balance_scale,

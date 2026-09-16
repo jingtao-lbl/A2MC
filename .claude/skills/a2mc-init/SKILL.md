@@ -68,7 +68,10 @@ This skill writes files and asserts model behavior, so the offline-agent operati
 
 **Open with a greeting and capture the user's name:** *"Hi! I'm your A2MC agent — I'll work with you as
 your science assistant to calibrate your model. What's your name, and how should I address you?"* Record
-it as **`A2MC_USER_NAME`** (written to `a2mc_config.sh` in Step 3). Beyond personalizing the session, it
+it with **`python3 tools/whoami.py --set "<name>"`**, which writes the per-clone, gitignored `.me`.
+**Do NOT write the name into a machine config**: both are tracked and on both sync legs' INCLUDE
+lists, so a literal name there travels downstream and stamps other people's logs. The configs
+resolve `A2MC_USER_NAME` from `whoami.py` instead of carrying a name. Beyond personalizing the session, it
 sets the **Author field** for every log the user's work produces — `{A2MC_USER_NAME} with {coding-agent
 name}` (e.g. *"Jing Tao with Claude Code"*); see the `calibration-log` skill. If the user declines,
 fall back to `A2MC user with {coding-agent name}`.
@@ -225,8 +228,10 @@ Record the user's fork URLs + intended experiment branch in their case memory if
 If `a2mc_config.sh` is not yet customized, walk the user through the minimal set:
 
 ```bash
+# The author name is NOT set here -- `python3 tools/whoami.py --set "<name>"` writes the
+# per-clone `.me`, and the config resolves A2MC_USER_NAME from it. This file is tracked and
+# SHIPS on both sync legs, so a literal name would stamp every downstream user's logs.
 # In a2mc_config.sh:
-export A2MC_USER_NAME="<how the user asked to be addressed>"  # from the Step-0 greeting; author field
 export A2MC_PROJECT="<HPC allocation>"
 export A2MC_E3SM_ROOT="<E3SM source>"
 export A2MC_OUTPUT_ROOT="<simulation output root>"

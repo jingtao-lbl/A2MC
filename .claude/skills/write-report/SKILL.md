@@ -58,6 +58,8 @@ structure + discipline for that; the pieces (figures, PDF) come from sibling ski
 - **An unverified claim is LABELLED, never stated flat.** If a claim is not backed by data, a citation
   or stated logic, frame it as a hypothesis, an assumption or a limitation. "Wiring the file changes
   the baseline" written before measuring it is the failure this prevents (2026-08-17, EcoSIM_Lusignan).
+- **A published reference is a paper you OPENED, and it carries a resolvable identifier.** A report citing external literature needs a References section, and every entry must be a work you actually read, with a DOI or URL a reader can follow. **Never assemble a citation from a docstring, a code comment, a recollection of a title, or another document's paraphrase.** That is how an invented title and venue get built around the one real fact available, an author and a year, and it is indistinguishable from a genuine entry on the page. The full no-fabrication rule, including validating a DOI against Crossref before including it, belongs to `literature-review` and is not restated here. Measured 2026-09-15: a methodology report cited *"Knowledge-guided machine learning for agroecosystem carbon dynamics. Ecosystem modelling literature."* -- title invented, venue a placeholder, assembled around an author and year carried in a module docstring. `tools/check_report_references.py` catches the structural half of this offline.
+
 - **Every quantitative claim carries its uncertainty.** An estimate without one is incomplete. A phase
   shift reported as "+13 days" whose year-to-year SD is 16 days, and which is negative in 2 of 11
   years, misleads a reader who then cannot find it in the data — which is exactly what happened when
@@ -122,7 +124,17 @@ structure + discipline for that; the pieces (figures, PDF) come from sibling ski
    written rather than omitted. The **Gaps line is the load-bearing one** and feeds `refine-skill`.
 7. **Provenance / artifacts** — the source logs, commit hashes, data files, and the figure-regen script,
    so every claim is traceable and the report is reproducible.
-8. **Cross-references** — link companion reports/logs; **cross-ref, don't duplicate** their content.
+8. **References** — REQUIRED as soon as the report cites published literature, and omitted entirely
+   when it does not. One entry per work, each carrying a **DOI or URL**. Internal artifacts (logs, phase
+   stems, scripts, commits) **do NOT belong here** (PI, 2026-09-16): they go in Cross-references or
+   Provenance. The same rule governs the PROSE — refer to internal work by what it is ("A2MC's own
+   EcoSIM_Lusignan study"), never in author-year form, which dresses an unpublished repo artifact as a
+   publication and leaves a reader hunting a paper that does not exist. What an entry may NOT be: see
+   the discipline bullet above.
+   **In a ROUND report this is a SUBSECTION of section 7, not a ninth section** — that report's canonical
+   seven-section outline below is the sections, and everything else is a subsection under one of them.
+   The obligation is identical; only its depth changes.
+9. **Cross-references** — link companion reports/logs; **cross-ref, don't duplicate** their content.
 
 **The outline is a STORY TO BUILD, not a set of boxes to fill** (PI, 2026-09-09). The sections in order must read as one argument, each one standing on the one before: what the model gets wrong and why it matters, what could be established without new work, what was therefore hypothesised and tested, what the system is now known to do, what that leaves open. A section that only reports its own contents is a box filled; the reader is then left to assemble the argument, and the report's central finding ends up stated in no section at all. Write the connective sentences deliberately — each section opens by saying what the previous one left unresolved.
 
@@ -336,6 +348,8 @@ contradiction between logs and name the primary source. Read-only."
 
 **For a ROUND report the fact-gathering opens one more source: that round's offline state file**, `use_cases/<Case>/memory/workflow_state_offline_r{NN}.json`. Its `evidence.diagnoses[] / .hypotheses[] / .experiments[]` carry a `one_line` per finding written when the finding was fresh, and `decisions[]` carries each finding as it was established. That is the reasoning chain in machine-readable form, and it is the one source that has not been through a layer of synthesis. See the ROUND report section for the measured reason this is not optional.
 
+**If the report will cite published literature, gather those facts the same way, and FIRST.** Check whether the project keeps its own paper collection before searching outward: a directory of PDFs someone has already assembled is both the fastest source and the one most likely to hold the work closest to yours. Read each paper you intend to cite and take its bibliographic data off the paper rather than from memory. Route a genuine search through `literature-review`, whose Stage 2/4 rule (a resolvable DOI, validated before inclusion) governs every entry you end up with. Measured 2026-09-15: a report's closest prior work, a published surrogate for the very model it was emulating, sat unread in the project's paper directory while the report cited a paper nobody had opened.
+
 Then **reconcile the contradictions in the report** — don't silently pick one. (Worked example — the
 demo-branch R5 mass-balance report: the pass surfaced a per-patch-vs-per-m² `num_plant` unit mismatch, a
 superseded dropout %, and a stale "the fix is Option A" framing — all resolved in the report.)
@@ -446,6 +460,11 @@ artifacts (embargoed results stay in gitignored `phase_results/`).
   `tools/check_report_figures.py`.
 - **Silently resolving a cross-log contradiction** — flag it and say which source you trust and why; a
   reader who later finds the other log needs to know it was superseded.
+- **A citation assembled rather than read** — an author and a year recalled from a docstring or another
+  document, with the title and venue supplied by inference. It looks like every other entry in the list,
+  and it is the one claim in a report a reader cannot check without leaving the report. Run
+  `tools/check_report_references.py`: an entry with no resolvable identifier is the shape a fabricated one
+  takes, because there is no DOI to give for a paper that was never opened.
 - **Stale placeholders** — a "TBD" left in after the result landed. Update the report when the run closes.
 - **Duplicating a companion doc** — cross-reference `summarize-calibration-round` / an ana_log rather than
   restating it; keep each report's boundary clear. **This applies to NARRATIVE, never to a mechanism.**
@@ -470,7 +489,8 @@ artifacts (embargoed results stay in gitignored `phase_results/`).
   `scientific-analysis` (the investigation→figure→ana_log that often feeds a report).
 - **Reciprocal skills** — `manuscript-writing-style`: this skill borrows its Rigor / Transparency /
   Self-check layer for report prose, and it points back here for non-journal reports. Register and
-  section scaffold stay its own.
+  section scaffold stay its own. `literature-review`: it owns the no-fabrication and DOI-validation
+  rule that every References entry here must satisfy, and this skill does not restate it.
 - **`summarize-calibration-round`** — not a rival, a SUPPLIER. It produces the round's
   standardized figures and tables (whole-ensemble graphs, screening evaluation, Morris μ*),
   and the ROUND report this skill defines **cites** them rather than regenerating them. The

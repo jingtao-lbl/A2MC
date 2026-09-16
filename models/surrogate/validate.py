@@ -248,6 +248,85 @@ def r2_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
 # The asymmetry, stated in docs/41 and encoded here:
 #   offline_search    lower accuracy bar (ranking suffices), HIGHER honesty bar (coverage gates)
 #   online_inference  higher accuracy bar (pointwise R2 gates), coverage reported not gated
+def per_case_r2(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
+    """(n_cases,) coefficient of determination WITHIN each case, against that case's own mean.
+
+    For TRAJECTORY targets, where each case contributes a series rather than a scalar. `r2_score`
+    above pools whatever it is given, which is correct for the scalar battery -- there each case
+    contributes one number and the across-case variance IS the signal -- and wrong for a sequence
+    artifact, where it divides by the between-case spread. On a parameter sweep that spread is
+    large, so predicting each case's LEVEL captures nearly all of it while the trajectory stays
+    free, and the pooled score approaches 1 on a model with no within-case skill at all.
+
+    Measured: a pooled 10-of-10 pass became 7 of 10 within cases, and 0 of 10 with every median
+    NEGATIVE once a forcing replay was withheld
+    (`use_cases/PFLOTRAN_miniLEO/reports/20260915a_LSTM_Emulator_Methodology/`).
+
+    Both arrays are (n_cases, n_steps). A case with fewer than 8 finite pairs, or with zero
+    variance of its own, yields NaN rather than a number that would be read as a score.
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    if y_true.ndim != 2 or y_true.shape != y_pred.shape:
+        raise ValueError(f"per_case_r2 needs two (n_cases, n_steps) arrays of equal shape; "
+                         f"got {y_true.shape} and {y_pred.shape}")
+    out = np.full(len(y_true), np.nan)
+    for c in range(len(y_true)):
+        ok = np.isfinite(y_true[c]) & np.isfinite(y_pred[c])
+        if ok.sum() < 8:
+            continue
+        yt, yp = y_true[c][ok], y_pred[c][ok]
+        ss_tot = float(np.sum((yt - yt.mean()) ** 2))
+        if ss_tot <= 0:
+            continue
+        out[c] = 1.0 - float(np.sum((yt - yp) ** 2)) / ss_tot
+    return out
+
+
+def summarise_per_case_r2(y_true: np.ndarray, y_pred: np.ndarray,
+                          min_r2: float) -> Dict[str, Any]:
+    """The per-target block a TRAJECTORY acceptance report must carry.
+
+    `r2` is set to the MEDIAN per-case value so a reader or checker reaching for the usual key gets
+    the metric that matches the claim, and the pooled value is carried beside it as `r2_pooled`
+    rather than dropped, so the gap between the two stays visible.
+    """
+    pc = per_case_r2(y_true, y_pred)
+    good = pc[np.isfinite(pc)]
+    if not len(good):
+        return {"r2": float("nan"), "r2_normalisation": "within_case", "n_cases_scored": 0}
+    return {
+        "r2": float(np.median(good)),
+        "r2_normalisation": "within_case",
+        "r2_percase_median": float(np.median(good)),
+        "r2_percase_q25": float(np.percentile(good, 25)),
+        "r2_percase_q75": float(np.percentile(good, 75)),
+        "r2_percase_min": float(np.min(good)),
+        "frac_cases_above_bar": float(np.mean(good >= min_r2)),
+        "r2_pooled": r2_score(np.asarray(y_true).ravel(), np.asarray(y_pred).ravel()),
+        "n_cases_scored": int(len(good)),
+    }
+
+
+def require_r2_normalisation(per_target: Dict[str, Dict[str, Any]], target_kind: str) -> None:
+    """Refuse a TRAJECTORY report whose per-target blocks do not say how their R2 was normalised.
+
+    The contract used to live only in prose, so a report could carry a pooled R2 under the key
+    `r2` and read as though it had met the pointwise bar. Any writer of a trajectory acceptance
+    report goes through `summarise_per_case_r2`, which stamps `r2_normalisation`; this refuses one
+    that did not.
+    """
+    if target_kind != "trajectory":
+        return
+    bad = [t for t, d in per_target.items() if d.get("r2_normalisation") != "within_case"]
+    if bad:
+        raise ValueError(
+            f"trajectory acceptance report: {len(bad)} target(s) carry no "
+            f"`r2_normalisation: within_case` -- {sorted(bad)[:5]}. A pooled R2 divides by the "
+            f"between-case variance and is not the pointwise bar. Build the per-target block with "
+            f"`summarise_per_case_r2`.")
+
+
 MODE_CRITERIA: Dict[str, Dict[str, Any]] = {
     "offline_search": {
         # Exactly the previous signature defaults, so this change is a no-op for every existing
@@ -257,6 +336,7 @@ MODE_CRITERIA: Dict[str, Dict[str, Any]] = {
         "coverage_tolerance": 0.05,
         "min_on_manifold": 0.9,
         "min_r2": None,              # not gated: ranking is the requirement
+        "r2_normalisation": "across_cases",   # scalar battery: one value per case
         "gate_coverage": True,
     },
     "online_inference": {
@@ -267,6 +347,10 @@ MODE_CRITERIA: Dict[str, Dict[str, Any]] = {
         "coverage_tolerance": 0.05,
         "min_on_manifold": 0.9,
         "min_r2": 0.9,               # docs/41: the runtime-emulator bar is R2 >= 0.9
+        # WHICH R2. For a SCALAR target the battery below pools one value per case and
+        # that is correct. For a TRAJECTORY target it must be normalised WITHIN each
+        # case: see `per_case_r2` and `require_r2_normalisation` above.
+        "r2_normalisation": "within_case_for_trajectories",
         "gate_coverage": False,      # reported, not a verdict (docs/41's stated asymmetry)
     },
 }
@@ -327,6 +411,8 @@ def run_acceptance(model: SurrogateModel,
                                "coverage_tolerance": coverage_tolerance,
                                "min_on_manifold": min_on_manifold,
                                "min_r2": min_r2,
+                               # this battery scores SCALARS, one per case
+                               "r2_normalisation": "across_cases",
                                "gate_coverage": crit["gate_coverage"]}
     X_test = np.atleast_2d(np.asarray(X_test, dtype=float))
     Y_test = np.atleast_2d(np.asarray(Y_test, dtype=float))

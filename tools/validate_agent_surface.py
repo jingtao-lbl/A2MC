@@ -90,6 +90,20 @@ PUBLIC_CONTACT = re.compile(r"jingtao@lbl\.gov")
 # only the `jingtao-lbl` owner form is exempt. PI decision 2026-09-15, after the gate rejected a
 # skill for naming the very repo it tells you to sync to.
 PUBLIC_ORG = re.compile(r"jingtao-lbl")
+
+
+def line_leaks(line: str) -> bool:
+    """True if `line` carries a private path/username token, with the public forms subtracted.
+
+    THE SUBTRACTIONS ARE PART OF THE CHECK, so they must not live only at the call site. When
+    `PUBLIC_ORG` was added on 2026-09-15 it went into this module's scan and into both sync legs,
+    but `tests/test_offline_agent_mode.py` imported `LEAK_TOKENS` and re-applied it RAW -- so the
+    test kept failing on `jingtao-lbl/A2MC` after the exemption was agreed, and a parallel session
+    reported it as an unrelated breakage. Importing the token without the subtractions is not
+    importing the check. Everything in-process now calls this; the two shell legs necessarily
+    reimplement it in awk, and `tests/test_leak_tokens_in_sync.py` holds those to the same tokens.
+    """
+    return bool(LEAK_TOKENS.search(PUBLIC_ORG.sub("", PUBLIC_CONTACT.sub("", line))))
 # Markdown links: [text](target). We validate repo-relative targets only.
 MD_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 NON_FILE_LINK = re.compile(r"^(https?:|mailto:|#)")
@@ -178,7 +192,7 @@ def validate_agent_surface(repo_root: Path) -> List[Finding]:
     surface_md = ([agents_md] if agents_md.exists() else []) + skills_md
     for f in surface_md:
         for i, line in enumerate(f.read_text().splitlines(), 1):
-            if LEAK_TOKENS.search(PUBLIC_ORG.sub("", PUBLIC_CONTACT.sub("", line))):
+            if line_leaks(line):
                 findings.append(Finding("ERROR", "L1", f"{f.relative_to(repo_root)}:{i}",
                                         f"private path/username token: {line.strip()[:80]}"))
 
