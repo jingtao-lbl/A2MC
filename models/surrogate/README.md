@@ -8,7 +8,7 @@ Design and rationale: `docs/41_Surrogate_Module_Design_And_Implementation_Plan.m
 
 > **The surrogate makes the SEARCH global. The physics model keeps the VERDICT.**
 
-Every configuration a surrogate proposes is confirmed on the physics model before it enters a round record, a report, or curated knowledge. A surrogate result is unverified by construction, so injecting one into the knowledge base is already forbidden by `feedback_no_kb_injection_before_verified_test`.
+Every configuration a surrogate proposes is confirmed on the physics model before it enters a round record, a report, or curated knowledge. A surrogate result is unverified by construction, so it is not eligible for curated knowledge, which admits a finding only after a verified test on the physics model.
 
 ## Why it is not a `ModelBackend`
 
@@ -26,12 +26,13 @@ An S0/S1 surrogate predicts the **reduced scalar**. To impersonate a backend it 
 
 The physics backend is still needed, but only at training time to assemble `Y` from completed cases. It is not in the prediction path.
 
-## Two axes: tier and learner
+## Tier, learner, and architecture
 
-These are independent, and conflating them was a real defect in the first cut (one hard-coded RandomForest shipped as if it were a ladder).
+Three choices, made separately:
 
-- **Tier** = *what* is emulated. Scalar (S0/S1) vs trajectory (S2) vs knowledge-guided sequence model (S3).
-- **Learner** = *with what model family*. Any tier accepts any family.
+- **Tier** = *what* is emulated, and how much knowledge it carries. Scalar (S0/S1) vs trajectory (S2) vs knowledge-guided (S3).
+- **Learner** = *with what model family* a tier class regresses. `S0Surrogate`, `S1Surrogate`, `S2Surrogate` and `S3Surrogate` each accept any registry family, and tier and learner are independent.
+- **Architecture** = the network a structured output needs, chosen by the SHAPE of the output: a jointly fitted vector, a driver-conditioned series, a gridded field, values on a network of nodes, an output field driven by an input function. Those classes fix their network with `arch=` or `cell=` rather than taking `learner=`; see [Architectures by output type](#architectures-by-output-type).
 
 ### S1 makes two picks, not one
 
@@ -40,7 +41,7 @@ S1 asks two questions of every parameter set, and **both** are the caller's choi
 ```
    parameter set θ
         ├──► "will it survive?"        → classifier= → alive / dead
-        └──► "if so, what comes out?"  → learner=    → plant_C, NPP, ...
+        └──► "if so, what comes out?"  → learner=    → target values
                                          (trained on the survivors only)
 ```
 
@@ -51,6 +52,7 @@ Same algorithm families appear in both lists because most families have a regres
 | Linear model | `ridge` | `logistic` | linear — **the complexity baseline** | yes (leverage) |
 | Random Forest | `rf` | `rf` | axis-aligned splits — **represents a cliff** | yes (inter-tree spread) |
 | Gradient Boosting Machine | `gbm` | `gbm` | axis-aligned, boosted | no |
+| XGBoost | `xgb` | — | axis-aligned, boosted; optional `xgboost` package | no |
 | Gaussian Process | `gp` | `gp` | ARD Matérn-5/2 + white noise | yes (analytic) |
 | Multi-Layer Perceptron | `mlp` | `mlp` | smooth, torch deep ensemble | yes (ensemble disagreement) |
 
@@ -61,13 +63,14 @@ Notes on the entries:
 - **Always put `ridge` in the bake-off.** It is the only thing that answers *"are the flexible families earning their complexity?"* If it matches them on ranking, they aren't.
 - **Matérn-5/2 rather than RBF** is deliberate — RBF's smoothness prior is exactly wrong for knife-edge structure. The GP is `O(n³)`, so it subsamples above `max_points` and says so.
 - **`logistic` earns its place on calibration.** When failures are the minority, tree classifiers are over-confident and step-like, and here the *probability itself* is used (it gates NROY and the search), not just the yes/no.
-- **`mlp` is the only family that accepts a custom loss**, in either role. That makes it the PGNN entry point and the architecture S2/S3 grows from.
+- **`mlp` is the only family that accepts a custom loss**, in either role. That makes it the PGNN entry point (`KnowledgeGuidedLoss`, below).
+- **`xgb` is optional.** `gbm` is the same algorithmic family and needs nothing beyond scikit-learn, so it stays the default boosted learner; `xgb` is for a caller who wants XGBoost specifically (its regularisation terms, GPU training, or parity with a published XGBoost surrogate). `xgboost` is imported at `fit`, so a missing package fails there with the install instruction.
 
-Any object with `fit`/`predict_proba`/`classes_` works as a classifier, so neither list is a limit.
+Any object with `fit`/`predict_proba`/`classes_` works as a classifier, so neither list is a limit. To fit several targets with ONE joint learner rather than one learner per target, use `VectorSurrogate` with `mlp_multi` or `gp_multi` ([Architectures by output type](#architectures-by-output-type)).
 
-**Pick on evidence, not taste.** `validate.compare_learners()` fits every combination on the same split, scores them through the identical acceptance battery, and ranks them; `bakeoff_summary()` prints the table with a `cliff` column (classifier accuracy *near* the boundary, not overall). Pass `classifiers=(...)` to cross both axes; failures are recorded with their error rather than silently dropped.
+**Pick on evidence, not taste.** `validate.compare_learners()` fits every combination on the same split, scores them through the identical acceptance battery, and ranks them for the use named by `rank_for` (`screen`, `search`, `sensitivity`, `rule_out`, `balanced`), because which family wins depends on the use. The default `learners` are `rf`, `gbm`, `gp` and `mlp`, so `ridge` and `xgb` enter only when named. `bakeoff_summary()` prints the table with a `cliff` column (classifier accuracy *near* the boundary, not overall). Pass `classifiers=(...)` to cross both axes; failures are recorded with their error rather than silently dropped.
 
-**Don't want to choose?** `recommend(goal, n_train=, structure=)` returns ranked options *with reasons* for five goals — `screen`, `sensitivity`, `rule_out`, `search`, `physics_constrained` — adjusting for dataset size and known response structure, and ending by saying the priors are not the last word. Two hard constraints are enforced: `rule_out` bars `gbm` (no native σ means one constant interval width), and `physics_constrained` admits only `mlp`.
+**Don't want to choose?** `recommend(goal, n_train=, structure=)` returns ranked options *with reasons* for five goals — `screen`, `sensitivity`, `rule_out`, `search`, `physics_constrained` — adjusting for dataset size and known response structure, and ending by saying the priors are not the last word. Two hard constraints are enforced: `rule_out` bars `gbm` (no native σ means one constant interval width), and `physics_constrained` admits only `mlp`. `xgb` has no native σ either and is not suggested for any goal.
 
 ### Knowledge-guided loss (the PGNN hook)
 
@@ -79,21 +82,14 @@ Any object with `fit`/`predict_proba`/`classes_` works as a classifier, so neith
 
 Two caveats carried straight from the literature: **soft physics is not guaranteed physics** (prefer a structural `TargetSpec.transform` where one exists, since it holds under *any* weights), and a penalty regularises toward whatever you impose, so an incorrect monotonicity produces a confidently wrong model. Every entry should trace to a verified source-level mechanism.
 
-This is **not** a PINN, and deliberately so — the supplied review is explicit that a classical PINN is not the right tool for emulating an existing model with a large library of paired simulations.
+This is **not** a PINN, and deliberately so: a classical PINN is not the right tool for emulating an existing model from a large library of paired simulations. `docs/41` §4.2 records a PINN's scope and entry condition.
 
 ## Tiers
 
 Ascent is **gated**: a tier may not be built until the tier below has *failed a written acceptance test*.
-S2 was built on 2026-09-12 against the EcoSIM_Lusignan R1b S1 failure, and S3 the same day against S2's.
-**The gate is enforced, not only stated** (v2.332): `spec.py` keeps two tuples — `VALID_TIERS` is the
-roadmap, `IMPLEMENTED_TIERS` is the registry — and a spec declaring an unimplemented tier is refused at
-construction with an error naming what would unblock it. Before that, `tier="S3"` constructed cleanly
-and failed much later at `load()`.
+**The gate is enforced, not only stated**: `spec.py` keeps two tuples — `VALID_TIERS` is the roadmap, `IMPLEMENTED_TIERS` is the registry — and a spec declaring an unimplemented tier is refused at construction with an error naming what would unblock it. All four tiers are implemented.
 
-**These S-labels are TIERS, and are unrelated to the S0-S6 STAGE labels in `docs/42`** (the
-Bayesian-optimization plan). They share the letters and nothing else: stage S2's deliverable was moved out
-of this package to `tools/bayesian_optimization/acquisition.py` on 2026-08-27, because acquisition is search rather than
-emulation. Inside `models/surrogate/`, `S2` always means the trajectory tier.
+**These S-labels are TIERS, and are unrelated to the S0-S6 STAGE labels in `docs/42`** (the Bayesian-optimization plan). They share the letters and nothing else. Acquisition, deciding where to spend the next run, is search rather than emulation, so it belongs to `tools/bayesian_optimization/` and not to this package. Inside `models/surrogate/`, `S2` always means the trajectory tier.
 
 | Tier | What it emulates | Produces | Use for |
 |---|---|---|---|
@@ -118,24 +114,20 @@ m.predict_batch(X).values     # (N, T) scalars — drop-in for S0/S1
 m.predict_trajectories(X)     # (N, T, D) series — the tier's reason for existing
 ```
 
-**Architecture: latent ROM.** Per target, the centred training trajectories are decomposed by SVD,
-the leading `n_components` singular vectors are kept as a basis, and `θ → coefficient` is regressed
-with one learner per component drawn from the same registry S0 and S1 use. The learner axis stays
-orthogonal to the tier axis, so `rf`, `gbm`, `gp` and `mlp` all work here; a recurrent learner is a
-future entry on that axis, not a different tier.
+**Architecture: latent ROM.** Per target, the centred training trajectories are decomposed by SVD, the leading `n_components` singular vectors are kept as a basis, and `θ → coefficient` is regressed with one learner per component drawn from the same registry S0 and S1 use. The learner axis stays orthogonal to the tier axis, so every registry family works here. A trajectory conditioned on per-step drivers needs a sequence network instead: `KGMLEmulator`, an S3 architecture described below.
 
 **`trajectories` is required.** A trajectory tier fitted on scalars alone is an S1 with extra steps,
 and `fit` refuses it.
 
 **`Y` is a CHECK, not a second training signal.** `fit` asserts that reducing the supplied
-trajectories reproduces the Y matrix to 1e-4 relative and refuses otherwise. A reducer that does not
+trajectories reproduces the Y matrix to 1e-4 relative and refuses otherwise. **Relative to the column's own magnitude** (v2.436): the denominator used to be `max(1, |ref|)`, which makes the check relative only for quantities of order 1 or larger and an ABSOLUTE 1e-4 for everything smaller -- so on concentrations around 4.7e-4 mol/L a reducer could disagree by 20 percent and pass. A reducer that does not
 match the one the Y matrix was built with yields a surrogate that is internally consistent and
 answers a different question than the calibration is scored on, which nothing downstream can detect.
 
 **Reducers** live in `tiers.REDUCERS`: `mean`, `sum`, `final`, `max`, `annual_mean_sum`. The last
-needs `time_index` (the year label of every timestep) and is the daily-flux form of a `year_end`
-scalar: a within-year cumulative tape variable, de-cumulated, sums within each year to that year's
-end-of-year value. A reducer is **not** on `TargetSpec`, which carries only the reduced value's
+needs `time_index` (the year label of every timestep) and is the per-step form of a year-end value:
+a within-year cumulative series, differenced into per-step values, sums within each year to that
+year's end-of-year value. A reducer is **not** on `TargetSpec`, which carries only the reduced value's
 identity; the module's contract is that reduction happens upstream, and S2 is the one tier that must
 undo and redo it.
 
@@ -154,8 +146,8 @@ learner, including the tree families that have no gradient for a penalty to use.
 ```python
 m = S3Surrogate(spec, learner="gbm", n_components=24,
                 reduce="annual_mean_sum", time_index=years,
-                compose={"Reco": ["RA", "RH"]},          # derived, never fitted
-                nonneg=["GPP", "RA", "RH", "Reco", "ET"])
+                compose={"total": ["part_a", "part_b"]},  # derived, never fitted
+                nonneg=["part_a", "part_b", "total"])
 m.fit(X, Y, viable=viable, trajectories=T)
 ```
 
@@ -170,17 +162,13 @@ component cannot hide inside a positive total. **Violations are counted**, not s
 and kept on the model as `nonneg_violation_rate`: a constraint that quietly fixes predictions hides
 how often the unconstrained model was inadmissible.
 
-**What S3 does not claim.** It is not a PINN and adds no PDE residual; EcoSIM has no governing
-equation to differentiate. It does not pretrain-then-finetune: the training set is already
+**What S3 does not claim.** It is not a PINN and adds no PDE residual, which needs a governing
+equation that many process models do not have. It does not pretrain-then-finetune: the training set is already
 process-model output, so KGML's "physics as data" arm is satisfied by construction. The soft-penalty
 arm remains available on the `mlp` learner through `KnowledgeGuidedLoss` and is orthogonal to this
 tier.
 
-**What to expect from it.** Measured on EcoSIM_Lusignan R1b, against an S2 differing only in whether
-`Reco` is fitted or composed: the identity residual goes from 4.18 to exactly 0, the fraction of
-predicted daily ET below zero goes from 10.3% to 0, and ranking is unchanged (rho 0.778/0.785/0.627
-against 0.778/0.782/0.655). **Structure buys admissibility, not accuracy** — which is what the
-doctrine above predicts, and worth knowing before reaching for this tier to fix a fit.
+**What to expect from it.** Composition makes the declared identity hold exactly, and clamping removes inadmissible values: both act on **admissibility**, by construction. Neither is a mechanism for better ranking or pointwise accuracy, so before crediting either with an accuracy change, compare against an S2 that differs only in the structure.
 
 
 ### The two S3 architectures, and which to reach for
@@ -190,49 +178,81 @@ which is what decides when each is usable.
 
 | | `tiers.S3Surrogate` | `sequence.KGMLEmulator` |
 |---|---|---|
-| conditioned on | theta | theta **and the daily drivers** |
-| trajectory from | latent ROM (SVD basis + per-component regression) | GRU trunk with per-flux branches |
-| learner axis | any registry family (`rf`, `gbm`, `gp`, `mlp`) | torch, fixed |
+| conditioned on | theta | theta **and the per-step drivers** |
+| trajectory from | latent ROM (SVD basis + per-component regression) | sequence encoder (`cell=`) with per-target branches |
+| model family | any registry family (`learner=`) | a torch network; `cell=` is `gru`, `lstm`, `tcn` or `transformer` |
 | knowledge channel | structural composition + admissibility | branch wiring + mass-balance hinge |
-| can be asked about weather it never saw | **no** | **yes** |
+| can be asked about drivers it never saw | **no** | **yes** |
+| state across time | none needed: the basis spans the whole record | reset every `chunk_days` steps: each window starts from a zero state, in training and in prediction |
+| viability and intervals | classifier + split-conformal interval on the reduced scalar | neither; the extrapolation gate only |
 | needs torch / a GPU | no | yes / strongly preferred |
 
-**The conditioning is the whole difference.** A ROM's basis is tied to the window it was fitted on,
-so it learns one site's one weather history and cannot answer a counterfactual. Feeding the drivers
-at every timestep makes the network an emulator of the MODEL rather than of the RUN. Measured on
-EcoSIM_Lusignan R1b, perturbing radiation by one standard deviation moves the emulator's annual GPP
-by +30% / −34% and precipitation by +18% / −26%, on weather series that were not in training.
+**The conditioning is the whole difference.** A ROM's basis is tied to the window it was fitted on, so it learns one driver history and cannot answer a counterfactual. Feeding the drivers at every timestep makes the network an emulator of the MODEL rather than of the RUN, so its response to driver series outside the training record can be queried; check that response against the process model before relying on it.
 
 **Use the ROM for calibration and the sequence model for emulation.** That is also the `use_mode`
 split: `offline_search` gates on ranking, `online_inference` on pointwise accuracy.
 
 ```python
-m = KGMLEmulator(spec, driver_names=met_names, time_index=years,
-                 branch_of={"NEE": ["GPP", "RA", "RH"]},       # NEE computed FROM the others
-                 mass_balance={"GPP": 1.0, "RA": -1.0, "RH": -1.0, "NEE": -1.0},
-                 mass_balance_scale=["RA", "RH"],              # the hinge's denominator
-                 mass_balance_tol=measured_from_the_data,      # NO default, deliberately
-                 nonneg=["GPP", "RA", "RH", "ET"])
-m.fit(X, None, viable=viable, trajectories=T, drivers=MET)
-m.predict_trajectories(X_new, MET_counterfactual)
+m = KGMLEmulator(spec, driver_names=driver_names, time_index=years,
+                 branch_of={"net": ["gross", "loss_a", "loss_b"]},  # net computed FROM the others
+                 mass_balance={"gross": 1.0, "loss_a": -1.0, "loss_b": -1.0, "net": -1.0},
+                 mass_balance_scale=["loss_a", "loss_b"],           # the hinge's denominator
+                 mass_balance_tol=measured_from_the_data,           # NO default, deliberately
+                 nonneg=["gross", "loss_a", "loss_b"])
+m.fit(X, None, viable=viable, trajectories=T, drivers=D)
+m.predict_trajectories(X_new, D_counterfactual)
 ```
 
-**`mass_balance_tol` has no default and `mass_balance_scale` is required**, both for the same
-reason: a relative hinge is a claim about how tightly a particular process model closes its own
-budget, and about which term is safe to divide by. KGML's `tol_MB = 0.01` belongs to ecosys.
-EcoSIM's own closure is 0.0384 relative, so importing 0.01 would penalise the model for its own
-behaviour. And measured on this ensemble, using `|GPP|` as the denominator gives a p99 relative
-residual of 74748 against 0.91 for `|RA + RH|`, because GPP reaches exactly zero in winter while
-respiration does not — which is why KGML divides by the respiration terms.
+**`mass_balance_tol` has no default and `mass_balance_scale` is required**, both for the same reason: a relative hinge is a claim about how tightly a particular process model closes its own budget, and about which term is safe to divide by. A published tolerance (KGML's `tol_MB = 0.01`) belongs to the model it was measured on; a tolerance tighter than the emulated model's own closure penalises that model for its own behaviour, so measure the closure on the training trajectories. The denominator must stay bounded away from zero over the whole record: where a scale term reaches zero, the relative residual is unbounded there, and the hinge becomes explosive or inert depending on the tolerance.
 
-**What the physics term bought**, measured against an otherwise identical fit with it inert: the
-predicted budget violation fell from 0.0900 to 0.0114, an 8x reduction and tighter than the process
-model's own 0.0384, while daily R2 moved by at most 0.012 on any target. The same lesson as the
-structural channel one tier down — **knowledge guidance buys admissibility, not accuracy.**
+**What to expect from the physics term.** It acts directly on the predicted budget violation. Its effect on pointwise accuracy is not implied by that, and has to be measured against an otherwise identical fit with the term inert.
 
-**S1 is very probably the ceiling for calibration.** S2/S3 are in the plan because a downstream runtime-emulator use case needs S3, not because this loop does.
+**For calibration, where the scored quantity is a scalar, S1 is usually sufficient.** S2, S3 and the architectures below exist for emulating the structure of an output: its trajectory, field or network.
 
 **S0 may not be used to rule anything out.** Ruling out requires honest intervals, which S0 does not produce; `run_acceptance` records that refusal as an explicit note rather than silently passing.
+
+## Architectures by output type
+
+The tiers say WHAT is emulated; the architecture follows from the SHAPE of the process model's output. Every class below takes the same `SurrogateSpec`, saves with `save(directory)` (which writes `spec.json`, `tier.json` and `environment.json` beside its weights), and returns one scalar per target from `predict_batch`, reducing a structured prediction to get it, so the scalar consumers accept every one of them.
+
+| process-model output | shape | class (module) | options | tier |
+|---|---|---|---|---|
+| scalar metric | `(N, T)` | per-target learners in `S0Surrogate` / `S1Surrogate` (`tiers.py`) | `gp`, `rf`, `gbm` (histogram gradient boosting), `xgb` (optional `xgboost`), `mlp`, `ridge` | S0, S1 |
+| short output vector | `(N, T)`, fitted jointly | `VectorSurrogate` (`multioutput.py`) | `mlp_multi` (shared-trunk deep ensemble), `gp_multi` (intrinsic coregionalisation GP) | S1 |
+| time series, from theta alone | `(N, T, D)` | `S2Surrogate` / `S3Surrogate` (`tiers.py`) | latent ROM over any registry learner; S3 adds `compose` and `nonneg` | S2, S3 |
+| time series under per-step drivers | `(N, T, D)` | `KGMLEmulator` (`sequence.py`) | `cell="gru"`, `"lstm"`, `"tcn"` (causal dilated convolutions), `"transformer"` (causally masked); **`spatial_graph=[(i, j), ...]`** adds masked attention ACROSS the target axis on a declared edge list, so a target is informed only by its named neighbours | S3 |
+| gridded spatial field | `(N, C, *S)`, S one or two axes | `FieldEmulator` (`fields.py`) | `arch="cnn"` (decoder), `"unet"`, `"fno"` | S2, or S3 with `nonneg` |
+| spatiotemporal field | `(N, C, D, *S)` | `SpatioTemporalEmulator` (`spatiotemporal.py`) | `arch="convlstm"`, `"fno"` (a Fourier recurrent cell) | S2, or S3 with `nonneg` |
+| irregular network | `(N, C, n_nodes)`, or `(N, C, D, n_nodes)` with drivers | `GraphEmulator` (`graphs.py`) | `arch="gcn"` (edge weights honoured), `"gat"`; `driver_names=` makes it graph-temporal | S2, or S3 with `nonneg` |
+| input function to output field | `a(x)` to `u(x)` | `FieldEmulator(arch="fno", input_field_names=...)` on a shared grid; `DeepONetEmulator` (`operators.py`) at any query coordinates | DeepONet takes the input function at fixed sensors and answers at arbitrary points | S2, or S3 with `nonneg` |
+
+**Loading.** `tiers.load(directory)` rebuilds every class in the table: the four tier classes by `spec.tier`, the others by the class name `save` wrote into `tier.json`. It reads the artifact's own `spec.json` and runs the provenance and environment checks first. The dispatch has to be by class, because `KGMLEmulator` declares tier S3 and saves different files from `S3Surrogate`. Each architecture's own loader (`sequence.load_kgml`, `fields.load_field`, and so on) can still be called directly with a spec, but it skips the provenance check. The `load_surrogate.py` that `tools/package_surrogate.py` writes into a bundle calls `tiers.load`.
+
+**What each class returns.** `S1Surrogate`, `S2Surrogate`, `S3Surrogate` and `VectorSurrogate` return a split-conformal interval, a viability probability and the extrapolation gate's verdict with each point prediction. **That interval is INFINITE when the calibration set is too small to support the level** -- below 19 rows at alpha 0.05 the rank the finite-sample guarantee needs does not exist, so the radius is `inf` and a warning says so (v2.436; it used to clamp the level to 1.0 and return the widest observed residual, which under-covers while reading as a 95 percent bound). `S0Surrogate` returns the point prediction alone. `KGMLEmulator` and the field, spatiotemporal, graph and operator classes return the point prediction and the extrapolation gate only, so interval coverage is not scored for them, and they cannot support ruling a region out.
+
+**Structural properties the tests assert**, because each is invisible to a whole-record accuracy score:
+
+- **Causal in time.** Two driver records identical up to step k give identical predictions up to k. Asserted for the `transformer` and `tcn` cells, both `SpatioTemporalEmulator` architectures and the graph-temporal network; `gru` and `lstm` are causal by construction. A Fourier operator over the space-time block is NOT causal, and a negative-control test shows it failing, which is why the spatiotemporal FNO is recurrent in time rather than an FNO over `(t, x)`.
+- **State carried across chunks.** `SpatioTemporalEmulator` trains on windows of `chunk_steps` but carries the recurrent state from one window into the next, and predicts the whole record in one pass from its first step; a test asserts the carry for both architectures. The graph-temporal network uses the same scheme. A state reset at window edges, or a prediction that starts from a zero state part-way through a record, loses what the record had built up. `KGMLEmulator` resets: each `chunk_days` window starts from a zero state, in training and in prediction, so no step is informed by anything before the start of its own window.
+- **Bounded reach.** A graph emulator with L layers lets a node be informed by nodes at most L hops away, asserted for `gcn` and `gat` at L = 1 and 2, with a fully connected network as the negative control. A `tcn` cell's memory ends at its receptive field.
+- **Resolution transfer.** The FNO's spectral layer gives the same answer at the shared points of a grid twice as fine, and a test holds a `FieldEmulator(arch="fno")` trained on one grid to a within-case R² above 0.9 on grids two and four times finer. Every grid architecture will run on another grid, but only the FNO is designed to transfer; `DeepONetEmulator` answers at arbitrary coordinates by construction.
+
+**Score a structured output WITHIN each case.** `per_case_channel_r2` flattens space, time and nodes per case and scores each case against its own mean, stamping `r2_normalisation: within_case`. `predict_batch` still reduces every channel to a scalar so these classes plug into the scalar battery, but `run_acceptance` scores only that reduction, not the field or the series.
+
+**Training defaults.** `mlp_multi`, `FieldEmulator`, `SpatioTemporalEmulator`, `GraphEmulator` and `DeepONetEmulator` share one training loop, `_nn.fit_torch`: Adam in minibatches, a validation split by case, the best-validation checkpoint, and early stopping on `patience`. When the epoch budget, not the validation loss, ends a fit, a `RuntimeWarning` says so, and a NaN validation loss is refused. The field, spatiotemporal, graph and operator classes also refuse a NaN inside a row declared viable before training, and a reload defaults to the device the network was fitted on. `VectorSurrogate` leaves a viable row that misses any target out of the joint fit, with a warning. `gp_multi` trains full-batch with Adam on the negative log marginal likelihood, and subsamples above `max_points` as `gp` does. `KGMLEmulator` runs its own windowed loop rather than `_nn.fit_torch`, and since v2.439 it mirrors that loop's stopping contract instead of inheriting none of it: it takes `patience`, keeps the best-validation weights, records how the fit ENDED in `fit_info_` (`epochs_run`, `best_epoch`, `best_val`, `stopped_by_patience`), warns when the budget rather than the data ended it, refuses a non-finite validation loss, and reloads on the device it was fitted on. `patience` rides in the saved config because it decides which weights the artifact holds.
+
+**THE BEST-VALIDATION CHECKPOINT IS NOT THE BEST MODEL WHEN THE USE IS EXTRAPOLATION.** Every class here selects
+the checkpoint on a validation split taken over CASES, scored on the steps it trained on, so it measures
+interpolation under conditions already seen. When the artifact's job is to answer about conditions it has NOT seen --
+a new forcing record, a withheld year, a driver regime outside the training envelope -- that criterion can be
+anti-correlated with the capability, and nothing in the artifact, the report or the history shows it. Measured on
+`PFLOTRAN_miniLEO` with `KGMLEmulator(cell="tcn", layers=9)`, varying only the epoch budget: at 200 epochs the
+validation loss is **3.4x better** than at 30 (0.00829 to 0.00244) while the withheld-forcing score is **2.9x worse**
+(-0.3818 to -1.0941), and the fit selects epoch 196. Neither fit diverged. So for an extrapolation use, select the
+checkpoint on a hold-out of the CONDITIONS, not of the cases, and treat a case-split validation curve as a training
+diagnostic rather than as model selection. Details: `memory/dev_logs_adapterkit/20260923j_*`.
+
+**What the tests do and do not establish.** They fit each family to synthetic data with a known answer, which shows that it can learn and that its structural properties hold. Whether a family suits a given process model is a separate measurement, on that model's own ensemble and scored within each case.
 
 ## Acceptance is a MEASUREMENT; promotion is a HUMAN GATE
 
@@ -246,16 +266,15 @@ is physically plausible, and whether the hold-out split was optimistic. The appr
 content hash to the acceptance report it was granted against, so **re-fitting invalidates it** rather
 than silently inheriting it. Same shape as A2MC's other Tier-3 write gate, `review_pending_knowledge`.
 
+`tools/promote_surrogate.py` has four subcommands: `review` prints the acceptance report with what it cannot tell you, `promote --basis "<what was checked beyond the metrics>"` records the approval in `promotion.json` beside the artifact, `revoke --reason` withdraws it, and `status` answers whether the artifact may be used. `tools/package_surrogate.py <artifact> --out <dir>` bundles an artifact with a copy of this module and a generated `load_surrogate.py`, so a recipient without A2MC can load it; it refuses an unpromoted artifact unless given `--allow-unpromoted`.
+
 ## Was the verdict ROBUST, or LUCKY?
 
 `passed` is a hard threshold on ONE number from ONE split, so a surrogate at rho 0.71 against a
 0.70 bar is indistinguishable from a comfortable one. Two diagnostics answer that, computed at fit
 time and stored in `acceptance.json` so the promotion reviewer sees them without refitting:
 
-- **`bootstrap_acceptance`** — resamples the TEST set (no refit) and reports how often each verdict
-  holds. A `pass_rate` well below 1.0 under a headline PASS is the signal. Exact and cheap: the
-  model is row-independent, so `predict(X[idx]) == predict(X)[idx]`, and the bootstrap predicts
-  once and slices — 200 replicates in ~6 s rather than ~275 s.
+- **`bootstrap_acceptance`** — resamples the TEST set (no refit) and reports how often each verdict holds. A `pass_rate` well below 1.0 under a headline PASS is the signal. Exact and cheap: the model is row-independent, so `predict(X[idx]) == predict(X)[idx]`, and the bootstrap predicts once and slices rather than predicting once per replicate.
 - **`perturbation_stability`** — does the top-K SHORTLIST survive a relative input jitter? The loop
   consumes an ordering, so shortlist stability is the operationally meaningful form of robustness.
   **Read it with care:** LOW overlap alongside a HIGH rho means the top candidates are effectively
@@ -265,81 +284,84 @@ time and stored in `acceptance.json` so the promotion reviewer sees them without
 Neither measures whether the TRAINING ensemble was representative. That is the standing gate
 (`scripts/check_surrogate_gate.py`), and it is a different question.
 
-## `use_mode` selects the battery, and now actually does
+## `use_mode` selects the battery
 
 | | `offline_search` (calibration) | `online_inference` (runtime emulator) |
 |---|---|---|
 | accuracy | R² measured, **not gated** — ranking is the requirement | **R² >= 0.9 gates** |
 | coverage | **gates** (the higher honesty bar) | measured, not gated |
 | ranking | rho >= 0.7, top-K >= 0.5 | rho >= 0.5, top-K >= 0.3 |
+| manifold respect | on-manifold fraction >= 0.9, when `Y_train` is supplied | the same |
 
-Encoded in `MODE_CRITERIA`; an unknown mode is refused rather than defaulted. Until 2026-08-27 the
-field was declared, validated and documented as selecting the battery while being read by nothing, so
-an `online_inference` surrogate would have been judged by the calibration bar in silence.
+Encoded in `MODE_CRITERIA`; an unknown mode is refused rather than defaulted, because falling back to another mode's bar would judge a runtime emulator by the calibration bar without saying so.
+
+**Which R².** For a scalar target the battery pools one value per case, and the across-case variance is the signal. For a TRAJECTORY target the R² must be normalised within each case (`validate.summarise_per_case_r2`): a pooled R² divides by the between-case spread, which a parameter sweep makes large, and rates a model that only places each case's level as nearly perfect. `validate.require_r2_normalisation` refuses a trajectory report whose per-target blocks do not say `within_case`.
 
 ## The five acceptance tests
 
-`R²` is not the gate. It was what the 2025 Kougarok attempt reported, and it told nobody what to do.
+`R²` alone is not the gate: it does not say whether a surrogate orders candidates correctly, or whether its uncertainty is honest.
 
-1. **Ranking fidelity** — Spearman ρ and top-K recall. The screening requirement, much weaker than accuracy.
-2. **Interval coverage** — empirical vs nominal, reported *with mean width* so that an honest-but-useless wide interval is visible as such.
+1. **Ranking fidelity** — Spearman ρ and top-K recall. A target that declares an `observed` value is ranked on each candidate's distance to it, the quantity a calibration orders candidates by; one without is ranked on the predicted level itself. The screening requirement, much weaker than accuracy.
+2. **Interval coverage** — empirical vs nominal, reported *with mean width* so that an honest-but-useless wide interval is visible as such. A class that produces no intervals is not scored on it, and the report notes that.
 3. **Boundary behaviour** — error binned by distance to training data. A rising profile is fine *provided the gate refuses out there*.
-4. **Manifold respect** — are predicted target *combinations* producible at all? Independent per-target regressors will emit `(plant_C, NPP)` pairs the model cannot produce.
+4. **Manifold respect** — are predicted target *combinations* producible at all? Independent per-target regressors will emit target pairs the model cannot produce.
 5. **Confirmation rate** — measured in use via `record_confirmation`, never offline. The only number that decides whether the loop is better off.
 
 Classifier accuracy is additionally reported **near the viability boundary**, because a global figure is dominated by easy interior points while the boundary is what decides anything.
 
 ## Two-stage, and why failures are training data
 
-S1 fits a viability classifier on **all** rows including failed, dead, and crashed runs, then regresses **only on the viable subset**. Fitting one regressor across a regime boundary is what produced the 2025 `Fineroot_PFT7` R² = 0.48: a dead stand and a living one are not two ends of a continuum.
+S1 fits a viability classifier on **all** rows including failed, dead, and crashed runs, then regresses **only on the viable subset**. Fitting one regressor across a regime boundary degrades it everywhere: a failed or collapsed run and a viable one are not two ends of a continuum.
 
-This inverts normal ensemble hygiene. Failed runs must be **retained with their labels** (docs/41 §7 constraint 3); R1's bounds were void precisely because they were centred on a dead graft.
+This inverts normal ensemble hygiene. Failed runs must be **retained with their labels** (docs/41 §7 constraint 3); parameter bounds centred on a non-viable region show up only in those labels.
 
 ## Provenance
 
 A surrogate is bound to a `(model commit, parameter list + bounds, base parameter file, scoring convention, training ensemble)` tuple. Change any element and the artifact is invalid, exactly as a RAG profile is invalid against the wrong source commit.
 
-The scoring convention is the one learned the hard way: the EcoSIM leap-calendar fix (v2.213) changed target reduction on 2026-07-30, so anything trained before it scores against a different objective.
+The scoring convention is the easiest element to overlook: a change in how targets are reduced (a calendar convention, an aggregation window) makes an artifact trained before it score against a different objective, while it still loads and predicts plausible numbers.
 
-**This is enforced on load, not merely available.** `load(dir, expect=<Provenance>)` raises on any field populated on both sides and differing; `strict=False` downgrades it to a warning. Unstamped fields always warn, because an empty field is treated as *unknown* rather than as a match — so an unstamped artifact is **unprotected**, not verified. `expect=None` skips the comparison, which is right for inspection and wrong before acting on the artifact.
+**It is checked on load when the caller states what it expects.** `load(dir, expect=<Provenance>)` raises on any field populated on both sides and differing; `strict=False` downgrades it to a warning. Unstamped fields always warn, because an empty field is treated as *unknown* rather than as a match — so an unstamped artifact is **unprotected**, not verified. `expect=None` skips the comparison, which is right for inspection and wrong before acting on the artifact.
+
+**The library environment is checked on every load.** `save` records in `environment.json` the versions of the libraries that were imported when the artifact was built. `tiers.load` refuses under `strict` when one of them has changed major version or is missing, and warns on a smaller difference; an architecture's own loader, called directly, runs the same check.
 
 ## Interval calibration
 
 Split conformal wraps **any** learner, so honest intervals never depend on the model family.
 
-When the learner exposes a native σ (`rf`, `gp`, `mlp`), the nonconformity score is $|y-\hat y|/\sigma(x)$ and the interval is $\hat y \pm q\,\sigma(x)$ — **normalised conformal**, so the band widens where the model is unsure instead of being one constant width everywhere. That matters because calibration drives to box edges. Families without a σ (`gbm`) fall back to a constant half-width; `S1Surrogate.normalized` records which happened.
+When the learner exposes a native σ (`ridge`, `rf`, `gp`, `mlp`), the nonconformity score is $|y-\hat y|/\sigma(x)$ and the interval is $\hat y \pm q\,\sigma(x)$ — **normalised conformal**, so the band widens where the model is unsure instead of being one constant width everywhere. That matters because calibration drives to box edges. Families without a σ (`gbm`, `xgb`) fall back to a constant half-width; `S1Surrogate.normalized` records which happened. `VectorSurrogate` applies the same rule per target with its joint learner's σ, which both `mlp_multi` and `gp_multi` provide.
 
-The finite-sample level is $\lceil (n+1)(1-\alpha)\rceil / n$, not the plain $(1-\alpha)$ quantile, which under-covers on the small calibration sets we actually have.
+The finite-sample level is $\lceil (n+1)(1-\alpha)\rceil / n$, not the plain $(1-\alpha)$ quantile, which under-covers on small calibration sets.
 
 Coverage remains **marginal, not conditional** — which is precisely the limitation `docs/41` §2.1 turns on, and why the hull gate is a separate, non-optional check.
 
 ## Dependencies
 
-`scikit-learn`, `numpy`, `scipy`, `joblib` for `rf`/`gbm`/`gp`; `torch` (already in `a2mc_env`) for `mlp`. `SALib` 1.5.2 was added 2026-07-31 for Sobol/Morris. `xarray` and `xgboost` remain absent and are not required.
+`scikit-learn`, `numpy`, `scipy`, `joblib` for `ridge`/`rf`/`gbm`/`gp`; `torch` (in `a2mc_env`) for `mlp`, `mlp_multi`, `gp_multi` and every architecture in the section above. `SALib` for Sobol' indices through a surrogate (`scripts/surrogate_sobol_indices.py`). `xarray` is not required. `xgboost` is OPTIONAL and needed only for the `xgb` learner; on macOS its wheel also needs the OpenMP runtime (`brew install libomp`).
 
-## Status
+## Before fitting, and scope
 
-> ## ⛔ THE BUILD IS PAUSED AT A HARD PI GATE (2026-07-31) — read this before fitting anything
->
-> **Two conditions, BOTH required**, recorded in `docs/41` §8 and the handoff `memory/dev_logs_adapterkitsurrogate/20260731d_*`:
->
-> 1. the round is sampled space-filling (Sobol' sequence / LHS), **and**
-> 2. **the completed ensemble contains configurations inside the observational bands.**
->
-> **A space-filling design that still MISSES the targets does not open the build.** A surrogate is an interpolant of its training ensemble, so an ensemble that never reaches the target region carries no information about the only region worth searching.
->
-> **Condition 2 is executable, not a judgement:** run `scripts/check_surrogate_gate.py --y-matrix <Y csv>`. Exit 0 opens the gate, exit 10 keeps it closed (a result, not an error).
->
-> **Step A4 was EXECUTED AND WITHDRAWN on 2026-07-31**, not merely left unwritten — its results carry "forward into nothing", because it assessed a region that does not contain the answer. This banner exists because an earlier version of this Status section said only that A4 was "not yet written", and a session read that, did not open the handoff, and built toward the gated capability without seeing the gate (`memory/dev_logs_adapterkit/20260827e_*`). A README fronting a paused build must front the pause.
+**Two preconditions for a useful surrogate, both checked before fitting** (`docs/41` §8):
 
-**Scope (PI, 2026-08-27): this is an OFFLINE-AGENT capability.** It is deliberately **not** wired into `orchestrator.py`, and that is a decision rather than a gap to close. Wiring is revisited only after the module has been exercised well offline.
+1. the round is sampled space-filling (Sobol' sequence or LHS), **and**
+2. **the completed ensemble contains configurations inside the observational bands.**
 
-Foundation built and unit-tested (A0–A3).
+**A space-filling design that still misses the targets does not satisfy them.** A surrogate is an interpolant of its training ensemble, so an ensemble that never reaches the target region carries no information about the only region worth searching.
 
-**A4 is CLOSED, and it is not a coding task that was left undone.** It was the *question* "do the existing R1/R2 ensembles suffice, or is a purpose-built ensemble a precondition?" — and it **answered: precondition**, so it was withdrawn rather than finished. `docs/41` is explicit that the correct response is to stop, not to mine the result.
+**Condition 2 is executable, not a judgement:** run `scripts/check_surrogate_gate.py --y-matrix <Y csv>`. Exit 0 means the condition holds and exit 10 means it does not (a result, not an error); exit 1 or 2 means the check itself could not run. The condition is a property of the ensemble, not of the code, so no amount of fitting machinery satisfies it.
 
-What now exists is the **assembly machinery A4 would have used**, written 2026-08-27 for Phase C: `scripts/fit_ensemble_surrogate.py` builds `(X, Y, viable)` from a completed A2MC ensemble, fits, runs acceptance and saves. The layout it was waiting on is no longer guessed — it is `scripts/extract_flat_ensemble_targets.py`'s Y CSV joined to the round's X matrix on the case number, exercised against a real ensemble. **Having this machinery does not reopen A4 and does not open the gate**; the gate is a property of the ensemble, not of the code.
+**Choose the hold-out for the question being asked.** Each splitter in `splits.SPLITTERS` returns a description of what it tests and what it is optimistic about, which is what belongs in `acceptance.json["split_kind"]`:
 
-Downstream, `scripts/surrogate_sobol_indices.py` turns a fitted surrogate into Sobol' indices by pushing a large Saltelli design through it, gated on the acceptance report. Together these are the Phase-1 chain for a **space-filling** round, where neither `morris.analyze` nor `sobol.analyze` applies to the ensemble directly.
+| splitter | what the held-out set tests |
+|---|---|
+| `random` | interpolation within the ensemble's own point set; always optimistic |
+| `block` | a contiguous run of the sampling sequence. A tail block of a Sobol' sequence is surrounded by the points before it, so it is EASIER than a random hold-out and is not a neutral control; it does show whether anything depends on sequence position |
+| `axis` | extrapolation along one named parameter: train on the rest of its range, predict its top (or bottom) tail |
+| `shell` | extrapolation away from the centre of the cube, by mean absolute deviation; weak in many dimensions, where `axis` is the honest test |
+| `levels` | whole values of a label withheld (driver years, sites, treatments); the test for a driver-conditioned emulator, because only it asks about conditions never seen |
 
-**Still not fitted to a real completed ensemble.** The first is PFLOTRAN miniLEO R1, in flight. The chain is verified end to end on the real design matrix with a synthetic response, and smoke-tested on that round's first completed cases; what is untested is the fit quality on real physics, which only the round can supply.
+Every splitter divides the training ensemble; an independent validation ensemble is drawn apart from it, which is the stronger test where one exists.
+
+**Scope: this is an OFFLINE-AGENT capability.** It is deliberately **not** wired into `orchestrator.py`, and wiring is revisited only after the module has been exercised offline.
+
+**Assembly and downstream tools.** `scripts/fit_ensemble_surrogate.py` builds `(X, Y, viable)` from a completed A2MC ensemble (the Y CSV from `scripts/extract_flat_ensemble_targets.py` joined to the round's X matrix on the case number), fits an `S1Surrogate` for `offline_search`, runs acceptance with the bootstrap and perturbation diagnostics, and saves; `--split` picks the hold-out (`random`, `block`, `axis`, `shell`), and `--test-matrix` with `--test-y` scores on an independent ensemble instead. `scripts/surrogate_sobol_indices.py` turns a fitted surrogate into Sobol' indices by pushing a large Saltelli design through it, gated on the acceptance report. Together these are the Phase-1 chain for a **space-filling** round, where neither `morris.analyze` nor `sobol.analyze` applies to the ensemble directly.

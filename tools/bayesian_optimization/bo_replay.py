@@ -45,6 +45,7 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from models.surrogate.learners import GPLearner  # noqa: E402
+from tools.bayesian_optimization.acquisition import local_penalisation_batch  # noqa: E402
 from tools.bayesian_optimization.objective import (  # noqa: E402
     Target, load_targets, violation_matrix)
 
@@ -207,6 +208,11 @@ def run_bo(pool: Pool, n_seed: int, q: int, n_iter: int, seed: int,
            verbose: bool = False) -> np.ndarray:
     """One BO replay. Returns best-V-so-far after each EVALUATION (length n_seed + q*n_iter).
 
+    The curve is shorter when the pool runs out, or when a batch runs out of candidates whose
+    coordinates differ from every earlier pick in it: `_greedy_batch` never picks two pool rows
+    with identical inputs, so a pool with duplicated rows can yield fewer than `q` per batch.
+    `gate` reads each curve at `min(budget, len(curve))`.
+
     `n_cand` subsamples the candidate pool each iteration: scoring 14,799 candidates through a GP
     posterior every batch dominates the runtime and buys nothing, since the acquisition surface is
     smooth in theta and a few thousand draws locate its maximum region. Random per iteration, so
@@ -258,17 +264,18 @@ def _greedy_batch(pool: Pool, cand: np.ndarray, a: np.ndarray, q: int) -> np.nda
     plan names it as the fallback; it is used here because the replay refits from scratch each
     ITERATION anyway, so a within-batch refit would multiply the cost of the gate by q for a
     diversity effect this achieves directly.
+
+    A thin wrapper over `acquisition.local_penalisation_batch`, standardising by the WHOLE pool
+    and with `min_separation=0`: picks are identical to the unwrapped loop whenever candidate
+    coordinates are distinct, and a pool row with exactly the coordinates of a pick is never
+    picked again. Returns pool indices, fewer than `q` when the candidates run out. A NaN or
+    `+inf` acquisition value is refused rather than ranked; `acquisition` floors the posterior sd
+    and `Target` refuses a zero observation or a non-positive uncertainty, so neither arises from
+    it. A non-finite pool coordinate is refused too, since its distance to every pick is NaN.
     """
     Z = (pool.X[cand] - pool.X.mean(0)) / np.where(pool.X.std(0) > 0, pool.X.std(0), 1.0)
-    a = a.astype(float).copy()
-    out = []
-    for _ in range(min(q, len(cand))):
-        i = int(np.argmax(a))
-        out.append(cand[i])
-        d = np.linalg.norm(Z - Z[i], axis=1)
-        a *= 1.0 - np.exp(-0.5 * (d / max(np.median(d), 1e-9)) ** 2)
-        a[i] = -np.inf
-    return np.array(out)
+    idx, _ = local_penalisation_batch(Z, a, q, min_separation=0.0)
+    return np.asarray(cand)[idx]
 
 
 def run_random(pool: Pool, n_total: int, seed: int) -> np.ndarray:

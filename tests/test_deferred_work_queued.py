@@ -46,10 +46,17 @@ csc = _load("check_skill_claims")
 BOTH = [
     "memory/dev_logs_adapterkit/20260822a_Topic.md",
     "memory/dev_logs/20260101a_Topic.md",
-    "memory/model_logs/20260822a_Topic.md",
 ]
 CLAIMS_ONLY = ["use_cases/EcoSIM_BioCON/memory/logs/20260822a_phase3_x.md"]
 NOT_LOGS = ["tools/check_x.py", "docs/39_Plan.md", "README.md"]
+#: RETIRED frozen streams -- `memory/model_logs/` (2026-08-24) and `memory/ana_logs/` (2026-09-06).
+#: No new log is written to either, so neither checker scans them. The AMBIGUITY defence still
+#: counts them: `_short_is_unambiguous` enumerates `memory/*logs*/*.md` and is independent of this
+#: filter, so a dev log sharing a date+letter with a frozen model log is still caught.
+RETIRED = [
+    "memory/model_logs/20260822a_Topic.md",
+    "memory/ana_logs/20260712a_Topic.md",
+]
 
 
 def _staged(mod, rel, monkeypatch):
@@ -201,3 +208,20 @@ def test_uniqueness_counts_UNTRACKED_logs_too():
     tracked = subprocess.run(["git", "ls-files", "--", "memory/*logs*/*.md"],
                              cwd=REPO, capture_output=True, text=True).stdout.split()
     assert len(out) >= len(tracked), "the enumeration must be a superset of the tracked one"
+
+
+# ------------------------------------- the retired streams are no longer scanned
+
+def test_retired_streams_are_not_scanned_for_deferrals(monkeypatch):
+    """`memory/model_logs/` and `memory/ana_logs/` are frozen: no new log is written to either,
+    so a deferral cannot appear in one. Scanning them can only produce work about closed files."""
+    assert _staged(dwq, "\n".join(RETIRED), monkeypatch) == []
+
+
+def test_the_ambiguity_defence_still_counts_the_retired_streams(monkeypatch, tmp_path):
+    """The CONTROL for the narrowing: not scanning a stream must not stop it from making a
+    short form ambiguous. `_short_is_unambiguous` globs `memory/*logs*/*.md`, not this filter."""
+    import inspect
+    src = inspect.getsource(dwq._short_is_unambiguous)
+    assert "memory/*logs*/*.md" in src, (
+        "the ambiguity enumeration must still span every stream, scanned or not")

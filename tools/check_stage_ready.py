@@ -28,6 +28,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -77,12 +78,14 @@ def onboarded_models():
 
 
 def real_cases():
-    """Cases that are actual work, excluding TEMPLATE and the per-model `*_template/` seeds."""
+    """Cases that are actual work, excluding TEMPLATE, the per-model `*_template/` seeds, and
+    hidden directories such as a Jupyter `.ipynb_checkpoints/` (a case name never starts with `.`)."""
     d = ROOT / "use_cases"
     if not d.is_dir():
         return []
     return sorted(p.name for p in d.iterdir()
-                  if p.is_dir() and p.name not in _NOT_A_CASE and not p.name.endswith("_template"))
+                  if p.is_dir() and p.name not in _NOT_A_CASE and not p.name.startswith(".")
+                  and not p.name.endswith("_template"))
 
 
 def milestones():
@@ -95,17 +98,31 @@ def milestones():
         return {}
 
 
+def case_has_state(case: str) -> bool:
+    """Does this case carry workflow state, i.e. has it reached Phase 0?
+
+    Offline (`workflow_state_offline_r*.json`, written from phase0-design on) OR online
+    (`workflow_state.json`, the orchestrator's). Counting only the offline file sent every case run
+    by the online agent back to case creation for ever (audit 20260923b, F84).
+    """
+    mem = ROOT / "use_cases" / case / "memory"
+    # NOTE the inner any(): Path.glob() returns a GENERATOR, which is always truthy.
+    return any(mem.glob("workflow_state_offline_r*.json")) or (mem / "workflow_state.json").is_file()
+
+
+def cases_in_setup():
+    """Real cases with no workflow state yet: scaffolded, not yet at Phase 0."""
+    return [c for c in real_cases() if not case_has_state(c)]
+
+
 def detect_stage():
     """Return (stage:int, why:str). Reads disk, never the session's claims."""
     cases = real_cases()
     if not onboarded_models():
         return 2, "no adapted model in models/ (none calls register_model())"
-    # NOTE the inner any(): Path.glob() returns a GENERATOR, and a generator object is always
-    # truthy, so `any(p.glob(...) for c in cases)` is True whenever `cases` is non-empty --
-    # it reported "setup complete" for every clone with a case. Caught by the routing test,
-    # not by running it here, because this clone happens to have real offline state.
-    if any(any((ROOT / "use_cases" / c / "memory").glob("workflow_state_offline_r*.json"))
-           for c in cases):
+    # A glob inside any() must itself be wrapped in any(): a generator object is always truthy, which
+    # once reported "setup complete" for every clone with a case. case_has_state() does that.
+    if any(case_has_state(c) for c in cases):
         return 4, "a case has offline workflow state — setup is done, this is onboard-session territory"
     if not cases:
         return 1, "models are adapted but use_cases/ holds only templates"
@@ -114,12 +131,26 @@ def detect_stage():
 
 # --------------------------------------------------------------------------- stage 1
 def stage1_rows():
+    """The model-install half of a2mc-init that the disk can show, as INFO or FAIL rows.
+
+    `A2MC_MODEL_PATH` is NOT a stage-1 requirement. For EcoSIM, PFLOTRAN and ATS the model checkout is
+    set per case in the SITE config (onboard-case Step 2), and a2mc_noncime_config.sh deliberately sets
+    none; this checker also reads only its own process's environment, so the row FAILed for every
+    non-CIME user through all of stage 1 (audit 20260923b, F31). It is INFO when unset, and a set path
+    that does not exist is still a FAIL.
+
+    The fork guard is ADVISORY here, as in model_preflight: a2mc-init offers it, a user with no GitHub
+    account cannot have one, and "origin already is my fork" is legitimate. A hard FAIL left stage 1
+    unfinishable for those users for ever (F30). onboard-model Step 0b is where it is required.
+    """
     rows = []
     mp = os.environ.get("A2MC_MODEL_PATH", "")
     if not mp:
-        rows.append((FAIL, "A2MC_MODEL_PATH set", "unset — a2mc-init Step 2 cannot verify the checkout"))
+        rows.append((INFO, "model checkout",
+                     "not set in this shell: for EcoSIM/PFLOTRAN/ATS a case's site config sets it "
+                     "(onboard-case Step 2); for ELM-FATES, A2MC_E3SM_ROOT in a2mc_config.sh "
+                     "(a2mc-init Step 3)"))
     else:
-        rows.append((PASS, "A2MC_MODEL_PATH set", mp))
         p = Path(mp)
         rows.append((PASS if p.is_dir() else FAIL, "model checkout exists", mp))
         if p.is_dir():
@@ -138,8 +169,10 @@ def _fork_guard_row(checkout: Path):
     A2MC (a push to the upstream model repo), and it is invisible until it happens.
     """
     try:
-        out = subprocess.run(["git", "remote", "-v"], cwd=str(checkout),
-                             capture_output=True, text=True, timeout=15).stdout
+        # stdout=PIPE + universal_newlines, not capture_output/text: those are 3.7+, and this module
+        # runs under the SYSTEM python3 (3.6 on Perlmutter) from the hooks (audit 20260923b, F103).
+        out = subprocess.run(["git", "remote", "-v"], cwd=str(checkout), stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, universal_newlines=True, timeout=15).stdout
     except (OSError, subprocess.SubprocessError):
         return (NA, "fork-only push guard", "could not read git remotes")
     if not out.strip():
@@ -155,7 +188,9 @@ def _fork_guard_row(checkout: Path):
         missing.append("origin push NOT disabled")
     if not has_fork:
         missing.append("no `fork` remote")
-    return (FAIL, "fork-only push guard", "; ".join(missing))
+    # ADVISORY (see stage1_rows): INFO, never FAIL.
+    return (INFO, "fork-only push guard",
+            "; ".join(missing) + " — optional unless you will edit model source (onboard-model Step 0b)")
 
 
 # --------------------------------------------------------------------------- stage 2
@@ -240,6 +275,12 @@ def stage2_rows(model: str):
             rows.append((FAIL, "adaptive memory seeded", f"{disc.relative_to(ROOT)} is not valid JSON"))
     rt = md / "runtemplates"
     rows.append((PASS if rt.is_dir() and any(rt.iterdir()) else FAIL, "run template", f"models/{model}/runtemplates/"))
+    # The build recipe onboard-model Step 0d records, and a2mc-init Step 2 sends every later user to.
+    # Without a row, a model counted as onboarded with no way for its next user to build it (P3).
+    bg = md / "BUILD.md"
+    rows.append((PASS if bg.is_file() else FAIL, "build guide",
+                 f"models/{model}/BUILD.md" if bg.is_file()
+                 else f"models/{model}/BUILD.md absent — onboard-model Step 0d records the build there"))
     return rows
 
 
@@ -272,15 +313,71 @@ def stage3_rows(case: str):
     rounds = cd / "config" / "calibration_rounds.yaml"
     rows.append((PASS if rounds.is_file() else FAIL, "calibration_rounds.yaml", ""))
 
+    if not case_has_state(case):
+        # The plan row comes first so "resume at the first failing row" stops at GATE 1 rather than
+        # skipping past an unwritten plan to the parameter list (audit 20260923b, persona P6). A
+        # file cannot show the user APPROVED it; that stays a human item below.
+        plan = cd / "research_plan.md"
+        rows.insert(0, (PASS if plan.is_file() else FAIL, "research_plan.md drafted",
+                        "" if plan.is_file() else "not yet — onboard-case Step 4 (GATE 1) comes before any value"))
+        rows.append(_placeholder_row(cd))
+
     rows.append((INFO, "goal-conditional preflight",
                  "run `check_setup_ready.py` AFTER sourcing the configs — it owns the "
                  "targets-mapped-to-outputs and cost-function checks this script cannot reach"))
     return rows
 
 
+# A template value still in place: `<UPPER_SNAKE>` on the value side of a non-comment line, or the
+# EcoSIM/PFLOTRAN template's `observed: X.X` / `site: MySite`. Every stage-3 row used to be an
+# existence check, so an unedited copy of the model template passed them all and the hook announced
+# "No mechanical items outstanding" (audit 20260923b, F32).
+# The ELM-FATES template writes its placeholders differently (`"MySite"`, `/path/to/your/...`,
+# `site: YourSite`), so a `<...>`-only pattern passed it untouched (persona P7).
+_PLACEHOLDER = re.compile(r"<[A-Za-z][A-Za-z0-9_]{2,}>|:\s*X\.X\b|\bMySite\b|\bYourSite\b|/path/to/")
+
+
+def _placeholder_row(cd: Path):
+    hits = {}
+    files = list((cd / "config").glob("*.sh")) + [cd / "validation" / "targets.yaml",
+                                                   cd / "config" / "calibration_rounds.yaml"]
+    for f in files:
+        if not f.is_file():
+            continue
+        n = 0
+        for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
+            code = line.split("#", 1)[0]
+            if _PLACEHOLDER.search(code):
+                n += 1
+        if n:
+            hits[str(f.relative_to(cd))] = n
+    if not hits:
+        return (PASS, "template placeholders replaced", "")
+    return (FAIL, "template placeholders replaced",
+            "; ".join("%s: %d line(s)" % kv for kv in sorted(hits.items()))
+            + " — onboard-case Step 4(b) fills them after GATE 1")
+
+
+# --------------------------------------------------------------------------- next skill
+def next_skill(stage: int, clone_ok: bool) -> str:
+    """The skill a user at this stage should run next, in words. Shared by both hooks and main()."""
+    if not clone_ok:
+        return "`a2mc-init` (Step 1: this clone is not wired yet)"
+    if stage == 1:
+        return ("`onboard-case` for a model A2MC has (its Step 2 checks the model install; "
+                "`a2mc-init` Step 2 builds one if there is none), or `onboard-model` for one it does not")
+    if stage == 2:
+        return "`onboard-model`"
+    if stage == 3:
+        return "`onboard-case`, resuming at the first failing row of each case below"
+    return "`onboard-session`"
+
+
 # --------------------------------------------------------------------------- human remainder
 _HUMAN = {
-    1: ["the user was greeted and their experience gauged (Step 0)",
+    1: ["the user was greeted, their name recorded with whoami.py, and their experience gauged (Step 0)",
+        "the GitHub question was asked, and the answer taken (Step 1)",
+        "the model install on this machine was built if needed and verified (Step 2)",
         "the two no-match cases were distinguished (drift vs unsupported model)",
         "the session was routed onward EXPLICITLY, not left trailing off"],
     2: ["a filled questionnaire was supplied, not assumed",
@@ -323,11 +420,15 @@ def main() -> int:
     # only in the stage-1 branch below, were never reached by the one person who most needed
     # them. The clone's wiring and the case's maturity are independent facts.
     fails = 0
+    clone_ok = True
     try:
         from check_clone_setup import clone_rows
-        fails += _rows_out(clone_rows(), "Per-clone setup (every stage)")
+        crow = clone_rows()
+        clone_ok = not any(r[0] == FAIL for r in crow)
+        fails += _rows_out(crow, "Per-clone setup (every stage)")
     except Exception as exc:                      # never let this break the stage report
         print(f"\n  (per-clone check unavailable: {exc})")
+    print(f"\nNEXT: {next_skill(stage, clone_ok)}")
 
     if stage == 1:
         fails += _rows_out(stage1_rows(), "Stage 1 — a2mc-init (mechanical subset)")
@@ -342,8 +443,14 @@ def main() -> int:
         for c in targets:
             fails += _rows_out(stage3_rows(c), f"Stage 3 — onboard-case: {c}")
     else:
-        print("\n  A case has workflow state, so the CASE half of setup is done — use `onboard-session`.")
+        print("\n  A case has workflow state, so that case is past setup — `onboard-session` resumes it.")
         print("  The per-clone rows above are a separate question; a delivered case does not wire a clone.")
+        pending = cases_in_setup()
+        if pending:
+            # Stage 4 is repo-wide, so a second case still in setup was invisible here (F93).
+            print("  Cases with no workflow state yet (still in setup — `onboard-case` resumes each):")
+            for c in pending:
+                print(f"    - {c}   (audit: python3 tools/check_stage_ready.py --case {c})")
 
     human = _HUMAN.get(stage, [])
     if human:

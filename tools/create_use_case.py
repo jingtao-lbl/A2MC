@@ -249,6 +249,21 @@ def create(model: str, case: str, seed: str | None = None, dry_run: bool = False
                 f"REFUSED: seed {seed} has {len(existing)} *_config.sh files; expected exactly 1"
             )
         existing[0].rename(cfg_dest)
+        # A case seed carries the seed site's HISTORY and STATE as well as its structure: offline
+        # workflow state, phase logs, phase results, reports, the site's curated knowledge and its
+        # research plan. Copied, they made the new case read as already RUNNING (the stage router
+        # counts workflow state) and filed another site's findings under this one's name (audit
+        # 20260923b, persona P4). Keep the structure, the values and the script templates; take
+        # memory/ and reports/ fresh from the model's own template, and drop the old plan.
+        fresh_root = root / "use_cases" / resolve_seed(root, model, None)
+        for rel in ("memory", "reports"):
+            if (dest / rel).exists():
+                shutil.rmtree(dest / rel)
+            if (fresh_root / rel).is_dir():
+                shutil.copytree(fresh_root / rel, dest / rel, ignore=shutil.ignore_patterns(
+                    ".ipynb_checkpoints", "__pycache__", "*.pyc", ".DS_Store"))
+        if (dest / "research_plan.md").exists():
+            (dest / "research_plan.md").unlink()
 
     # --- postcondition: the bug that motivated this script --------------------------
     if not cfg_dest.is_file():
@@ -269,14 +284,17 @@ def create(model: str, case: str, seed: str | None = None, dry_run: bool = False
     print(f"created {rel}  (seed: {seed})")
     for p in sorted((dest / "config").iterdir()):
         print(f"  config/{p.name}")
-    print("\nnext:")
-    print(f"  1. replace every <PLACEHOLDER> in {rel}/config/{cfg_name}")
+    # The plan comes BEFORE any value goes in: GATE 1 is the approval of research_plan.md, and filling
+    # the config first put the agent's interpretation on disk before the user saw it (audit
+    # 20260923b, F64). A seeded case still needs the plan; its values are another site's.
+    print("\nnext (the `onboard-case` skill drives all of it):")
+    print(f"  1. write {rel}/research_plan.md and get it confirmed (GATE 1)")
     if from_template or from_own_template:
-        print(f"  2. write {rel}/research_plan.md and get it confirmed (GATE 1)")
-        print(f"  3. build the parameter list (GATE 2), then generate_calibration_rounds.py")
+        print(f"  2. then replace every <PLACEHOLDER> in {rel}/config/{cfg_name}, targets.yaml and the round record")
     else:
-        print(f"  2. the values are {seed}'s -- edit them for this site, do not assume they transfer")
-    print(f"  -> the `onboard-case` skill drives all of it")
+        print(f"  2. then edit {rel}/config/{cfg_name}: the values are {seed}'s and do not transfer")
+    print(f"  3. build the parameter list (GATE 2), generate the round record with the generator for this model,")
+    print(f"     and check: python3 tools/check_stage_ready.py --case {dest.name}")
     return dest
 
 

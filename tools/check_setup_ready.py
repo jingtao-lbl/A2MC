@@ -242,7 +242,27 @@ def main() -> None:
     add("Model + milestone", PASS if mp and Path(mp).exists() else FAIL,
         "A2MC_MODEL_PATH set and exists", mp or "<unset>")
 
-    if fates_on:
+    # The milestone check is DISPATCHED BY MODEL, like the targets and round-record checks below.
+    # An adapter model (EcoSIM, PFLOTRAN, ATS) used to fall into the "FATES off — N/A" branch, so
+    # its checkout was never matched to a knowledge profile at the gate the skills call universal
+    # (audit 20260923b, F07). model_preflight's verdicts map onto the gate's statuses: match PASS,
+    # DRIFT WARN (proceed, the choice is recorded in the research plan), NO MILESTONE / CANNOT
+    # VERIFY FAIL. WARN does not block Phase 0.
+    model_key = (env("A2MC_MODEL") or "fates").strip().lower()
+    if model_key != "fates":
+        if mp and Path(mp).exists():
+            rc, out = _run([py, "tools/model_preflight.py", "--model", model_key, "--checkout", mp])
+            verdict = next((ln.strip()[len("VERDICT:"):].strip() for ln in out.splitlines()
+                            if ln.strip().startswith("VERDICT:")), "")
+            status = {0: PASS, 3: WARN}.get(rc, FAIL)
+            add("Model + milestone", status,
+                "checkout matches a registered knowledge profile" if rc == 0 else
+                "checkout vs registered knowledge profile",
+                verdict or f"python tools/model_preflight.py --model {model_key} --checkout <path> (exit {rc})")
+        else:
+            add("Model + milestone", FAIL, "checkout vs registered knowledge profile",
+                "no checkout to verify (A2MC_MODEL_PATH unset or missing)")
+    elif fates_on:
         rc, out = _run([py, "scripts/rag_match.py"])
         sel = next((ln.strip() for ln in out.splitlines() if "Selection:" in ln), "")
         matched = rc == 0 and "no_match" not in out.lower()
@@ -250,7 +270,7 @@ def main() -> None:
             "checkout matches a registered RAG milestone",
             sel or "see: python scripts/rag_match.py (docs/a2mc_reference/version_association_howto.md)")
     else:
-        add("Model + milestone", NA, "RAG milestone match", "FATES off — RAG milestone N/A")
+        add("Model + milestone", NA, "RAG milestone match", "ELM without FATES — no RAG milestone applies")
 
     # site config overrides machine config
     sc = env("A2MC_SITE_CONFIG")
@@ -404,7 +424,7 @@ def main() -> None:
              "Simulation protocol", "Binary provenance"]
     seen_groups = [g for g in order if any(r[0] == g for r in results)]
     print(f"A2MC setup readiness — site '{Path(env('A2MC_USE_CASE_DIR')).name}' "
-          f"({'FATES' if fates_on else 'ELM-only'}, "
+          f"({env('A2MC_MODEL') or ('FATES' if fates_on else 'ELM-only')}, "
           f"{'PFT-level' if pft_level else 'ecosystem-level'} targets)\n")
     for g in seen_groups:
         print(f"  {g}:")

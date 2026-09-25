@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import warnings
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -68,13 +69,22 @@ IMPLEMENTED_TIERS = ("S0", "S1", "S2", "S3")
 # Provenance — what this artifact is bound to
 # =============================================================================
 
+def _finite(x: Any) -> bool:
+    """True when x is a real number and neither NaN nor an infinity."""
+    try:
+        f = float(x)
+    except (TypeError, ValueError):
+        return False
+    return f == f and f not in (float("inf"), float("-inf"))
+
+
 @dataclass(frozen=True)
 class Provenance:
     """The tuple a trained surrogate is valid against.
 
     Every field here can silently invalidate a surrogate if it changes. The
-    scoring convention is the one learned the hard way: the EcoSIM leap-calendar
-    fix (v2.213) changed how targets are reduced on 2026-07-30, so any artifact
+    scoring convention is the easiest to overlook: a change in how targets are
+    reduced (a calendar convention, an aggregation window) means any artifact
     trained under the previous convention scores against a different objective
     than the one now in force.
 
@@ -82,11 +92,11 @@ class Provenance:
     the same artifact from the same inputs is reproducible.
     """
 
-    model: str                      # physics model emulated, e.g. "ecosim"
+    model: str                      # physics model emulated, by its model-registry name
     model_commit: str = ""          # source commit of that model
     param_list_hash: str = ""       # hash of the parameter list (names + bounds)
     base_param_file_hash: str = ""  # hash of the base parameter file
-    scoring_convention: str = ""    # e.g. "leap-calendar-v2.213"
+    scoring_convention: str = ""    # e.g. "reduction-convention-v2"
     training_ensemble_id: str = ""  # which ensemble produced (X, Y)
     a2mc_version: str = ""
     created: str = ""               # ISO date, caller-supplied
@@ -232,7 +242,22 @@ class SurrogateSpec:
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> "SurrogateSpec":
         d = dict(d)
-        d["targets"] = tuple(TargetSpec(**t) for t in d.get("targets", ()))
+        # LENIENT ON READ, strict on write. Artifacts written before 2026-09-22 can carry a
+        # non-finite `observed`, and refusing them here would make an already-delivered bundle
+        # unloadable -- punishing the reader for the writer's mistake. Normalise to None, which is
+        # what the value meant, and say so once.
+        cleaned = []
+        for t in d.get("targets", ()):
+            t = dict(t)
+            if t.get("observed") is not None and not _finite(t["observed"]):
+                warnings.warn(
+                    "target %r has a non-finite `observed` (%r) in this spec; reading it as None. "
+                    "The file is not standard JSON and a strict parser will refuse it; rewrite it "
+                    "with SurrogateSpec.write to correct that." % (t.get("name"), t["observed"]),
+                    RuntimeWarning)
+                t["observed"] = None
+            cleaned.append(TargetSpec(**t))
+        d["targets"] = tuple(cleaned)
         d["provenance"] = Provenance(**d.get("provenance", {"model": ""}))
         for k in ("input_names", "input_lower", "input_upper"):
             if k in d:
@@ -240,7 +265,30 @@ class SurrogateSpec:
         return cls(**d)
 
     def write(self, path: Path) -> None:
-        Path(path).write_text(json.dumps(self.to_dict(), indent=2))
+        """Write the spec as STANDARD JSON, refusing the non-standard tokens Python allows.
+
+        `json.dumps` emits bare `NaN` and `Infinity` by default. Those are not JSON: a strict
+        parser rejects them, which for a bundle handed to a collaborator means the artifact's own
+        description cannot be read by whatever they use. Measured 2026-09-13 on a bundle already
+        delivered -- its `spec.json` carried three `NaN` observed values, and the audit found it
+        only because a reviewer tried to parse the file with a strict reader.
+
+        A NaN observation is also meaningless on its own terms: `observed=None` is how a target
+        says it has no observation, and NaN is how one says it by accident. The refusal names the
+        targets so the caller fixes the cause rather than the symptom.
+        """
+        try:
+            text = json.dumps(self.to_dict(), indent=2, allow_nan=False)
+        except ValueError:
+            bad = [t.name for t in self.targets
+                   if t.observed is not None and not _finite(t.observed)]
+            raise ValueError(
+                "spec %r cannot be written as standard JSON because %s. Use observed=None for a "
+                "target with no observation; NaN is not JSON and a strict parser refuses the "
+                "file." % (self.name,
+                           ("targets %s carry a non-finite `observed`" % bad) if bad
+                           else "it contains a non-finite number"))
+        Path(path).write_text(text)
 
     @classmethod
     def read(cls, path: Path) -> "SurrogateSpec":
@@ -262,7 +310,8 @@ def hash_param_list(names: List[str], lower: List[float], upper: List[float]) ->
 
     Bounds are part of the identity: the same names sampled over different
     bounds is a different design, and a surrogate trained on one does not
-    transfer to the other. R1's void bounds are the cautionary case.
+    transfer to the other. Bounds that miss the viable region are the cautionary
+    case: the names are unchanged and the design is uninformative.
     """
     payload = json.dumps(
         [[n, float(lo), float(hi)] for n, lo, hi in zip(names, lower, upper)],

@@ -7,7 +7,7 @@ modes:
   requires_fates: false
   nutrient_pathway: any
   scope: [setup]
-  summary: "Repeatable case/project onboarding for an already-onboarded model: interview -> research plan -> use_cases/{Model}_{Case}/ from the per-model template -> param list -> preflight -> Phase 0."
+  summary: "Repeatable case/project onboarding for an already-onboarded model: interview -> bind + verify this case's model install -> scaffold use_cases/{Model}_{Case}/ from the per-model template -> research plan (GATE 1) -> param list (GATE 2) -> preflight -> Phase 0."
 ---
 
 # Onboard a Case (a new site / project for an onboarded model)
@@ -15,16 +15,18 @@ modes:
 The **repeatable** half of getting started. `onboard-model` adds a MODEL once; this adds a
 CASE, and runs again for every new site, project or scenario on that model.
 
-> ## STOP — the model must be onboarded first
+> ## Before Step 1 — three prerequisites, each with a check you can run
 >
-> This skill assumes `models/<model>/`, its knowledge chain and its milestone already exist.
-> Check before Step 1:
+> | prerequisite | check | if it fails |
+> |---|---|---|
+> | **the clone is wired** | `python3 tools/check_clone_setup.py` exits 0 | `a2mc-init` Step 1 (a few minutes), then continue here |
+> | **the model is onboarded** | ELM-FATES is built in; for an adapter model, `python3 tools/check_stage_ready.py --model <m>` shows `milestone registered` | `onboard-model`, which ends by handing back to this skill; a half-onboarded model resumes at its first failing row there |
+> | **this is a new case** | `use_cases/{Model}_{Case}/` does not exist | it is a RESUME, not a new case: `python3 tools/check_stage_ready.py --case {Model}_{Case}` and continue from the first failing row. A case that already carries `memory/workflow_state_offline_r*.json` is past setup; that is `onboard-session`, **except** a **re-bind**: a delivered or rebuilt case that `onboard-session` sends here does Step 2 and Step 4(b) item 1 only (the model install and the site config's run fields), then goes back to `onboard-session`. Nothing else in a running case is redone |
 >
-> - **ELM / ELM-FATES, or any model already under `models/`** → continue here.
-> - **A model A2MC has never seen** → **route to `onboard-model`**, then come back. Onboarding a
->   case on a model with no adapter produces a config pointing at parsers that do not exist.
-> - **A fresh clone with no machine config** → run `a2mc-init` first (it sets `a2mc_config.sh` /
->   `a2mc_noncime_config.sh` and the fork guard), then return here.
+> The model install on this machine (checkout, build, milestone match) is **not** a prerequisite:
+> Step 2 below binds this case to it, and the machine config was written by `a2mc-init` Step 3.
+> Onboarding a case on a model with no adapter produces a config pointing at parsers that do not
+> exist, which is why the second row is a hard stop.
 
 ## Naming — `use_cases/{Model}_{Case}/`
 
@@ -44,7 +46,7 @@ is **the convention, not an exception** (it was renamed from `Kougarok/` on 2026
 assume: `python tools/create_use_case.py --model fates --case Toolik --dry-run` prints
 `use_cases/ELM-FATES_template -> use_cases/ELM-FATES_Toolik`.
 
-Seeding a new arctic case from Kougarok's **contents** is `--seed ELM-FATES_Kougarok` in Step 4 —
+Seeding a new arctic case from Kougarok's **contents** is `--seed ELM-FATES_Kougarok` in Step 3 —
 the seed is a **directory name**, so the bare `--seed Kougarok` this skill used to document now
 resolves to nothing.
 
@@ -76,9 +78,31 @@ an `OPTIONS.md` reference). Replace every `<PLACEHOLDER>`.
 > (`20260816a` F1). Under B, adding a per-model file is just adding a file — no
 > `EXTRA_TEMPLATE_FILES` row, no suffix convention. **Do not regenerate these dirs; edit them.**
 
-**Machine config, sourced FIRST** — `a2mc_config.sh` for a CIME model, `a2mc_noncime_config.sh`
-for a standalone one. Sourcing the CIME file for EcoSIM or PFLOTRAN shadows `A2MC_MODEL_PATH`
-with the E3SM checkout ([[feedback_two_machine_configs_cime_vs_noncime]]).
+**Machine config vs site config — which file holds what.** The machine config was written once per
+clone by `a2mc-init` Step 3: `a2mc_config.sh` for a CIME model, `a2mc_noncime_config.sh` for a
+standalone one. Every shipped site config auto-sources the right one and repairs the wrong one, so
+you never source it by hand ([[feedback_two_machine_configs_cime_vs_noncime]]). What differs by family
+is where the **model install** lives:
+
+| model | model checkout | binary | HPC account, output root |
+|---|---|---|---|
+| ELM / ELM-FATES (CIME) | `A2MC_E3SM_ROOT` in `a2mc_config.sh` (`A2MC_MODEL_PATH` defaults to it) | built per case by CIME | `A2MC_PROJECT`, `A2MC_OUTPUT_ROOT` in `a2mc_config.sh` |
+| EcoSIM, PFLOTRAN, ATS | `A2MC_MODEL_PATH` in **this case's site config** | `A2MC_ECOSIM_BINARY` / `A2MC_PFLOTRAN_BINARY` / `A2MC_ATS_EXE` in the site config | `A2MC_HPC_ACCOUNT`, `A2MC_OUTPUT_ROOT` in the site config |
+
+`a2mc_noncime_config.sh` deliberately sets none of the non-CIME row. Step 2 binds them.
+
+**Shell variables used below.** Derive the root once and anchor every write to it; never write
+through an unset prefix, which expands `$A2MC_ROOT/use_cases/...` to the filesystem root:
+
+```bash
+A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null)}"
+test -f "$A2MC_ROOT/a2mc_noncime_config.sh" || { echo "not in an A2MC clone — cd into it first"; exit 1; }
+CASE_DIR="<Model>_<Case>"                  # e.g. EcoSIM_OakRidge; the rule is §Naming above
+DEST="$A2MC_ROOT/use_cases/$CASE_DIR"
+```
+
+An agent must join these to the command that uses them (`A2MC_ROOT=... && ...`): each shell call is
+a fresh process.
 
 ## Step 1 — Interview (start from the science goal, not the model internals)
 
@@ -160,7 +184,7 @@ Don't ask "which FATES PFT ids" cold — a new user won't know. Ask in **plain e
 dominant vegetation (trees / shrubs / grasses / sedges),
 leaf habit (evergreen / deciduous), leaf form (needleleaf / broadleaf), and biome (arctic / boreal /
 temperate / tropical). Then **map** those to FATES PFT ids by reading the actual PFT list from the base
-parameter file — `get_pft_names_from_file()` (the Step-2 PFT-inventory command prints every `PFT#id = name`);
+parameter file — `get_pft_names_from_file()` (the PFT-inventory command in Step 2 prints every `PFT#id = name`);
 never assert the mapping from a name (Calibration Rule #2). These 1-based ids are exactly what `A2MC_PFTS`
 holds (each target is then keyed `PFT<id>_<vartype>`, and that id drives the SZPF extraction slice). Confirm
 the mapping with the user, and offer to **seed from a similar reference site** (e.g.
@@ -176,10 +200,10 @@ vegetation, that is a data-collection gap — flag it, don't invent a compositio
 > is the reaction network and the thermodynamic database. 1.0-1.2, 1C and 1D are already
 > model-agnostic and need no translation.
 
-**1A. Machine / HPC (`a2mc_config.sh` for a CIME model, `a2mc_noncime_config.sh` otherwise).**
-- Have you already set the machine config up (HPC project, output root, Python env)? If not, we do it in Step 3.
-- Where is your model checkout root — the E3SM tree for ELM/FATES, the model's own for a standalone one? → `A2MC_MODEL_PATH` (**required**; the orchestrator hard-fails without it).
-- Which AI provider — `anthropic` (default), `openai`, or `cborg`? Is the matching API key set? (Only needed for the online agent; the offline agent reasons in the harness.)
+**1A. Where this case runs (recorded here, bound in Step 2).**
+- Which model checkout and binary will this case run? Usually the one `a2mc-init` Step 2 built and verified on this machine, or, for a model just onboarded, the one `onboard-model` Steps 0a and 0d located and built; a case may name a different checkout, and Step 2 verifies whichever it is. For ELM-FATES the checkout is the machine config's `A2MC_E3SM_ROOT`.
+- Scheduler or workstation? On HPC: the allocation to charge (`A2MC_HPC_ACCOUNT` for a non-CIME model) and where output goes. On a workstation with no scheduler: `A2MC_EXEC_MODE=local` (the EcoSIM backend supports it today), monitored with `arm-local-monitoring`.
+- (Online agent only) which AI provider, and is its API key set? The offline agent reasons in the harness and needs neither.
 
 **1B. Model configuration (drives mode-aware retrieval) — resolve from the science goal, not a default.** *(FATES's form; see the note above for another model.)*
 - Are you running **FATES**, or ELM without FATES? (`-bgc fates` vs ELM-only.) *For an ecosystem-only GPP goal, PFT competition may not be needed — a `nocomp` or simpler config (or ELM-SP) can be the right, cheaper choice; don't default to full competition.*
@@ -205,55 +229,107 @@ vegetation, that is a data-collection gap — flag it, don't invent a compositio
 
 ### Synthesize before you build — do not write config yet
 
-The interview answers (both paths) feed a single **research plan**, not the config files directly. After you
-verify the milestone (Step 2), you draft that plan into the use case and get the user to **confirm** it
-(Step 4) — that confirmation is the gate before you create the case memory and propagate answers into config.
-Do **not** populate `a2mc_config.sh` / the site config / `targets.yaml` until the plan is confirmed.
+The interview answers (both paths) feed a single **research plan**, not the config files directly. Step 2
+verifies the model install this case will run, Step 3 gives the case a directory, and Step 4 drafts the plan
+into it and gets the user to **confirm** it — that confirmation is the gate before you create the case memory
+and propagate answers into config. Do **not** fill values into the site config or `targets.yaml` until the plan
+is confirmed; the template copy Step 3 makes, with its `<PLACEHOLDER>`s, is expected and is not a write.
 
+## Step 2 — Bind this case to a verified model install
 
-## Step 4 — Draft the research plan, confirm, then create + populate the use case
-
-**Draft the research plan first — it is the build gate.** Synthesize the interview (Step 1) + the matched
-milestone (Step 2) into a single **research plan**, write it into the use case, and get the user to confirm
-*before* writing any config. Create the dir from the appropriate seed so the plan has a home (never overwrite
-an existing dir):
+A non-CIME case chooses its own checkout and binary, so the check that the checkout matches a registered
+knowledge profile belongs to the case, not only to the clone: a second case can point at a different
+checkout that nothing has checked. Run it for **every** case, against the checkout this case will use:
 
 ```bash
-python tools/create_use_case.py --list                       # models, prefixes, which have a template
+# ELM / ELM-FATES
+python scripts/rag_match.py --model-path "$A2MC_E3SM_ROOT"
+# EcoSIM, PFLOTRAN, ATS
+python tools/model_preflight.py --model <model> --checkout <this case's checkout> --param-file <base param file>
+```
+
+| `model_preflight` verdict | exit | what to do |
+|---|---|---|
+| match | 0 | record the matched profile for the research plan |
+| **DRIFT** | 3 | the model is onboarded and this commit is not the registered one. **Proceed, and say so**: the plan records the checkout's commit and the profile the agent will reason with; rebuild the profile (`rebuild-rag`, or `ecosim-version-drift` for EcoSIM) only if the user's source differs in the mechanisms being calibrated |
+| NO MILESTONE | 2 | the model's onboarding stopped before its milestone: resume `onboard-model` |
+| CANNOT VERIFY | 1 | no version was read: fix the path, or get and build the model first (`a2mc-init` Step 2). A model installed without its git metadata (a tarball, a conda or spack install, a copied binary) can never be read: record its version by hand in the plan and treat it as drift |
+
+**How far is the drift?** A checkout a few commits from the registered one usually reasons fine on the
+registered profile. One far from it (another major version, or hundreds of commits) almost certainly
+differs in the mechanisms being calibrated: say so in the plan, and rebuild the profile before the first
+round rather than after it.
+
+**The binary.** A non-CIME case runs a binary, and it must be an **archived** one, not the live build
+path: a queued job resolves its executable at run time, and a rebuild in the shared tree silently swaps
+it ([[feedback_bind_runs_to_archived_binaries]]). Archive a fresh build right after building it, while
+the tree still matches:
+
+```bash
+tools/model_archive_build.sh --tree <checkout> --binary <built executable> --archive <archive root>
+# the copy lands in <archive root>/<branch>_<shortsha>/; bind the site config to THAT path
+```
+
+**Check the case's inputs against the binary.** A binary and an input file from different commits can
+disagree about which variables the input carries, which aborts mid-read after a wasted submission:
+
+```bash
+python tools/model_check_input_compat.py --model <model> --checkout <checkout> --param-file <base param file>
+```
+
+Take the output location and the HPC account from interview round 1A, which asks for them, and name the variables they bind to: `A2MC_OUTPUT_ROOT` (ATS: `A2MC_CASE_ROOT`) and `A2MC_HPC_ACCOUNT`. If 1A left either open, ask now. Output can grow large, so a scratch or project space, not a home directory. Record those with the checkout and the archived binary for Step 4(b); nothing is
+written yet. (ELM-FATES builds per case under CIME and has no shared binary to archive.)
+
+**ELM-FATES only: the PFT inventory.** Read the PFT list from the base parameter file this case will run,
+never from a name or a hardcoded count ([[feedback_derive_pft_count_never_hardcode]]):
+
+```bash
+python -c "from tools.fates_utils import get_pft_names_from_file as g; \
+  d=g('$A2MC_E3SM_ROOT/components/elm/src/external_models/fates/parameter_files/fates_params_default.json'); \
+  print(f'{len(d)} PFTs total'); [print(f'  PFT#{i} = {n}') for i,n in d.items()]"
+```
+
+Use the case's own base file if it has one; the path above is the checkout's default (JSON from FATES
+api 43; older checkouts ship `.cdl`/`.nc`). The count and the `PFT#id = name` list are what 1.2 maps the
+user's vegetation to and what `A2MC_PFTS` holds. An adapter model reports its own grouping axis in
+`model_preflight`'s output (`subgrid:` line) when given `--param-file`.
+
+## Step 3 — Give the case a directory
+
+Scaffold the case from its model's template **before** the plan, because the plan is written into the
+case. The scaffold copies template files with their `<PLACEHOLDER>`s and nothing else, so it records no
+decision; filling values waits for GATE 1 in Step 4.
+
+```bash
+python tools/create_use_case.py --list                       # model keys, prefixes, and each one's template
 python tools/create_use_case.py --model <model> --case <Case> --dry-run
 python tools/create_use_case.py --model <model> --case <Case>
 ```
 
-`<model>` is the registry key (`fates` · `ecosim` · `pflotran`); `<Case>` is the site,
-project or scenario. The directory is `use_cases/<Prefix>_<Case>/`, where the prefix is read
-from that adapter's own `ModelSpec.display_name` — so it cannot drift from the model's
-identity. The script drops the other models' templates, renames this model's pair, and
-asserts the result before returning.
+`<model>` is the registry key as `--list` prints it (`ats` · `ecosim` · `fates` · `pflotran` today);
+`<Case>` is the site, project or scenario. The directory is `use_cases/<Prefix>_<Case>/`, where the
+prefix is read from that adapter's own `ModelSpec.display_name`, so it cannot drift from the model's
+identity. The seed is the model's own `use_cases/<Prefix>_template/`, copied verbatim, with its site
+config renamed to `config/<model>_<case>_config.sh`.
 
-**It refuses rather than half-succeeding.** An existing case is never overwritten and there
-is no `--force`; a model with no case template routes you to `onboard-model`; an unsafe case
-name, a missing seed, or any failed step leaves nothing on disk. All exit 1.
+**It refuses rather than half-succeeding.** An existing case is never overwritten and there is no
+`--force`; a model with no case template routes you to `onboard-model`; an unsafe case name, a missing
+seed, or any failed step leaves nothing on disk. All exit 1. **Never scaffold by hand with `cp -r`**: it
+keeps the template's config name, so the site config the rest of setup sources does not exist.
 
-**This was an inline bash block until 2026-08-03.** It produced an empty `config/` and
-reported success on all three models (`${MODEL,,}` is bash 4; macOS ships 3.2), and a case
-named `template` made the cleanup delete its own output. A recipe in prose cannot be tested;
-`tests/test_create_use_case.py` locks both behaviours.
+**Seeding from a finished case** instead of the template: `--seed <CaseDir>`, for example
+`--seed ELM-FATES_Kougarok` for an arctic ELM-FATES site. Only a case present in **this** clone can seed:
+the public `A2MC` ships no case study, so there a seed is a case you were given or made yourself. The
+script renames the seed's config to yours and keeps its values, which are the seed site's, so edit them;
+only the structure transfers.
 
-**FATES arctic sites only:** add `--seed ELM-FATES_Kougarok` (the directory name; `--seed Kougarok` no longer resolves) to start from a worked 3-PFT config and a
-162-parameter list instead of the bare template. The script renames that case's config to
-yours and keeps its values — which are Kougarok's, so edit them; only the structure
-transfers.
+## Step 4 — Draft the research plan, confirm, then populate the use case
 
-`TEMPLATE` carries every model's template, so the two `mv`s pick this model's pair and the `rm`
-discards the rest. **A missing `mv` source means the model has no template yet** — that is
-`onboard-model`'s job, not something to work around by grabbing another model's file.
+**Draft the research plan — it is the build gate.** Synthesize the interview (Step 1) and the model
+install Step 2 verified into a single **research plan**, write it into the case Step 3 created, and get
+the user to confirm it *before* any value goes into config.
 
-**FATES arctic sites only:** `cp -r "$A2MC_ROOT/use_cases/ELM-FATES_Kougarok" "$DEST"` instead, to seed from a
-worked 3-PFT config and a 162-parameter list. That is a **case-level** seed and it already contains a
-filled config, so skip the `mv`/`rm` lines and edit in place. Note the name — `Kougarok` predates the
-`{Model}_{Case}` convention; your new dir still follows it.
-
-Write `$DEST/research_plan.md` (i.e. `$A2MC_ROOT/use_cases/$SITE/research_plan.md`) — a plain-language
+Write `$DEST/research_plan.md` — a plain-language
 synthesis a domain reader can confirm without project context (the report discipline,
 `feedback_report_writing_self_contained`):
 
@@ -284,19 +360,19 @@ unresolved** — keep looping until the user *explicitly approves* the plan. Onl
 **(a) Persist the intent** so the next session + the calibration agent inherit *why* the setup looks as it
 does, not just the files:
 - the **site config** mode env vars — the structural record (env vars = intent, `feedback_env_vars_are_intent_case_dir_is_truth`);
-- a **`calibration-log`** session log under `use_cases/$SITE/memory/logs/` (science goal, target granularity,
+- a **`calibration-log`** session log under `use_cases/$CASE_DIR/memory/logs/` (science goal, target granularity,
   data sources, PFT mapping or skip decision, seed) — anchored to the confirmed `research_plan.md`;
 - optionally seed initial **site knowledge** via `inject-knowledge` — only *verified* facts the user gave you
   (a measured target value, a known site trait), never a guess (the evidence gate, `docs/33`).
 
-**(b) Propagate the confirmed plan into the config files** (all under `$DEST = $A2MC_ROOT/use_cases/$SITE`):
+**(b) Propagate the confirmed plan into the config files** (all under `$DEST`, defined under §Naming):
 
-1. **Site config** `use_cases/$SITE/config/<model>_<case>_config.sh` — fill Section 1 (name, lat/lon, surface/domain data), Section 2 (`A2MC_PFTS` — the 1-based **FATES** PFT ids of the calibrated PFTs), Section 5 mode env vars (`A2MC_ELM_OPTIONS`, `A2MC_FATES_PARTEH_MODE`, Tier-2 flags). These mode vars are what makes retrieval configuration-aware — set them to the user's actual run, not the template defaults.
-2. **Validation targets + cost function** `use_cases/$SITE/validation/targets.yaml` — one entry per target. **Key must be `PFT<id>_<vartype>`** (e.g. `PFT10_leaf`, `PFT9_fineroot`); a non-matching key is silently dropped at runtime. Snapshot targets carry a scalar `observed` + `uncertainty` matched at `time_year`/`time_month`; **time-series / several-snapshot** targets use an `observations:` list (one point per time). Several stocks → several targets. Only enter values the user gave you. **The cost function lives here too:** a top-level `cost_config:` block (`error_method`, `aggregation_method`) + optional per-target `cost_method` / `weight` (defaults: `relative_error` + `rmsre` + weight 1.0) — **match each `cost_method` to the variant** (a series may use `nse`/`kge`/`nrmse`; a snapshot cannot — skill scores need ≥2 points). Validate with the validator **for your model**: FATES → `tools/validate_targets_config.py` (checks the keys, the `cost_config` metrics against the valid sets, and warns on mixing relative + absolute metrics under `rmsre`); any other model → `tools/validate_model_targets.py --model <m> --targets <path>`, which checks `variable` against that model's output registry and understands `reduce`/`window_years`. **The `PFT<id>_<vartype>` key rule in this item is FATES's**; an adapter case names targets for the quantity (`GPP`, `outflow_Ca`) and should also carry a top-level `model:` key so the file declares itself. Format + examples: the seed `targets.yaml` header and `docs/a2mc_reference/user_guide.md` §4.5.
-3. **Parameters** `use_cases/$SITE/parameters/` — drop in the user's list, or build one in **Step 4b** (below). The list defines the entire Morris search space, so it is the highest-leverage design choice here — do not shortcut it by copying Kougarok's set.
-3c. **Canonical script TEMPLATES** `use_cases/$SITE/scripts/` — create the directory and seed it with the case's reusable plotting/analysis templates, copied from the model's template case or from a comparable case already onboarded. **Do this at onboarding, not mid-round.** The round's phases will each copy a template into their own `phase_results/{stem}/` and adapt it there; the tier only works if it exists before the first phase needs it, and a case that reaches Phase 3 without it produces the duplication measured below instead. Seed at minimum the **sim-vs-obs time-series template** covering every scored target, since `phase2-screening` Step 1b, `phase3-diagnosis` and `phase6-refinement` Step 1b all require that figure and would otherwise each write their own. See §"The three script tiers" below for what belongs in each tier.
+1. **Site config** `use_cases/$CASE_DIR/config/<model>_<case>_config.sh`. Replace every `<PLACEHOLDER>`; `python3 tools/check_stage_ready.py --case $CASE_DIR` fails while any remain. **Every model:** the site identity (name, lat/lon), the data it reads, and the model install Step 2 bound. **ELM-FATES** (`fates_template_config.sh` sections): §1 site identity, §2 domain/surface/forcing data, §3 `A2MC_PFTS` (the 1-based **FATES** PFT ids of the calibrated PFTs), §6 the mode env vars (`A2MC_ELM_OPTIONS`, `A2MC_FATES_PARTEH_MODE`, Tier-2 flags) — these make retrieval configuration-aware, so set them to the user's actual run, not the template defaults. **EcoSIM, PFLOTRAN, ATS:** `A2MC_MODEL_PATH`, the archived binary (`A2MC_ECOSIM_BINARY` / `A2MC_PFLOTRAN_BINARY` / `A2MC_ATS_EXE`), `A2MC_HPC_ACCOUNT` and `A2MC_OUTPUT_ROOT` (or `A2MC_EXEC_MODE=local` on a workstation), plus the base parameter files and run-control inputs the template names. Write a setting the template writes as a plain `export` by editing the file: exporting it in your shell first does not win.
+2. **Validation targets + cost function** `use_cases/$CASE_DIR/validation/targets.yaml` — one entry per target. **For ELM-FATES a key is one of the four forms in 1.1** (`PFT<id>_<vartype>`, `ECO_<var>`, `SNOW_<var>`, `SOIL_<var>_<N>cm`/`_L<n>`); a key in none of them does not resolve and is dropped at runtime, which the FATES validator reports as an ERROR. **Only `PFT<id>_<vartype>` keys are scored in FATES Phase-2 ensemble screening today**: the site-level forms evaluate in single-case evaluation but screen as NaN with no warning (audit `20260923b`, F59; the fix is in FATES-shared screening code), so a round that depends on a site-level target must score it in Phase 5, and the plan should say so. Snapshot targets carry a scalar `observed` + `uncertainty` matched at `time_year`/`time_month`; **time-series / several-snapshot** targets use an `observations:` list (one point per time). Several stocks → several targets. Only enter values the user gave you. **The cost function lives here too:** a top-level `cost_config:` block (`error_method`, `aggregation_method`) + optional per-target `cost_method` / `weight` (defaults: `relative_error` + `rmsre` + weight 1.0) — **match each `cost_method` to the variant** (a series may use `nse`/`kge`/`nrmse`; a snapshot cannot — skill scores need ≥2 points). Validate with the validator **for your model**: FATES → `tools/validate_targets_config.py` (checks the keys, the `cost_config` metrics against the valid sets, and warns on mixing relative + absolute metrics under `rmsre`); any other model → `tools/validate_model_targets.py --model <m> --targets <path>`, which checks `variable` against that model's output registry and understands `reduce`/`window_years`. **The `PFT<id>_<vartype>` key rule in this item is FATES's**; an adapter case names targets for the quantity (`GPP`, `outflow_Ca`) and should also carry a top-level `model:` key so the file declares itself. Format + examples: the seed `targets.yaml` header and `docs/a2mc_reference/user_guide.md` §4.5.
+3. **Parameters** `use_cases/$CASE_DIR/parameters/` — drop in the user's list, or build one in **Step 4b** (below). The list defines the entire Morris search space, so it is the highest-leverage design choice here — do not shortcut it by copying Kougarok's set.
+3c. **Canonical script TEMPLATES** `use_cases/$CASE_DIR/scripts/` — the directory exists from the scaffold. **Copy a template in only if one exists** (the model's template case, or a comparable case in this clone); the shipped `*_template/scripts/` hold only a README today, so on a fresh public clone there is usually nothing to copy, and then the first use of a script is written in its phase's `phase_results/{stem}/` and promoted here on its second use (the rule under §"The three script tiers"). **Do this at onboarding, not mid-round.** The round's phases will each copy a template into their own `phase_results/{stem}/` and adapt it there; the tier only works if it exists before the first phase needs it, and a case that reaches Phase 3 without it produces the duplication measured below instead. Seed at minimum the **sim-vs-obs time-series template** covering every scored target, since `phase2-screening` Step 1b, `phase3-diagnosis` and `phase6-refinement` Step 1b all require that figure and would otherwise each write their own. See §"The three script tiers" below for what belongs in each tier.
 
-3b. **Round record** `use_cases/$SITE/config/calibration_rounds.yaml` — **generate this LAST, after the parameter list exists (Step 4b)**: it derives `A2MC_N_PARAMS` / ensemble size / the SALib-problem path from the parameter list, so generating it before Step 4b reads an incomplete config (and Step 5's `check_calibration_rounds` then fails). **Do NOT hand-author it** (it duplicates the configs and silently drifts). Once the param list is built: source the configs, then `python tools/generate_calibration_rounds.py --round 1 --write` (fills params/ensemble/paths/targets/protocol/milestone/commits from the environment; leaves `rationale`/`changes_from_previous`/`patches` as `TODO`). Fill those by hand, then `python tools/check_calibration_rounds.py`.
+3b. **Round record** `use_cases/$CASE_DIR/config/calibration_rounds.yaml` — **generate this LAST, after the parameter list exists (Step 4b)**: it derives `A2MC_N_PARAMS` / ensemble size / the SALib-problem path from the parameter list, so generating it before Step 4b reads an incomplete config (and Step 5's `check_calibration_rounds` then fails). **Do NOT hand-author it** (it duplicates the configs and silently drifts). Once the param list is built, source the site config and run **the generator for your model** — they are not interchangeable, and the FATES one run on an adapter case merges FATES keys into the template's record and leaves its placeholders in place (F63): **ELM-FATES** `python tools/generate_calibration_rounds.py --round 1 --write`, then `python tools/check_calibration_rounds.py`; **EcoSIM, PFLOTRAN, ATS** `python scripts/generate_adapter_calibration_rounds.py --round 1 --write`, then `python scripts/check_adapter_calibration_rounds.py --round 1`. Both fill params/ensemble/paths/targets/protocol/milestone/commits from the environment and leave `rationale`/`changes_from_previous`/`patches` as `TODO`; fill those by hand before the check.
 
 
 ## Step 4b — Build (or vet) the parameter list from the mechanisms
@@ -304,8 +380,9 @@ does, not just the files:
 > **Write it in the CANONICAL format, and CONVERT a user-supplied list into it.** The canonical
 > form is EcoSIM's (PI, 2026-08-02): `name` + `pft` + bound columns carrying the `_bound` suffix,
 > plus `default`, `description` and `bound_source`. Schema + worked rows:
-> `use_cases/TEMPLATE/parameters/parameter_list_template.csv`; reference lists are
-> `EcoSIM_BioCON`'s (all columns) and `PFLOTRAN_miniLEO`'s (core only).
+> `use_cases/TEMPLATE/parameters/parameter_list_template.csv`, which ships everywhere. (In the
+> dev repo, `EcoSIM_BioCON`'s list shows every column filled and `PFLOTRAN_miniLEO`'s the core
+> ones; neither case ships on the public line.)
 >
 > **Intake conversion is this skill's job.** A user arriving with a list in another dialect gets it
 > converted here, not carried through — two dialects downstream is what the canonical decision
@@ -375,20 +452,20 @@ The parameter list is the single most consequential decision in setup: it *is* t
    Cross-read the **curated overlay** `rag/data/curated_relationships_<profile>.yaml` (the human-vetted parameter→mechanism→output map for the matched milestone) — it is the source of truth for which parameters matter. For **nutrient-enabled** runs, START at the CNP calibration guide in the active milestone's wiki (`docs/fates-knowledge-base/fates-codebase-wiki-<commit>/advanced/cnp_calibration_guide.md`) for PID gains, `vmax`, stoichiometry, and retranslocation parameters.
 
    **For a non-ELM onboarded model (e.g. EcoSIM), dispatch through the adapter instead of the FATES paths above** (roadmap L3.2): the parameter→mechanism→output map is the model's own **curated seed** (`models/<name>/curated_seed.yaml`, its `parameters:` calibratable subset), not `curated_relationships_<profile>.yaml`; and the param list + bounds are generated by the model's own generator — for EcoSIM, `python scripts/generate_ecosim_bounds.py` produces a `parse_param_list`-compatible CSV with default-anchored provisional bounds, which you then refine (the `literature-review` skill's parameter-bounds mode is the tool). The "never invent a bound" rule (item 3 below) applies identically. **Round record (Step 4 item 3b) for a non-ELM model:** use the adapter analog `python scripts/generate_adapter_calibration_rounds.py --round N --write` then `python scripts/check_adapter_calibration_rounds.py --round N` (the FATES `generate_/check_calibration_rounds.py` are FATES-config-coupled). The adapter version DERIVES the round block from the two config files + the param-list CSV + `targets.yaml` + git in `A2MC_MODEL_PATH`, with a model-dispatched `protocol` (e.g. EcoSIM `single_continuous`, not FATES ADSP/RGSP/TRANS) and `<model>_source` block, and reads `status` from `workflow_state_offline`. The site config must set the REAL `A2MC_N_PARAMS`/`A2MC_N_TRAJECTORIES` (they override the generic a2mc_noncime defaults). Same rule against hand-editing the derived fields.
-2. **Pull prior experience** from Adaptive Memory: generic `memory/gained_knowledge/parameters.json` (known bounds/sensitivities) and, for a similar site, the reference site's `use_cases/<ref>/memory/gained_knowledge/{parameters,discoveries,failed_approaches}.json` (which parameters were sensitive, which pitfalls to avoid). Mechanistic insight transfers across sites; exact values do not.
-3. **Assemble each entry** with: FATES parameter name, the PFT(s) it applies to (Morris shorthand `{param}_{pft}`, e.g. `alloc_storage_cushion_10`; official FATES names carry no PFT suffix — see `docs/a2mc_reference/fates_data_reference.md`), the target/mechanism it addresses, and **bounds**. Anchor each bound to the FATES default parameter-file value plus a defensible ± range from the knowledge base / literature / the reference list. **Never invent a bound** — an unfounded range silently distorts the whole sensitivity analysis. If a bound is genuinely unknown, mark it `TODO` and flag it to the user.
+2. **Pull prior experience** from Adaptive Memory, from **this model's** store and never another model's: `memory/gained_knowledge/` is the **FATES** store (unprefixed only because FATES predates the per-model layout), and an adapter model's is `memory/<model>/gained_knowledge/`; `tools/model_knowledge_store.py` resolves it and has no cross-model fallback (F09). Read its `parameters.json` (known bounds/sensitivities) and `discoveries.json`, and, for a similar site in this clone, the reference site's `use_cases/<ref>/memory/gained_knowledge/{parameters,discoveries,failed_approaches}.json` (which parameters were sensitive, which pitfalls to avoid). Mechanistic insight transfers across sites; exact values do not.
+3. **Assemble each entry** with: FATES parameter name, the group it applies to in its own column (`name` holds only the official parameter name, `pft` the group id: `alloc_storage_cushion` + `pft=10`, never `alloc_storage_cushion_10`, which is the legacy FATES Morris shorthand; see `docs/a2mc_reference/fates_data_reference.md`), the target/mechanism it addresses, and **bounds**. Anchor each bound to the FATES default parameter-file value plus a defensible ± range from the knowledge base / literature / the reference list. **Never invent a bound** — an unfounded range silently distorts the whole sensitivity analysis. If a bound is genuinely unknown, mark it `TODO` and flag it to the user.
 4. **Right-size, don't pad.** Morris cost = `n_trajectories × (n_params + 1)`; a broad list is affordable *because Phase 1 sensitivity prunes it* — but every parameter must trace to a target through a named mechanism. No "might as well include it." Flag targets with no driving parameter (a coverage gap) and parameters with no target link (drop them).
-5. **Present the proposed list for review before writing — this is GATE 2, and it is ITERATIVE.** Per parameter: the target it serves, the mechanism, the source citation, and the bound rationale. Answer every question and fold in every requested add / drop / bound change, **re-presenting until the user agrees** (like curated-knowledge writes — do not write while a request is open). On agreement, write both files to `use_cases/$SITE/parameters/` matching the Kougarok examples' format — the parameter list (names + bounds) and the SALib problem file (`num_vars`, names, bounds) — and point `A2MC_PARAM_LIST_FILE` / `A2MC_SALIB_PROBLEM_FILE` at them.
+5. **Present the proposed list for review before writing — this is GATE 2, and it is ITERATIVE.** Per parameter: the target it serves, the mechanism, the source citation, and the bound rationale. Answer every question and fold in every requested add / drop / bound change, **re-presenting until the user agrees** (like curated-knowledge writes — do not write while a request is open). On agreement, write the parameter list to `use_cases/$CASE_DIR/parameters/` in the canonical format above and point `A2MC_PARAM_LIST_FILE` at it. **Do not hand-write the SALib problem file**: Phase 0's sampler generates it from the list (`create_parameter_sample.py` for ELM-FATES, `scripts/create_adapter_parameter_sample.py` otherwise, both writing to `A2MC_SALIB_PROBLEM_FILE`), and the Step 5 gate reports it N/A until then.
 
 6. **Agree on the ensemble-simulation design (still GATE 2) — surface the trade-offs, then follow the user's choice.** With the parameter count now fixed, confirm the **sampling scheme** (`A2MC_SAMPLING_SCHEME`) + resulting **ensemble size** and **compute cost** with the user *before* writing the config / round record. Compute and **SHOW the numbers per option** so the choice is informed (A2MC's `calculate_ensemble_size()` in `a2mc_config.sh` gives the exact count per scheme):
    - **Morris** (default) — `n_traj × (n_params+1)` sims: a cheap sensitivity **screening** (μ*). e.g. `30×(171+1) = 5160`.
    - **Sobol** — `N × (2·n_params+2)` sims (SALib Saltelli, `N`≈500–1024): rigorous first + total-order variance sensitivity, but **often 10–100× more simulations** → far more core-hours, much longer wall-clock, heavier queue pressure. e.g. `512×(2·171+2) = 176,128`.
    - **LHS** — `N` space-filling samples (user-set `N`): cheaper than Sobol, no sensitivity indices.
-   Multiply the ensemble size by the per-case core-hours (ADSP + RGSP + TRANS) for a **core-hour + wall-clock estimate**, and state it plainly (queue/walltime reality too). **Recommend** — Morris for screening; Sobol only when full variance decomposition is the goal and the compute budget genuinely allows it. **But if the user chooses the expensive path (e.g. Sobol), FOLLOW it — inform of the trade-off, never override an explicit choice** (the defer-to-the-user rule from Step 0). Iterate until the user agrees; only then set `A2MC_SAMPLING_SCHEME` / `A2MC_N_TRAJECTORIES` and generate the round record.
+   Multiply the ensemble size by the per-case core-hours (ADSP + RGSP + TRANS) for a **core-hour + wall-clock estimate**, and state it plainly (queue/walltime reality too). **Recommend** — Morris for screening; Sobol only when full variance decomposition is the goal and the compute budget genuinely allows it. **But if the user chooses the expensive path (e.g. Sobol), FOLLOW it — inform of the trade-off, never override an explicit choice** (the defer-to-the-user rule, `a2mc-init` Step 0). Iterate until the user agrees; only then set `A2MC_SAMPLING_SCHEME` / `A2MC_N_TRAJECTORIES` and generate the round record.
 
 **If the user brought a list (case a/b):** run steps 1–2 as a *coverage check* — confirm every target has ≥1 driving parameter in the list and flag any parameter with no mechanistic tie to a target. Report gaps; do not silently rewrite their list.
 
-**Now the parameter list exists → generate the round record (Step 4 item 3b):** `generate_calibration_rounds.py --round 1 --write` (it derives from the param count/salib you just wrote) → fill the TODO narrative → `check_calibration_rounds.py`. That is the last prep artifact; then run the Step 5 gate.
+**Now the parameter list exists → generate the round record (Step 4 item 3b)** with the generator for your model named there (it derives from the parameter count you just wrote) → fill the TODO narrative → run the matching checker. That is the last prep artifact; then run the Step 5 gate.
 
 
 ## The three script tiers — template, instance, library
@@ -410,9 +487,9 @@ The parameter list is the single most consequential decision in setup: it *is* t
 ## Step 5 — Preflight: is the setup ready for Phase 0? (goal-conditional gate)
 
 ```bash
-source use_cases/$SITE/config/<model>_<case>_config.sh   # auto-sources its machine config (v2.306)
-print_config                        # confirm paths/PFTs/mode resolved
-python tools/describe_mode.py       # confirm the mode A2MC will actually use
+source use_cases/$CASE_DIR/config/<model>_<case>_config.sh   # auto-sources its machine config (v2.306)
+print_config                        # ELM-FATES only (defined by a2mc_config.sh): paths/PFTs/mode
+python tools/describe_mode.py       # ELM-FATES only: the mode A2MC will actually use
 python tools/check_setup_ready.py   # the aggregate, goal-conditional readiness gate
 ```
 
@@ -426,10 +503,11 @@ parameter list present, `calibration_rounds.yaml` present + consistent with the 
 **`N/A` (never `✗`) for checks that don't apply to this user's goal**: PFT inventory only for
 PFT-level targets (an ecosystem/flux goal skips it), FATES base file + RAG milestone only when FATES
 is on, and the spin-up **protocol is reported, not required** (spin-up is the user's decision, set in
-config — independent of the target granularity). It wraps `check_calibration_rounds.py` and a
-**model-dispatched** targets validator (below), so a green run means those pass too. Exit 0 = ready
-for Phase 0; every `✗` must be resolved first. Matching the checkout to a milestone uses
-`scripts/rag_match.py` — full how-to in `docs/a2mc_reference/version_association_howto.md`.
+config — independent of the target granularity). It wraps the round-record checker and the
+targets validator, **both dispatched by model** (below), so a green run means those pass too. Exit 0 = ready
+for Phase 0; every `✗` must be resolved first. Matching the checkout to a milestone is Step 2's job:
+`scripts/rag_match.py` for ELM-FATES (how-to: `docs/a2mc_reference/version_association_howto.md`),
+`tools/model_preflight.py` for every other model.
 
 > **★ The targets check is DISPATCHED BY MODEL — there are two validators and they are not
 > interchangeable.** `$A2MC_MODEL` (default `fates`) selects:
@@ -461,11 +539,11 @@ for Phase 0; every `✗` must be resolved first. Matching the checkout to a mile
 
 ## Step 6 — Hand off to Phase 0
 
-Setup is done. Route to **`phase0-design`** to sample the parameter space and submit the ensemble. From here on the standard cold-start flow applies: `onboard-session` on the next session, `arm-hpc-monitoring` once the ensemble is in flight.
+Setup is done. Route to **`phase0-design`** to sample the parameter space and submit the ensemble. From here on the standard cold-start flow applies: `onboard-session` on the next session, and once the ensemble is in flight `arm-hpc-monitoring` on a scheduler or `arm-local-monitoring` on a workstation (`A2MC_EXEC_MODE=local`). The model's runbook skill (`ecosim-run-workflow`, `pflotran-run-workflow`, `ats-run-workflow`, or `offline-testing-workflow` for ELM-FATES) covers every run after this one.
 
 > **Or start a driven run.** To go straight from setup-complete into a run that drives itself to the calibration goal (rather than a bare Phase-0 hand-off), invoke **`calibration-goal`** — the run-to-convergence driver loops the 7-phase workflow to CONVERGED, pausing only at the human gates.
 
-Offer to log the setup with `calibration-log` (a free-form session log under `use_cases/$SITE/memory/logs/`) so the choices (mode, PFTs, targets, seed) are recorded for the next session.
+The setup's session log was written in Step 4(a), when the plan was confirmed. If anything changed since (a bound, a target, the ensemble design at GATE 2), add it there with `calibration-log` so the next session inherits the final choices, not the first draft.
 
 
 ## Footguns
@@ -480,15 +558,15 @@ Offer to log the setup with `calibration-log` (a free-form session log under `us
   moving the file and editing `targets.yaml` must happen in the SAME commit.
 
 
-- **Template mode defaults left in place** — the seed config ships a FATES+CNP+ECA default; if the user runs carbon-only or ELM-only, retrieval will surface the wrong content until you fix Section 5.
+- **Template mode defaults left in place** — the seed config ships a FATES+CNP+ECA default; if the user runs carbon-only or ELM-only, retrieval will surface the wrong content until you fix the mode variables (§6 of the FATES template).
 - **Bad target keys** — **FATES only**: anything not matching `PFT<id>_<vartype>` is dropped silently; run `validate_targets_config.py`. **An adapter model has a different grammar** (targets named for the quantity, anchored by `window_years`/`window`) — run `validate_model_targets.py --model <m> --targets <path>` instead. Pointing the FATES one at an adapter case used to emit `2 × n_targets` nonsense errors; it now refuses and names the right tool.
 - **Fabricated targets/paths** — the single most damaging first-run error. Placeholders marked `TODO`, never invented numbers.
-- **Clobbering an existing case** — check `use_cases/{Model}_{Case}/` before `cp`; if it exists, this is probably an `onboard-session` case, not `a2mc-init`.
+- **Clobbering an existing case** — `create_use_case.py` refuses an existing directory; never work around it with `cp -r`. An existing case is a RESUME of this skill (§Before Step 1), or `onboard-session`'s if it already carries workflow state.
 - **Parameter list guessed from names** — the list defines the entire Morris search space; build it from the knowledge system (curated relationships + RAG + CNP guide + Adaptive Memory), not from what a parameter is called (Calibration Rule #2). Fabricated bounds distort the sensitivity analysis — mark unknown bounds `TODO`. Do not reflexively copy the Kougarok 162-parameter set; it is Kougarok-specific.
 - **Putting validation data in `targets.yaml`** — `targets.yaml` is **calibration-only** (everything in it is scored/optimized against). Data the user wants as an *independent cross-check* (not fit) — e.g. MODIS GPP/LAI, soil T/moisture profiles for a biomass calibration — is **validation data**: keep it in its native format and compare via a purpose-built script; never add it to `targets.yaml`. Classify calibration vs validation in the 1.1 interview.
 - **Over-asking a new user for detail they don't need** — do NOT demand dominant PFTs, per-PFT biomass, or a parameter list when the goal is **ecosystem-level** (e.g. MODIS/tower GPP). Let 1.0 set the granularity first; PFT-level questions (1.2, 1C PFTs) apply *only* to PFT-level targets. Forcing FATES internals on someone who only has an ecosystem flux is the fastest way to stall a first run.
-- **Building config before the plan is confirmed** — write `use_cases/$SITE/research_plan.md` and get the user's confirmation BEFORE populating `a2mc_config.sh` / the site config / `targets.yaml` / the parameter list. The plan is the single human-review artifact; skipping it means the user first sees your interpretation as already-written files, which is far harder to correct. Record the case memory only after the plan is confirmed.
-- **Hand-authoring `calibration_rounds.yaml`** — it duplicates values already in the two configs (param count, ensemble size, artifact paths, targets file, protocol, milestone), so a hand-typed round record drifts. Generate it from the sourced config (`tools/generate_calibration_rounds.py --round N --write`) and verify with `tools/check_calibration_rounds.py`; never trust a hand-typed one.
+- **Building config before the plan is confirmed** — write `use_cases/$CASE_DIR/research_plan.md` and get the user's confirmation BEFORE filling values into the site config / `targets.yaml` / the parameter list (the template copy Step 3 makes is not a write). The plan is the single human-review artifact; skipping it means the user first sees your interpretation as already-written files, which is far harder to correct. Record the case memory only after the plan is confirmed.
+- **Hand-authoring `calibration_rounds.yaml`** — it duplicates values already in the two configs (param count, ensemble size, artifact paths, targets file, protocol, milestone), so a hand-typed round record drifts. Generate it from the sourced config with the generator for your model (Step 4 item 3b: `tools/generate_calibration_rounds.py` for ELM-FATES, `scripts/generate_adapter_calibration_rounds.py` otherwise) and verify with the matching checker; never trust a hand-typed one.
 - **Treating a leftover check as a hard failure** — `check_setup_ready.py` is goal-conditional: `N/A` on PFT inventory (ecosystem goal), FATES base file (ELM-only), or an as-yet-ungenerated SALib file is expected, not a blocker. Only `✗` blocks Phase 0.
 
 
@@ -496,7 +574,7 @@ Offer to log the setup with `calibration-log` (a free-form session log under `us
 
 - `docs/a2mc_reference/a2mc_init_interview_questionnaire.md` — a ready-to-use branching question script for Step 1 (kept under its original filename)
 - `onboard-model` — adds the MODEL; its step 14 delegates case creation here
-- `a2mc-init` — first run in a clone (machine config, fork guard), then routes here
+- `a2mc-init` — once per clone: wiring, name, the model install on this machine (get, build, verify), fork guard and machine config; then routes here
 - `phase0-design` — where this hands off
 - `calibration-log` · `calibration-discipline` — the logging + habits layer for the round that follows
 

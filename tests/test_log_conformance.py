@@ -379,3 +379,48 @@ def test_rag_index_checker_CATCHES_the_historical_bug():
     assert r.returncode == 2, f"must ERROR on the known-bad revision, got {r.returncode}:\n{r.stdout}"
     assert "1374" in r.stdout and "1314" in r.stdout, r.stdout
     assert "pflotran-157a26f7" in r.stdout, r.stdout
+
+
+# --------------------------------------------------------------------------
+# L7 — two logs may not share a stem. Added 2026-09-22, the day it happened.
+# --------------------------------------------------------------------------
+
+def test_L7_rejects_two_logs_sharing_a_stem(tmp_path):
+    """The failure this rule was written from, reproduced.
+
+    Two sessions wrote a handoff on the same day, three minutes apart. Neither could see the
+    other's uncommitted file, so both took `b`, and once both were committed the stem `20260922b`
+    named two different logs -- with the session snapshot resolving it to whichever it found
+    first. A stem is a citation, so it has to name one file.
+    """
+    a = _write(tmp_path, "20260801b_First_Log.md", GOOD)
+    b = _write(tmp_path, "20260801b_Second_Log.md", GOOD)
+    assert "L7" in _codes(clc.check_file(a), "error")
+    assert "L7" in _codes(clc.check_file(b), "error")
+
+
+def test_L7_names_the_NEXT_FREE_letter_so_the_fix_is_obvious(tmp_path):
+    """A refusal that does not say what to rename to invites a second collision."""
+    _write(tmp_path, "20260801a_Taken.md", GOOD)
+    _write(tmp_path, "20260801b_First_Log.md", GOOD)
+    b = _write(tmp_path, "20260801b_Second_Log.md", GOOD)
+    msg = [f.msg for f in clc.check_file(b) if f.code == "L7"][0]
+    assert "20260801c" in msg, msg
+    assert "20260801b_First_Log.md" in msg, "the message must name the other file"
+
+
+def test_L7_is_silent_when_every_stem_is_unique(tmp_path):
+    """The ordinary case: a directory of distinct letters must stay clean."""
+    for name in ("20260801a_One.md", "20260801b_Two.md", "20260801c_Three.md"):
+        p = _write(tmp_path, name, GOOD)
+    assert _codes(clc.check_file(p)) == []
+
+
+def test_L7_respects_the_z_overflow_when_suggesting_a_letter(tmp_path):
+    """Past z the convention is za, zb, ... and the suggestion must follow it, not restart at a."""
+    for ch in "abcdefghijklmnopqrstuvwxy":
+        _write(tmp_path, "20260801%s_Log%s.md" % (ch, ch.upper()), GOOD)
+    _write(tmp_path, "20260801z_LogZ.md", GOOD)
+    dup = _write(tmp_path, "20260801z_Another.md", GOOD)
+    msg = [f.msg for f in clc.check_file(dup) if f.code == "L7"][0]
+    assert "20260801za" in msg, msg

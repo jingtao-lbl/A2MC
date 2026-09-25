@@ -1,4 +1,4 @@
-"""S0 and S1 — the tier axis. The learner family is a separate axis (learners.py).
+"""S0 to S3 — the tier axis. The learner family is a separate axis (learners.py).
 
 Gated ascent (docs/41 section 4): a tier may not be built until the tier below
 has FAILED a written acceptance test.
@@ -16,15 +16,19 @@ has FAILED a written acceptance test.
   S3  knowledge-guided. S2 plus process STRUCTURE: targets composed from their
       components rather than fitted, and declared admissibility enforced.
 
-Both accept ANY learner family (`rf`, `gbm`, `gp`, `mlp`, or a custom `Learner`).
+All four accept ANY learner family (`ridge`, `rf`, `gbm`, `xgb`, `gp`, `mlp`, or a custom
+`Learner`).
 The tier decides WHAT is emulated and how uncertainty is calibrated; the learner
 decides WITH WHAT. Keeping them orthogonal is what lets `compare_learners` pick
 the family on evidence instead of taste.
 
-Why S1 is two-stage: fitting one regressor across a regime boundary is what
-produced the 2025 Kougarok Fineroot_PFT7 R2 = 0.48. A dead stand and a living
-one are not two ends of a continuum, and asking one regressor to span them
+Why S1 is two-stage: a failed or collapsed run and a viable one are not two
+ends of a continuum, and asking one regressor to span a regime boundary
 degrades it everywhere, not just at the boundary.
+
+`load` rebuilds any saved surrogate: the four tier classes here by `spec.tier`, and the
+architecture classes in the sibling modules (`sequence`, `multioutput`, `fields`,
+`spatiotemporal`, `graphs`, `operators`) by the class name `save` writes into `tier.json`.
 
 Author: Jing Tao with Claude
 """
@@ -32,8 +36,10 @@ Author: Jing Tao with Claude
 from __future__ import annotations
 
 import copy
+import inspect
+import warnings
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -55,9 +61,9 @@ _SIGMA_FLOOR = 1e-9
 def _reduce_annual_mean_sum(traj: np.ndarray, years: np.ndarray) -> np.ndarray:
     """Mean over years of the within-year sum. (N, T, D) -> (N, T).
 
-    This is what a `year_end` scalar becomes once the tape's within-year CUMULATIVE
-    series has been de-cumulated into a daily flux: the year-end cumulative value is
-    that year's sum of daily fluxes.
+    This is the per-step form of a year-end value: once a within-year CUMULATIVE
+    series has been differenced into per-step values, the year-end cumulative value
+    is that year's sum of per-step values.
     """
     uy = np.unique(years)
     per_year = np.stack([traj[:, :, years == y].sum(axis=2) for y in uy])   # (Y, N, T)
@@ -75,6 +81,64 @@ REDUCERS = {
     "max":              lambda a, _idx: a.max(axis=2),
     "annual_mean_sum":  _reduce_annual_mean_sum,
 }
+
+
+#: Floor for a relative-error denominator, as a fraction of the column's own largest magnitude.
+#: A relative check still has to divide by something when the reference value is zero, and the
+#: only defensible "something" is the scale of the data rather than the literal 1.0 that used to
+#: sit here -- which silently turned the check absolute for every quantity smaller than 1.
+_SCALE_FLOOR_FRAC = 1e-6
+
+
+def _rel_scale(ref: np.ndarray, ok: np.ndarray) -> np.ndarray:
+    """Denominator for a per-target relative comparison of `ref`, masked by `ok`.
+
+    PER TARGET, because targets carry different units: one global floor taken from a
+    concentration in mol/L would make a carbon flux's check meaningless and the other way round.
+    Each column's floor is `_SCALE_FLOOR_FRAC` of that column's largest finite magnitude, and a
+    column that is all zeros falls back to 1.0, where relative error is undefined anyway.
+    """
+    ref = np.atleast_2d(ref)
+    scale = np.abs(ref).astype(float)
+    with np.errstate(invalid="ignore"):
+        col_max = np.nanmax(np.where(np.isfinite(scale), scale, np.nan), axis=0)
+    col_max = np.where(np.isfinite(col_max) & (col_max > 0.0), col_max, 1.0)
+    floor = _SCALE_FLOOR_FRAC * col_max
+    scale = np.maximum(scale, floor[None, :])
+    scale[~np.isfinite(scale) | (scale <= 0.0)] = 1.0
+    return scale[ok]
+
+
+def _conformal_quantile(scores: np.ndarray, alpha: float, target: str = "") -> float:
+    """The split-conformal radius for one target, or `inf` when the calibration set is too small.
+
+    The finite-sample guarantee needs the `ceil((n+1)(1-alpha))/n` quantile of the calibration
+    residuals. When `ceil((n+1)(1-alpha)) > n` -- fewer than 19 calibration rows at alpha 0.05 --
+    that rank does not exist, and the honest answer is an INFINITE interval: the data cannot
+    support a 95 percent statement. The code used to clamp the level to 1.0, which quietly returns
+    the largest observed residual instead and under-covers, with nothing in the output saying the
+    interval was not the one that was asked for.
+
+    An infinite radius is deliberately awkward downstream. `interval_coverage` then reports
+    coverage 1.0 with infinite mean width, which `validate` already names as "honest and useless,
+    which is a real and acceptable outcome, but it must be visible as such" -- and visible is the
+    whole point, because the alternative is an interval that looks 95 percent and is not.
+    """
+    scores = np.asarray(scores, dtype=float)
+    n = len(scores)
+    if n == 0:
+        return float("inf")
+    k = int(np.ceil((n + 1) * (1.0 - alpha)))
+    if k > n:
+        warnings.warn(
+            f"conformal interval for {target or 'a target'}: {n} calibration rows cannot support "
+            f"a {(1 - alpha) * 100:.0f}% interval (the guarantee needs rank {k} of {n}), so the "
+            f"radius is infinite. Calibrate on at least {int(np.ceil(1 / alpha)) - 1} rows, or "
+            f"raise alpha, rather than reading the widest residual as a {(1 - alpha) * 100:.0f}% "
+            f"bound.",
+            RuntimeWarning)
+        return float("inf")
+    return float(np.quantile(scores, k / n, method="higher"))
 
 
 def _fresh(spec: Any, **kw: Any) -> Learner:
@@ -171,13 +235,13 @@ class S1Surrogate(SurrogateModel):
     matters because we cannot justify a Gaussian assumption on a few hundred
     points from a threshold-dominated model.
 
-    **Normalised conformal.** When the learner exposes a native sigma (`rf`,
-    `gp`, `mlp`), the nonconformity score is |y - yhat| / sigma(x) and the
+    **Normalised conformal.** When the learner exposes a native sigma (`ridge`,
+    `rf`, `gp`, `mlp`), the nonconformity score is |y - yhat| / sigma(x) and the
     interval is yhat +/- q * sigma(x). The interval then WIDENS where the model
     is unsure instead of being one constant width everywhere — which is the
     whole point for a calibration that drives to box edges. Families without a
-    sigma (`gbm`) fall back to a constant half-width, and `normalized` records
-    which happened.
+    sigma (`gbm`, `xgb`) fall back to a constant half-width, and `normalized`
+    records which happened.
 
     Coverage remains MARGINAL, not conditional. Section 2.1 of docs/41 turns on
     exactly that limitation: coverage measured in-distribution says nothing
@@ -196,9 +260,9 @@ class S1Surrogate(SurrogateModel):
             raise ValueError(f"S1Surrogate requires tier 'S1', spec says {spec.tier!r}")
         if not 0 < alpha < 1:
             raise ValueError(f"alpha must be in (0, 1), got {alpha}")
-        if not 0 < calibration_fraction < 1:
+        if not 0 <= calibration_fraction < 1:
             raise ValueError(
-                f"calibration_fraction must be in (0, 1), got {calibration_fraction}")
+                f"calibration_fraction must be in [0, 1), got {calibration_fraction}")
         super().__init__(spec)
         self.learner = learner
         self.learner_kw = learner_kw
@@ -210,6 +274,9 @@ class S1Surrogate(SurrogateModel):
         self.classifier_kw = dict(classifier_kw or {})
         self.alpha = alpha
         self.calibration_fraction = calibration_fraction
+        # calibration_fraction == 0 fits every viable row and claims no conformal coverage: the
+        # form a sequential search wants, where every run is too expensive to hold out.
+        self.calibrated: bool = calibration_fraction > 0
         self.random_state = random_state
         self._clf: Any = None
         self._models: List[Learner] = []
@@ -217,15 +284,46 @@ class S1Surrogate(SurrogateModel):
         self.normalized: bool = False
         self._gate = HullGate(k=hull_k, quantile=hull_quantile)
         self.n_viable_train = 0
+        # True on a copy from `believe`, whose regressors carry fake observations.
+        self.believed: bool = False
+        # Per target: indices into the X given to `fit` of the rows its regressor trained on, and
+        # the std of those rows' values in the target's fitted (transformed) space. The indices
+        # are sorted; a regressor's `training_inputs()` holds the same rows in its own order.
+        self.train_rows_: Optional[List[np.ndarray]] = None
+        self.target_sd_: Optional[np.ndarray] = None
 
     # ---- fit ----
 
     def fit(self, X: np.ndarray, Y: np.ndarray,
-            viable: Optional[np.ndarray] = None) -> "S1Surrogate":
+            viable: Optional[np.ndarray] = None,
+            priority: Optional[np.ndarray] = None,
+            keep_best: int = 0) -> "S1Surrogate":
+        """Fit the classifier on every row and one regressor per target on the viable rows.
+
+        `priority` (N,), aligned with `X`, and `keep_best` pass through to each regressor's
+        `fit`, restricted to that regressor's own fit rows, so a learner that subsamples keeps
+        the `keep_best` lowest-priority rows. Refused for a learner whose `fit` takes no priority.
+        """
         X = self._check_X(X)
         Y = np.atleast_2d(np.asarray(Y, dtype=float))
         if Y.shape[0] != X.shape[0]:
             raise ValueError(f"X has {X.shape[0]} rows, Y has {Y.shape[0]}")
+        probe = _fresh(self.learner, **self.learner_kw)
+        if priority is not None:
+            priority = np.asarray(priority, dtype=float).ravel()
+            if len(priority) != len(X):
+                raise ValueError(
+                    f"priority has {len(priority)} entries, X has {len(X)} rows; pass one "
+                    "priority per row of X")
+            params = inspect.signature(probe.fit).parameters
+            if "priority" not in params or "keep_best" not in params:
+                raise ValueError(
+                    f"priority: learner family {probe.name!r} fits without a row priority; "
+                    "pass priority=None or use a learner whose fit accepts priority and "
+                    "keep_best (gp)")
+        elif keep_best:
+            raise ValueError(
+                f"keep_best={keep_best} needs a priority to rank rows by; pass priority too")
 
         if viable is None:
             # Fallback only: a row is viable when every target is finite. The
@@ -248,21 +346,31 @@ class S1Surrogate(SurrogateModel):
         # training point lives there.
         Xv, Yv = X[viable], Y[viable]
         self.n_viable_train = int(viable.sum())
-        if self.n_viable_train < 4:
+        self.calibrated = self.calibration_fraction > 0
+        if self.calibrated and self.n_viable_train < 4:
             raise ValueError(
                 f"only {self.n_viable_train} viable rows; S1 needs >= 4 to split "
                 "fit/calibration. Use S0 or gather more data.")
+        if not self.calibrated and self.n_viable_train < 2:
+            raise ValueError(
+                f"only {self.n_viable_train} viable rows; S1 needs >= 2 to fit a regressor "
+                "even without a calibration split.")
         self._gate.fit(Xv)
 
-        rng = np.random.default_rng(self.random_state)
-        idx = rng.permutation(self.n_viable_train)
-        n_cal = max(1, int(round(self.calibration_fraction * self.n_viable_train)))
-        n_cal = min(n_cal, self.n_viable_train - 1)
-        cal_idx, fit_idx = idx[:n_cal], idx[n_cal:]
+        if self.calibrated:
+            rng = np.random.default_rng(self.random_state)
+            idx = rng.permutation(self.n_viable_train)
+            n_cal = max(1, int(round(self.calibration_fraction * self.n_viable_train)))
+            n_cal = min(n_cal, self.n_viable_train - 1)
+            cal_idx, fit_idx = idx[:n_cal], idx[n_cal:]
+        else:
+            cal_idx, fit_idx = np.array([], dtype=int), np.arange(self.n_viable_train)
 
         self._models, qs = [], []
-        probe = _fresh(self.learner, **self.learner_kw)
         self.normalized = bool(probe.supports_std)
+        viable_rows = np.flatnonzero(viable)
+        pv = None if priority is None else priority[viable]
+        train_rows, target_sd = [], []
 
         for j, t in enumerate(self.spec.targets):
             y = Yv[:, j]
@@ -272,9 +380,22 @@ class S1Surrogate(SurrogateModel):
                 raise ValueError(
                     f"target {t.name!r}: only {len(fi)} finite rows in the fit split")
             lr = _fresh(self.learner, **self.learner_kw)
-            lr.fit(Xv[fi], apply_transform(y[fi], t.transform))
+            if pv is None:
+                lr.fit(Xv[fi], apply_transform(y[fi], t.transform))
+            else:
+                lr.fit(Xv[fi], apply_transform(y[fi], t.transform),
+                       priority=pv[fi], keep_best=keep_best)
             self._models.append(lr)
+            rows = viable_rows[fi]
+            used = getattr(lr, "train_idx_", None)
+            if used is not None:
+                rows = rows[np.asarray(used, dtype=int)]
+            rows = np.sort(rows)
+            train_rows.append(rows)
+            target_sd.append(float(np.std(apply_transform(Y[rows, j], t.transform))))
 
+            if not self.calibrated:
+                continue
             if len(ci) == 0:
                 qs.append(np.inf)   # no calibration data -> refuse to claim coverage
                 continue
@@ -288,12 +409,11 @@ class S1Surrogate(SurrogateModel):
                 scores = resid
             # Finite-sample split-conformal level. The ceil((n+1)(1-alpha))/n
             # quantile is what guarantees >= 1-alpha marginal coverage; the
-            # plain (1-alpha) quantile under-covers on small calibration sets,
-            # which is exactly our regime.
-            n = len(scores)
-            lvl = min(1.0, np.ceil((n + 1) * (1 - self.alpha)) / n)
-            qs.append(float(np.quantile(scores, lvl, method="higher")))
+            # plain (1-alpha) quantile under-covers on small calibration sets.
+            qs.append(_conformal_quantile(scores, self.alpha, self.spec.targets[j].name))
         self._q = np.asarray(qs, dtype=float)
+        self.train_rows_ = train_rows
+        self.target_sd_ = np.asarray(target_sd, dtype=float)
         self.fitted = True
         return self
 
@@ -308,6 +428,8 @@ class S1Surrogate(SurrogateModel):
         for j, t in enumerate(self.spec.targets):
             lr = self._models[j]
             vals[:, j] = invert_transform(lr.predict(X), t.transform)
+            if not self.calibrated:
+                continue
             if self.normalized:
                 sig = np.maximum(np.asarray(lr.predict_std(X), dtype=float),
                                  _SIGMA_FLOOR)
@@ -318,16 +440,134 @@ class S1Surrogate(SurrogateModel):
         # Intervals live in NATIVE units because the conformal scores were
         # measured there. Applying a half-width in transformed space and
         # inverting would give an asymmetric band with no guarantee attached.
-        if self._clf is not None:
-            viab = self._clf.predict_proba(X)[:, list(self._clf.classes_).index(1)]
-        else:
-            viab = np.ones(len(X))
-
-        dist = self._gate.distance(X)
+        # An uncalibrated model claims no interval at all rather than an infinite one, which
+        # a coverage check would score as covering.
+        lower, upper = (vals - half, vals + half) if self.calibrated else (None, None)
+        dist, inside = self.hull(X)
         return BatchPrediction(
-            spec=self.spec, values=vals, lower=vals - half, upper=vals + half,
-            viability=viab, in_hull=dist <= self._gate.threshold,
-            hull_distance=dist)
+            spec=self.spec, values=vals, lower=lower, upper=upper,
+            viability=self.viability(X), in_hull=inside, hull_distance=dist)
+
+    def viability(self, X: np.ndarray) -> np.ndarray:
+        """(N,) P(viable). All ones when every training row was viable (no classifier fitted).
+
+        A classifier fitted on a single class answers from its `classes_` alone, ones for `[1]`
+        and zeros for `[0]`, because such a fit's `predict_proba` columns need not follow
+        `classes_`. Otherwise label 1 must be among `classes_` and `predict_proba` must return one
+        column per class; the column of label 1 is P(viable).
+        """
+        self._check_fitted()
+        X = self._check_X(X)
+        if self._clf is None:
+            return np.ones(len(X))
+        classes = list(np.asarray(self._clf.classes_).ravel())
+        if len(classes) == 1 and classes[0] == 1:
+            return np.ones(len(X))
+        if len(classes) == 1 and classes[0] == 0:
+            return np.zeros(len(X))
+        if 1 not in classes:
+            raise ValueError(
+                f"viability: the classifier's classes_ {classes} contain no label 1 (viable); "
+                "fit it on 0/1 viability labels")
+        proba = np.asarray(self._clf.predict_proba(X), dtype=float)
+        if proba.ndim != 2 or proba.shape[1] != len(classes):
+            raise ValueError(
+                f"viability: predict_proba returned shape {proba.shape} for classes_ {classes}; "
+                "it must return one column per class, in classes_ order")
+        return proba[:, classes.index(1)]
+
+    def hull(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """(distance, inside) from the extrapolation gate fitted on the viable rows."""
+        self._check_fitted()
+        X = self._check_X(X)
+        dist = self._gate.distance(X)
+        return dist, dist <= self._gate.threshold
+
+    def posterior(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Per-target posterior `(mean, std)`, each (N, T), in each target's FITTED space.
+
+        That space is the target's `transform` space (log units under `log`), because it is
+        where the regressor's Gaussian lives; sample or integrate there and invert afterwards.
+        The std is the regressor's predictive std, which for `gp` includes the fitted noise term.
+        Refused unless every regressor declares `posterior_std`: a caller integrates this std as
+        a Gaussian posterior, which a tree spread, a leverage term or an ensemble disagreement is
+        not.
+        """
+        self._check_fitted()
+        X = self._check_X(X)
+        for lr in self._models:
+            if getattr(lr, "posterior_std", False):
+                continue
+            family = getattr(lr, "name", type(lr).__name__)
+            what = ("has a native std that is not a predictive posterior std"
+                    if getattr(lr, "supports_std", False) else "has no native std")
+            raise ValueError(
+                f"posterior: learner family {family!r} {what}; the acquisition integrates the "
+                "std as a Gaussian posterior (docs/42 section 3), so only a family with "
+                "posterior_std=True (gp) may supply one")
+        mu = np.empty((len(X), len(self.spec.targets)), dtype=float)
+        sd = np.empty_like(mu)
+        for j, lr in enumerate(self._models):
+            both = getattr(lr, "predict_mean_std", None)
+            if callable(both):
+                m, s = both(X)
+            else:
+                m, s = lr.predict(X), lr.predict_std(X)
+            mu[:, j] = np.asarray(m, dtype=float)
+            sd[:, j] = np.asarray(s, dtype=float)
+        return mu, sd
+
+    def trains_on(self, x: np.ndarray) -> np.ndarray:
+        """(T,) bool: whether each regressor's posterior conditions on the single point `x`.
+
+        A training input matches when it is within 1e-9 of the spec's input range of `x` in
+        every dimension (L-inf). Read from each regressor's `training_inputs()`, so it reflects
+        any subsample and any believed point.
+        """
+        self._check_fitted()
+        x = self._check_X(x)
+        if len(x) != 1:
+            raise ValueError(f"trains_on takes one point, got {len(x)} rows")
+        for t, lr in zip(self.spec.targets, self._models):
+            if not callable(getattr(lr, "training_inputs", None)):
+                family = getattr(lr, "name", type(lr).__name__)
+                raise ValueError(
+                    f"trains_on: learner family {family!r} (target {t.name!r}) exposes no "
+                    "training_inputs(), so its training set cannot be checked; use gp")
+        tol = 1e-9 * (np.asarray(self.spec.input_upper, dtype=float)
+                      - np.asarray(self.spec.input_lower, dtype=float))
+        return np.array([
+            bool(np.any(np.all(np.abs(np.asarray(lr.training_inputs(), dtype=float) - x)
+                               <= tol, axis=1)))
+            for lr in self._models], dtype=bool)
+
+    def believe(self, X_new: np.ndarray) -> "S1Surrogate":
+        """A Kriging-believer COPY: every regressor also conditions on its own posterior mean at
+        `X_new`, with hyperparameters frozen. The classifier and hull gate are shared unchanged,
+        because a believed point is not a run. The copy claims no conformal coverage and refuses
+        `save`, so fake observations can never persist. This model is left untouched.
+        """
+        self._check_fitted()
+        X_new = self._check_X(X_new)
+        missing = [t.name for t, lr in zip(self.spec.targets, self._models)
+                   if not callable(getattr(lr, "condition_on", None))]
+        if missing:
+            raise NotImplementedError(
+                f"believe: learner {self.learner!r} cannot condition without refitting "
+                f"(targets {missing}); batch with local penalisation instead")
+        out = copy.copy(self)
+        out._models = [lr.condition_on(X_new, lr.predict(X_new)) for lr in self._models]
+        out._q = np.array([])
+        out.calibrated = False
+        out.believed = True
+        return out
+
+    def save(self, directory: Path) -> Path:
+        if self.believed:
+            raise RuntimeError(
+                "refusing to save a Kriging-believer copy: its regressors contain fake "
+                "observations; save the model it was derived from")
+        return super().save(directory)
 
     @property
     def conformal_quantile(self) -> Dict[str, float]:
@@ -337,6 +577,10 @@ class S1Surrogate(SurrogateModel):
         when True, so it is not directly comparable across the two modes.
         """
         self._check_fitted()
+        if not self.calibrated:
+            raise ValueError(
+                "no conformal quantile: this model was fitted with calibration_fraction=0 "
+                "or is a Kriging-believer copy")
         return {t.name: float(self._q[j]) for j, t in enumerate(self.spec.targets)}
 
     def sensitivity(self) -> Dict[str, Dict[str, float]]:
@@ -357,7 +601,8 @@ class S1Surrogate(SurrogateModel):
                      "classifier": self.classifier,
                      "classifier_kw": self.classifier_kw,
                      "calibration_fraction": self.calibration_fraction,
-                     "n_viable_train": self.n_viable_train},
+                     "n_viable_train": self.n_viable_train,
+                     "train_rows": self.train_rows_, "target_sd": self.target_sd_},
                     Path(directory) / "s1.joblib")
 
 
@@ -385,15 +630,16 @@ class S2Surrogate(SurrogateModel):
     trajectories, take the leading `n_components` singular vectors as a basis,
     and regress theta -> coefficient with ONE learner per component drawn from
     the same registry S0 and S1 use. Reconstruction is the mean plus the
-    coefficient-weighted basis. Two consequences worth stating: the learner axis
-    stays orthogonal to the tier axis, so `rf`, `gbm`, `gp` and `mlp` all work
-    here, and a recurrent learner is a future entry on that axis rather than a
-    different tier.
+    coefficient-weighted basis. The learner axis stays orthogonal to the tier
+    axis, so every registry family works here. A trajectory that must respond to
+    per-step drivers needs a sequence network instead: `sequence.KGMLEmulator`,
+    an S3 architecture, because a basis fitted to one driver record cannot answer
+    for another.
 
     Viability, the extrapolation gate and split-conformal intervals are S1's and
     are reused rather than re-derived. The conformal score is measured on the
     REDUCED scalar, because that is the quantity whose interval a caller acts
-    on; a band on a 4000-step series is a different object and is not claimed.
+    on; a band on a multi-thousand-step series is a different object and is not claimed.
     """
 
     def __init__(self, spec: SurrogateSpec, learner: Any = "gbm",
@@ -488,7 +734,14 @@ class S2Surrogate(SurrogateModel):
         ok = np.isfinite(red) & np.isfinite(ref)
         if not ok.any():
             raise ValueError("no finite (reduced, Y) pair to check the reducer against")
-        rel = np.abs(red[ok] - ref[ok]) / np.maximum(1.0, np.abs(ref[ok]))
+        # PER-TARGET SCALE, not a literal 1.0. The denominator used to be
+        # `np.maximum(1.0, |ref|)`, which is a RELATIVE tolerance only for quantities of order 1
+        # or larger and an ABSOLUTE 1e-4 for everything smaller -- so for a flux in per-second
+        # units, or miniLEO's ~4.7e-4 mol/L concentrations, a reducer could disagree with the Y
+        # matrix by 20 percent and pass. The floor now comes from the column's own magnitude, so
+        # the check means the same thing whatever the units are, and it still protects the
+        # division where a reference value is genuinely zero.
+        rel = np.abs(red[ok] - ref[ok]) / _rel_scale(ref, ok)
         worst = float(rel.max())
         if worst > 1e-4:
             raise ValueError(
@@ -542,9 +795,7 @@ class S2Surrogate(SurrogateModel):
         for j in range(len(self.spec.targets)):
             resid = np.abs(cal_red[:, j] - ref_red[:, j])
             resid = resid[np.isfinite(resid)]
-            m = len(resid)
-            lvl = min(1.0, np.ceil((m + 1) * (1 - self.alpha)) / m)
-            qs.append(float(np.quantile(resid, lvl, method="higher")))
+            qs.append(_conformal_quantile(resid, self.alpha, self.spec.targets[j].name))
         self._q = np.asarray(qs, dtype=float)
         self.fitted = True
         return self
@@ -610,9 +861,9 @@ class S3Surrogate(S2Surrogate):
     `compose`  {derived_target: [component_target, ...]}
         The derived target is NOT fitted. Its trajectory is the SUM of its components'
         trajectories at every timestep, so the identity holds pointwise and survives
-        reduction. `Reco = RA + RH` is the worked case: EcoSIM computes ecosystem
-        respiration as autotrophic plus heterotrophic, so a surrogate that fits Reco
-        independently is free to contradict its own components.
+        reduction. The worked case is a total that the process model computes as the
+        sum of its parts, such as a total flux made of two component fluxes: a surrogate
+        that fits the total independently is free to contradict its own components.
 
     `nonneg`   [target, ...]
         Declared targets are clamped at zero. A truncated ROM basis reconstructs a
@@ -621,8 +872,8 @@ class S3Surrogate(S2Surrogate):
         time and kept on the model, because a constraint that silently repairs a
         prediction hides how often the unconstrained model was wrong.
 
-    WHAT THIS TIER DOES NOT CLAIM. It is not a PINN and adds no PDE residual; EcoSIM has
-    no governing equation to differentiate. It does not pretrain on one corpus and
+    WHAT THIS TIER DOES NOT CLAIM. It is not a PINN and adds no PDE residual, which needs a
+    governing equation that many process models do not have. It does not pretrain on one corpus and
     fine-tune on another -- the training set is already process-model output, which is
     KGML's "physics as data" arm satisfied by construction rather than by design. And
     the soft-penalty arm remains available on the `mlp` learner through
@@ -708,7 +959,11 @@ class S3Surrogate(S2Surrogate):
                 lhs, rhs = traj[:, j, :], traj[:, parts, :].sum(axis=1)
                 ok = np.isfinite(lhs) & np.isfinite(rhs)
                 if ok.any():
-                    scale = np.maximum(1.0, np.abs(lhs[ok]))
+                    # Same scale rule as the reducer check above, and for the same reason: a
+                    # composition identity in per-second units was being checked absolutely.
+                    scale = np.maximum(np.abs(lhs[ok]),
+                                       _SCALE_FLOOR_FRAC * float(np.max(np.abs(lhs[ok]))))
+                    scale[scale <= 0.0] = 1.0
                     worst = float((np.abs(lhs[ok] - rhs[ok]) / scale).max())
                     if worst > 1e-4:
                         name = self.spec.targets[j].name
@@ -738,21 +993,50 @@ class S3Surrogate(S2Surrogate):
         joblib.dump(blob, directory / "s3.joblib")
         (directory / "s2.joblib").unlink()
 
+#: Architectures that are not one of the tier classes in this file, by the class name
+#: `SurrogateModel.save` writes into `tier.json`, to the module and function that rebuild them. Each
+#: of those modules imports torch lazily, so this module still imports without torch. Dispatch is by
+#: class rather than by tier because a tier is not unique to a class: `KGMLEmulator` declares S3,
+#: the tier `S3Surrogate` also serves, and the two save different files.
+ARCHITECTURE_LOADERS = {
+    "KGMLEmulator": ("sequence", "load_kgml"),
+    "VectorSurrogate": ("multioutput", "load_vector"),
+    "FieldEmulator": ("fields", "load_field"),
+    "SpatioTemporalEmulator": ("spatiotemporal", "load_spatiotemporal"),
+    "GraphEmulator": ("graphs", "load_graph"),
+    "DeepONetEmulator": ("operators", "load_deeponet"),
+}
+
+
+def _architecture_loader(directory: Path) -> Any:
+    import importlib
+    import json
+
+    p = Path(directory) / "tier.json"
+    if not p.is_file():
+        return None
+    cls = json.loads(p.read_text()).get("class")
+    if cls not in ARCHITECTURE_LOADERS:
+        return None
+    mod, fn = ARCHITECTURE_LOADERS[cls]
+    return getattr(importlib.import_module(f".{mod}", package=__package__), fn)
+
+
 def load(directory: Path, expect: Optional["Provenance"] = None,
          strict: bool = True) -> SurrogateModel:
     """Load a saved surrogate, refusing a spec/artifact or provenance mismatch.
 
     ``expect`` is the provenance the CALLER believes it is operating under: the
-    model commit, parameter list, base file and — the one that has already bitten
-    this project — the **scoring convention**. When supplied, any field populated
+    model commit, parameter list, base file and — the one most easily overlooked —
+    the **scoring convention**. When supplied, any field populated
     on both sides and differing is a refusal under ``strict`` (the default), or a
     warning otherwise.
 
     Why this is a gate and not a helper. A surrogate is bound to the tuple it was
-    trained against, exactly as a RAG profile is bound to a source commit. The
-    leap-calendar fix (v2.213) changed how EcoSIM targets are reduced on
-    2026-07-30, so an artifact trained before it is scored against a *different
-    objective* than the one now in force. Nothing about that artifact looks
+    trained against, exactly as a RAG profile is bound to a source commit. A change
+    in how targets are reduced (a calendar convention, an aggregation window) means
+    an artifact trained before it is scored against a *different objective* than
+    the one now in force. Nothing about that artifact looks
     wrong on load: it has the right shape, the right target count, and it
     predicts plausible numbers. Without this check the mismatch surfaces only as
     a subtly wrong answer, which is the worst way to find it.
@@ -800,6 +1084,12 @@ def load(directory: Path, expect: Optional["Provenance"] = None,
     # version bump refuses and a minor one warns.
     enforce_environment(directory, strict=strict)
 
+    # An architecture outside the four tier classes: provenance and environment were checked above,
+    # so its own loader is told not to repeat the environment check.
+    arch_loader = _architecture_loader(directory)
+    if arch_loader is not None:
+        return arch_loader(directory, spec, strict=strict, check_env=False)
+
     if spec.tier == "S0":
         blob = joblib.load(directory / "s0.joblib")
         m = S0Surrogate(spec, learner=blob["learner"], **blob["learner_kw"])
@@ -817,6 +1107,8 @@ def load(directory: Path, expect: Optional["Provenance"] = None,
         m.normalized = blob["normalized"]
         m._gate = blob["gate"]
         m.n_viable_train = blob["n_viable_train"]
+        m.train_rows_ = blob.get("train_rows")
+        m.target_sd_ = blob.get("target_sd")
     elif spec.tier == "S2":
         blob = joblib.load(directory / "s2.joblib")
         m = S2Surrogate(spec, learner=blob["learner"], alpha=blob["alpha"],

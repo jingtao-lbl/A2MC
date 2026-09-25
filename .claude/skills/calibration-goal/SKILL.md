@@ -180,7 +180,7 @@ after `done`.
   + `validate_phase6_decision()`.
 - `onboard-session` (cold-start orient/resume — hands off to this), `phase0-design` … `phase6-refinement`
   (the dispatched executors), `arm-hpc-monitoring` (the WAIT bridge), `summarize-calibration-round`
-  (round exit), `a2mc-init` (setup can hand off directly into a driven run).
+  (round exit), `onboard-case` (its Step 6 can hand setup off directly into a driven run).
 - `plotting` — any figure a dispatched phase produces goes through it; load before the first
   `savefig`, since its view-the-rendered-PNG rule is what catches a broken figure.
 - `AGENTS.md` rule 10 (drive-don't-wait) + §"Offline-Agent Operating Discipline" (the FM-1..4 gates).

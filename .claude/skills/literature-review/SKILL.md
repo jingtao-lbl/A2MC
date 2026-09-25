@@ -24,7 +24,7 @@ critical-minerals proposal review and adapted for A2MC's two uses.
   list (`use_cases/{Model}_{Case}/parameters/FATES_Parameter_List_*.csv` — the `lower`/`upper` columns).
   Deliverable = a **bounds table**: `parameter | literature range [lo, hi] | central | units |
   PFT/context | citations`. This is the evidence layer behind those `lower`/`upper` bounds
-  and the a2mc-init param-list "never invent a bound" rule.
+  and the `onboard-case` Step 4b "never invent a bound" rule.
 - **MANUSCRIPT / TOPIC** (writing): a synthesis for a paper section or research plan.
   Deliverable = a themed markdown review separating established knowledge from hypotheses.
 
@@ -146,7 +146,7 @@ resolve to a real DOI from the search results.
 
 - `use_cases/{Model}_{Case}/parameters/FATES_Parameter_List_*.csv` (`lower`/`upper` columns; docs/37
   explicit-column format) — the provisional (default-anchored) bounds this refines.
-- a2mc-init param-list step ("never invent a bound; anchor to the knowledge base / literature").
+- `onboard-case` Step 4b, the parameter list ("never invent a bound; anchor to the knowledge base / literature").
 - `markdown-to-pdf` (repo skill) for PDF output; `manuscript-writing-style` for manuscript prose.
 - **Reciprocal skills** — `write-report`: its References section is governed by the no-fabrication and
   DOI-validation rule in Stage 2/4 above, which it points here for rather than restating. A report that

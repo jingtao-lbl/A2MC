@@ -469,8 +469,13 @@ def main() -> int:
                     default=int(os.environ.get("A2MC_SOBOL_SEQ_VALID_SAMPLES") or 0),
                     help="ALSO draw an INDEPENDENT validation design of this many points "
                          "(A2MC_SOBOL_SEQ_VALID_SAMPLES). 0 disables it, and the run says so.")
+    # `None` when the variable is absent or empty, NOT 0. Zero is a perfectly good scramble seed
+    # and `int(... or 0)` made it indistinguishable from "unset", so `--validation-seed 0` was
+    # rejected with a message about an unset variable the user had in fact set.
     ap.add_argument("--validation-seed", type=int,
-                    default=int(os.environ.get("A2MC_SOBOL_SEQ_VALID_SEED") or 0),
+                    default=(int(os.environ["A2MC_SOBOL_SEQ_VALID_SEED"])
+                             if (os.environ.get("A2MC_SOBOL_SEQ_VALID_SEED") or "").strip()
+                             else None),
                     help="scramble seed for it (A2MC_SOBOL_SEQ_VALID_SEED). MUST differ from "
                          "--seed: the seed is the independence knob")
     ap.add_argument("--validation-matrix", default=os.environ.get("A2MC_VALID_MATRIX_FILE"),
@@ -516,6 +521,14 @@ def main() -> int:
         X = sample_lhs(problem, args.n_samples, args.seed)
         method_args = {"n_samples": args.n_samples, "seed": args.seed}
 
+    # THE VALIDATION ARGUMENTS ARE CHECKED BEFORE ANYTHING IS WRITTEN. They used to be checked
+    # after, so a refusal (no --validation-matrix, a seed equal to the training seed) left the
+    # training matrix and problem file on disk with no validation design beside them -- half a
+    # Phase 0, and the half that looks complete.
+    rc = check_validation_args(args)
+    if rc:
+        return rc
+
     write_matrix(X, Path(args.output_matrix))
     write_problem_text(Path(args.output_problem), args.method, method_args, names, lower, upper)
     print(f"  -> generated {X.shape[0]} cases x {X.shape[1]} parameters")
@@ -524,6 +537,67 @@ def main() -> int:
 
     rc = write_validation_design(problem, args, names)
     return rc
+
+
+def _nearest_distance(A: np.ndarray, B: np.ndarray) -> float:
+    """Smallest Euclidean distance between any row of A and any row of B.
+
+    cKDTree when scipy is importable, chunked brute force otherwise, so this never becomes the
+    reason a Phase 0 cannot be drawn on a machine with a thinner environment.
+    """
+    A = np.atleast_2d(A)
+    B = np.atleast_2d(B)
+    if len(A) == 0 or len(B) == 0:
+        return float("inf")
+    try:
+        from scipy.spatial import cKDTree
+        return float(cKDTree(B).query(A, k=1)[0].min())
+    except Exception:                                  # pragma: no cover - fallback path
+        best = float("inf")
+        for i in range(0, len(A), 512):
+            d = np.sqrt(((A[i:i + 512, None, :] - B[None, :, :]) ** 2).sum(-1))
+            best = min(best, float(d.min()))
+        return best
+
+
+def lower_of(problem) -> list:
+    """Per-input lower bound from a SALib problem dict."""
+    return [b[0] for b in problem["bounds"]]
+
+
+def upper_of(problem) -> list:
+    """Per-input upper bound from a SALib problem dict."""
+    return [b[1] for b in problem["bounds"]]
+
+
+def check_validation_args(args) -> int:
+    """Everything about the validation design that can be decided WITHOUT drawing it.
+
+    Split out of `write_validation_design` so it can run before the training matrix is written:
+    every one of these refusals used to fire after that file already existed, leaving a Phase 0
+    half on disk. Returns 0 to proceed, or the exit code to return.
+    """
+    if not args.validation_samples:
+        return 0
+    if args.method != "sobol_seq":
+        print(f"ERROR: --validation-samples is only meaningful for --method sobol_seq; "
+              f"this run used {args.method!r}.", file=sys.stderr)
+        return 1
+    if not args.validation_matrix:
+        print("ERROR: --validation-samples was given but --validation-matrix "
+              "(A2MC_VALID_MATRIX_FILE) is unset; there is nowhere to write it.", file=sys.stderr)
+        return 1
+    if args.validation_seed is None:
+        print("ERROR: --validation-seed (A2MC_SOBOL_SEQ_VALID_SEED) is unset. The scramble seed is "
+              "what makes the validation set independent; it has no safe default.", file=sys.stderr)
+        return 1
+    if args.validation_seed == args.seed:
+        print(f"ERROR: --validation-seed equals --seed ({args.seed}). Drawn with the training "
+              f"seed the validation set lands on the SAME underlying lattice and stops being an "
+              f"independent test, while still producing a file and a plausible score.",
+              file=sys.stderr)
+        return 1
+    return 0
 
 
 def write_validation_design(problem, args, names) -> int:
@@ -545,24 +619,11 @@ def write_validation_design(problem, args, names) -> int:
         print("    simulations. Set A2MC_SOBOL_SEQ_VALID_SAMPLES in the site config to draw one.")
         return 0
 
-    if args.method != "sobol_seq":
-        print(f"ERROR: --validation-samples is only meaningful for --method sobol_seq; "
-              f"this run used {args.method!r}.", file=sys.stderr)
-        return 1
-    if not args.validation_matrix:
-        print("ERROR: --validation-samples was given but --validation-matrix "
-              "(A2MC_VALID_MATRIX_FILE) is unset; there is nowhere to write it.", file=sys.stderr)
-        return 1
-    if not args.validation_seed:
-        print("ERROR: --validation-seed (A2MC_SOBOL_SEQ_VALID_SEED) is unset. The scramble seed is "
-              "what makes the validation set independent; it has no safe default.", file=sys.stderr)
-        return 1
-    if args.validation_seed == args.seed:
-        print(f"ERROR: --validation-seed equals --seed ({args.seed}). Drawn with the training "
-              f"seed the validation set lands on the SAME underlying lattice and stops being an "
-              f"independent test, while still producing a file and a plausible score.",
-              file=sys.stderr)
-        return 1
+    # ONE copy of these checks, in `check_validation_args`, which `main` has already run before
+    # writing anything. Re-run here so this function is still safe called on its own.
+    rc = check_validation_args(args)
+    if rc:
+        return rc
 
     V = sample_sobol_sequence(problem, n, args.validation_seed)
     Xtrain = np.loadtxt(args.output_matrix)
@@ -575,6 +636,23 @@ def write_validation_design(problem, args, names) -> int:
         print(f"ERROR: {dupes} validation point(s) coincide with training points despite the "
               f"different seed. The two designs are not independent; do not use this set.",
               file=sys.stderr)
+        return 1
+
+    # NEAR-coincidence, not only bit-identical rows. The exact test above is the right one for a
+    # true lattice collision, and it is blind to a validation point that sits a float away from a
+    # training point -- which is not a hold-out either, and which a scaling or a transform can
+    # produce without the bits matching. Distance is measured in BOX-NORMALISED units so a
+    # parameter spanning six orders of magnitude is not compared in the same units as one spanning
+    # 0-1, and the worst pair is always REPORTED so the number is visible even when it passes.
+    span = np.asarray(upper_of(problem), dtype=float) - np.asarray(lower_of(problem), dtype=float)
+    span[span <= 0] = 1.0
+    d_min = _nearest_distance(np.asarray(V, dtype=float) / span,
+                              np.asarray(Xtrain, dtype=float) / span)
+    print(f"    closest validation-to-training distance: {d_min:.3e} (box-normalised)")
+    if d_min < 1e-9:
+        print(f"ERROR: a validation point sits {d_min:.3e} from a training point in "
+              f"box-normalised units. That is not an independent hold-out, whether or not the "
+              f"bits match.", file=sys.stderr)
         return 1
 
     write_matrix(V, Path(args.validation_matrix))

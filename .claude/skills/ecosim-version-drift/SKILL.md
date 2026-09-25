@@ -16,7 +16,7 @@ description: >-
 modes:
   requires_fates: false
   nutrient_pathway: any
-  scope: [adapter]
+  scope: [ecosim, adapter]
   summary: "EcoSIM-only: evolve a drifted pft input AND activate inactive-by-default calibration outputs; not model-generic."
 ---
 

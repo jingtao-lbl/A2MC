@@ -1,7 +1,7 @@
 """Tests for ``models.surrogate`` — the S0/S1 emulator foundation.
 
-Synthetic data with known structure throughout; no dependency on a real EcoSIM
-ensemble (that is step A4). Each test encodes WHY the behaviour matters, not
+Synthetic data with known structure throughout; no dependency on a real
+process-model ensemble. Each test encodes WHY the behaviour matters, not
 merely that the code runs, because most of these guards exist to stop a specific
 recorded failure from recurring.
 """
@@ -52,12 +52,12 @@ def _spec(tier="S1", transforms=("identity", "identity")):
     return SurrogateSpec(
         name="test", use_mode="offline_search", tier=tier,
         input_names=("a", "b"), input_lower=(0.0, 0.0), input_upper=(1.0, 1.0),
-        targets=(TargetSpec("plant_C", observed=1.0, lower=0.8, transform=transforms[0]),
-                 TargetSpec("NPP", observed=2.0, upper=2.5, transform=transforms[1])),
-        provenance=Provenance(model="ecosim", model_commit="deadbeef",
+        targets=(TargetSpec("target_1", observed=1.0, lower=0.8, transform=transforms[0]),
+                 TargetSpec("target_2", observed=2.0, upper=2.5, transform=transforms[1])),
+        provenance=Provenance(model="test_model", model_commit="deadbeef",
                               param_list_hash="0123456789abcdef",
                               base_param_file_hash="fedcba9876543210",
-                              scoring_convention="leap-calendar-v2.213",
+                              scoring_convention="convention-v2",
                               training_ensemble_id="test-ensemble",
                               a2mc_version="v2.218", created="2026-07-31"))
 
@@ -65,8 +65,8 @@ def _spec(tier="S1", transforms=("identity", "identity")):
 def _data(n=300, seed=0, with_failures=True):
     """Y is a smooth function of X; rows with a < 0.15 are 'dead' (NaN targets).
 
-    The dead region mimics the knife-edge structure the real model has (the
-    VCMX4 collapse): a sharp cliff rather than a gradient.
+    The dead region mimics the knife-edge structure process models can have (a
+    collapse beyond a parameter threshold): a sharp cliff rather than a gradient.
     """
     rng = np.random.default_rng(seed)
     X = rng.uniform(0, 1, size=(n, 2))
@@ -113,22 +113,22 @@ def test_spec_roundtrip(tmp_path):
     s.write(p)
     back = SurrogateSpec.read(p)
     assert back == s
-    assert back.target("NPP").upper == 2.5
+    assert back.target("target_2").upper == 2.5
 
 
 def test_param_list_hash_includes_bounds():
-    """Same names over different bounds is a DIFFERENT design (R1's void bounds)."""
+    """Same names over different bounds is a DIFFERENT design (bounds that miss the viable region)."""
     a = hash_param_list(["p"], [0.0], [1.0])
     b = hash_param_list(["p"], [0.0], [2.0])
     assert a != b
 
 
 def test_provenance_mismatch_ignores_unstamped_but_reports_them():
-    a = Provenance(model="ecosim", scoring_convention="leap-calendar-v2.213")
-    b = Provenance(model="ecosim", scoring_convention="fixed-365")
+    a = Provenance(model="test_model", scoring_convention="convention-v2")
+    b = Provenance(model="test_model", scoring_convention="convention-v1")
     assert a.mismatches(b) == ["scoring_convention"]
     # An unrecorded field is unknown, not a mismatch, but must be visible.
-    c = Provenance(model="ecosim")
+    c = Provenance(model="test_model")
     assert c.mismatches(a) == []
     assert "scoring_convention" in c.unstamped_fields()
 
@@ -226,7 +226,7 @@ def test_s1_conformal_quantile_is_reported_per_target():
     X, Y, viable = _data(n=300)
     m = S1Surrogate(_spec()).fit(X, Y, viable)
     q = m.conformal_quantile
-    assert set(q) == {"plant_C", "NPP"}
+    assert set(q) == {"target_1", "target_2"}
     assert all(v >= 0 for v in q.values())
 
 
@@ -274,7 +274,7 @@ def test_s1_flags_out_of_hull_queries():
 # =============================================================================
 
 def test_manifold_respect_flags_unreachable_target_combinations():
-    """Independent regressors emit pairs the model cannot produce (the R2 finding)."""
+    """Independent regressors emit pairs the model cannot produce."""
     t = np.linspace(0, 1, 300)
     Y_train = np.column_stack([t, 2 * t])          # a 1-D manifold in 2-D output
     on = np.column_stack([t[:50], 2 * t[:50]])
@@ -294,11 +294,11 @@ def test_simulated_feeds_the_existing_cost_layer_unchanged():
     X, Y, viable = _data(n=300)
     m = S1Surrogate(_spec()).fit(X, Y, viable)
     sim = m.simulated([0.8, 0.2])
-    assert set(sim) == {"plant_C", "NPP"}
+    assert set(sim) == {"target_1", "target_2"}
     assert all(isinstance(v, float) for v in sim.values())
-    cost, errors = compute_snapshot_cost(sim, {"plant_C": 1.0, "NPP": 2.0})
+    cost, errors = compute_snapshot_cost(sim, {"target_1": 1.0, "target_2": 2.0})
     assert np.isfinite(cost)
-    assert set(errors) == {"plant_C", "NPP"}
+    assert set(errors) == {"target_1", "target_2"}
 
 
 def test_band_reachable_is_more_permissive_than_in_band():
@@ -320,18 +320,18 @@ def test_save_load_roundtrip_preserves_predictions(tmp_path):
     back = load(d)
     q = np.array([[0.4, 0.6]])
     assert np.allclose(m.predict_batch(q).values, back.predict_batch(q).values)
-    assert back.spec.provenance.scoring_convention == "leap-calendar-v2.213"
+    assert back.spec.provenance.scoring_convention == "convention-v2"
 
 
 def test_load_refuses_a_provenance_mismatch(tmp_path):
-    """The scoring convention is the field that has already bitten this project:
-    the leap-calendar fix changed how targets are reduced, so an artifact
-    trained before it is scored against a DIFFERENT objective. Nothing about it
-    looks wrong on load, which is why this has to be a gate."""
+    """The scoring convention is the field easiest to overlook: a change in how
+    targets are reduced means an artifact trained before it is scored against a
+    DIFFERENT objective. Nothing about it looks wrong on load, which is why this
+    has to be a gate."""
     X, Y, viable = _data(n=220, seed=40)
     d = S1Surrogate(_spec()).fit(X, Y, viable).save(tmp_path / "art")
 
-    stale = Provenance(model="ecosim", scoring_convention="fixed-365")
+    stale = Provenance(model="test_model", scoring_convention="convention-v1")
     with pytest.raises(ValueError, match="provenance mismatch"):
         load(d, expect=stale)
 
@@ -340,7 +340,7 @@ def test_load_refuses_a_provenance_mismatch(tmp_path):
         load(d, expect=stale, strict=False)
 
     # the matching convention loads clean
-    ok = Provenance(model="ecosim", scoring_convention="leap-calendar-v2.213")
+    ok = Provenance(model="test_model", scoring_convention="convention-v2")
     assert load(d, expect=ok) is not None
 
 
@@ -350,8 +350,8 @@ def test_load_warns_when_provenance_is_unstamped(tmp_path):
     spec = SurrogateSpec(
         name="bare", use_mode="offline_search", tier="S1",
         input_names=("a", "b"), input_lower=(0.0, 0.0), input_upper=(1.0, 1.0),
-        targets=(TargetSpec("plant_C"), TargetSpec("NPP")),
-        provenance=Provenance(model="ecosim"))          # nothing else stamped
+        targets=(TargetSpec("target_1"), TargetSpec("target_2")),
+        provenance=Provenance(model="test_model"))          # nothing else stamped
     X, Y, viable = _data(n=220, seed=41)
     d = S1Surrogate(spec).fit(X, Y, viable).save(tmp_path / "bare")
     with pytest.warns(RuntimeWarning, match="unstamped provenance"):
@@ -412,10 +412,10 @@ def test_confirmation_rate_counts_only_interval_hits():
     m = S1Surrogate(_spec()).fit(X, Y, viable)
     q = np.array([[0.7, 0.3], [0.4, 0.8]])
     pred = m.predict_batch(q)
-    truth = [{"plant_C": float(pred.values[i, 0]), "NPP": float(pred.values[i, 1])}
+    truth = [{"target_1": float(pred.values[i, 0]), "target_2": float(pred.values[i, 1])}
              for i in range(2)]
     assert record_confirmation(pred, truth)["overall"] == 1.0
-    way_off = [{"plant_C": 999.0, "NPP": -999.0} for _ in range(2)]
+    way_off = [{"target_1": 999.0, "target_2": -999.0} for _ in range(2)]
     assert record_confirmation(pred, way_off)["overall"] == 0.0
 
 
@@ -461,8 +461,8 @@ def test_ridge_recovers_the_true_linear_sensitivity():
     coefficient is ~2.7x 'b', so 'a' must dominate."""
     X, Y, viable = _data(n=300, seed=33)
     s = S0Surrogate(_spec(tier="S0"), learner="ridge").fit(X, Y, viable).sensitivity()
-    assert s["plant_C"]["a"] > s["plant_C"]["b"]
-    assert abs(sum(s["plant_C"].values()) - 1.0) < 1e-9        # normalised
+    assert s["target_1"]["a"] > s["target_1"]["b"]
+    assert abs(sum(s["target_1"].values()) - 1.0) < 1e-9        # normalised
 
 
 def test_ridge_leverage_grows_away_from_the_data():
@@ -546,9 +546,9 @@ def test_gp_exposes_ard_sensitivity_and_rf_exposes_importance():
     X, Y, viable = _data(n=200, seed=16)
     for name in ("rf", "gp"):
         s = S0Surrogate(_spec(tier="S0"), learner=name).fit(X, Y, viable).sensitivity()
-        assert set(s["plant_C"]) == {"a", "b"}
-        # y0 = 1 + 0.8a - 0.3b, so 'a' should dominate for plant_C
-        assert s["plant_C"]["a"] > s["plant_C"]["b"], name
+        assert set(s["target_1"]) == {"a", "b"}
+        # y0 = 1 + 0.8a - 0.3b, so 'a' should dominate for target_1
+        assert s["target_1"]["a"] > s["target_1"]["b"], name
 
 
 def test_a_fresh_learner_is_built_per_target():
@@ -560,10 +560,10 @@ def test_a_fresh_learner_is_built_per_target():
     assert m._models[0] is not m._models[1]
     a, b = 0.9, 0.1
     p = m.predict_batch(np.array([[a, b]])).values[0]
-    true_plant_c = 1.0 + 0.8 * a - 0.3 * b        # 1.690
-    true_npp = 2.0 + 0.5 * a * b                  # 2.045
-    assert abs(p[0] - true_plant_c) < 0.15, f"plant_C {p[0]} vs {true_plant_c}"
-    assert abs(p[1] - true_npp) < 0.15, f"NPP {p[1]} vs {true_npp}"
+    true_t1 = 1.0 + 0.8 * a - 0.3 * b        # 1.690
+    true_t2 = 2.0 + 0.5 * a * b                  # 2.045
+    assert abs(p[0] - true_t1) < 0.15, f"target_1 {p[0]} vs {true_t1}"
+    assert abs(p[1] - true_t2) < 0.15, f"target_2 {p[1]} vs {true_t2}"
 
 
 def test_make_learner_rejects_unknown_name():
@@ -658,7 +658,7 @@ def test_torch_classifier_survives_a_single_class_fit():
 
 def test_knowledge_guided_viability_bends_the_cliff():
     """The reason the torch classifier exists: domain knowledge applied to the
-    alive/dead boundary itself, which is where this project's difficulty lives.
+    alive/dead boundary itself, typically the sharpest structure in the response.
 
     Train on data whose survival DEcreases with x0, then assert survival must
     INcrease with x0. The guided model's boundary must move against the data."""
@@ -983,7 +983,7 @@ def test_require_r2_normalisation_refuses_a_trajectory_report_carrying_a_pooled_
     """A report could previously carry a pooled value under `r2` and read as a pointwise pass."""
     import pytest as _pt
     from models.surrogate.validate import require_r2_normalisation
-    bad = {"outflow_Fe": {"r2": 0.98}}                       # no normalisation stamp
+    bad = {"series_a": {"r2": 0.98}}                         # no normalisation stamp
     with _pt.raises(ValueError, match="r2_normalisation"):
         require_r2_normalisation(bad, "trajectory")
     require_r2_normalisation(bad, "scalar")                  # scalar battery is unaffected
@@ -993,3 +993,141 @@ def test_mode_criteria_declare_which_r2_they_mean():
     from models.surrogate.validate import MODE_CRITERIA
     assert MODE_CRITERIA["offline_search"]["r2_normalisation"] == "across_cases"
     assert MODE_CRITERIA["online_inference"]["r2_normalisation"] == "within_case_for_trajectories"
+
+
+# -----------------------------------------------------------------------------
+# GPLearner in high dimension — the failure that looked like a family being bad
+# -----------------------------------------------------------------------------
+
+def _gp_case(d, n=220, n_test=60, seed=0):
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    X = rng.uniform(0.0, 1.0, size=(n + n_test, d))
+    y = np.sin(2 * np.pi * X[:, 0]) + 0.5 * X[:, 1] ** 2 - 0.3 * X[:, 2]
+    return X[:n], y[:n], X[n:], y[n:]
+
+
+def _r2(model, X, y):
+    import numpy as np
+    p = model.predict(X)
+    return float(1.0 - ((p - y) ** 2).sum() / ((y - y.mean()) ** 2).sum())
+
+
+def test_the_GP_FITS_above_the_dimension_where_a_unit_length_scale_stops_working():
+    """The ARD start is what decides whether a GP fits at all in high dimension.
+
+    On standardised inputs the distance between two points grows like sqrt(2d), so a unit length
+    scale makes every pair effectively uncorrelated, the objective is flat where the optimiser
+    starts, and L-BFGS-B reports convergence at the starting point. Measured on EcoSIM_Lusignan's
+    54 inputs the learner returned R2 -0.003 and looked like a family that had been tried; started
+    at sqrt(d) the same fit returned 0.881. This pins both halves at 48 inputs, which is above the
+    40-to-44 threshold where the behaviour changes.
+    """
+    import numpy as np
+    import pytest as _pt
+    from models.surrogate.learners import GPLearner
+    Xtr, ytr, Xte, yte = _gp_case(48)
+
+    good = GPLearner(n_restarts=0, random_state=0).fit(Xtr, ytr)
+    assert good.length_scale_start_ == _pt.approx(np.sqrt(48))
+    assert _r2(good, Xte, yte) > 0.8, "the GP does not fit at 48 inputs"
+    assert good.length_scale_move_ > 1.0, "the optimiser did not move the length scales"
+
+    # The pre-2026-09-22 start, reachable only because `length_scale0` is a parameter. It must
+    # still fail, otherwise this test would pass for a reason other than the fix.
+    with _pt.warns(RuntimeWarning, match="barely moved"):
+        old = GPLearner(n_restarts=0, random_state=0, length_scale0=1.0).fit(Xtr, ytr)
+    assert _r2(old, Xte, yte) < 0.1, "the old start unexpectedly fitted; the test proves nothing"
+    assert old.length_scale_move_ < 1e-3
+
+
+def test_a_LOW_dimension_GP_is_unaffected_by_the_change():
+    """Why this went unnoticed: below the threshold both starts work.
+
+    BioCON has 28 inputs and miniLEO 16, so every case that had actually run was on the working
+    side of it. The fix must not disturb them, which is what this asserts.
+    """
+    from models.surrogate.learners import GPLearner
+    Xtr, ytr, Xte, yte = _gp_case(16)
+    for ls0 in (None, 1.0):
+        m = GPLearner(n_restarts=0, random_state=0, length_scale0=ls0).fit(Xtr, ytr)
+        assert _r2(m, Xte, yte) > 0.9, (ls0, "a 16-input GP should fit from either start")
+
+
+def test_the_non_fit_is_REPORTED_rather_than_silent():
+    """The half of the defect that cost the time: nothing warned.
+
+    A GP that never left its start scores like a bad fit, so `compare_learners` recorded it as a
+    family that had been tried and lost. The warning is what separates "fitted and is poor" from
+    "did not fit".
+    """
+    import pytest as _pt
+    from models.surrogate.learners import GPLearner
+    Xtr, ytr, _, _ = _gp_case(48)
+    with _pt.warns(RuntimeWarning, match="high-dimension failure mode"):
+        GPLearner(n_restarts=0, random_state=0, length_scale0=1.0).fit(Xtr, ytr)
+
+
+# -----------------------------------------------------------------------------
+# F6 / F7 — two checks that were silently weaker than they read
+# -----------------------------------------------------------------------------
+
+def test_a_conformal_interval_is_INFINITE_when_the_calibration_set_cannot_support_it():
+    """Below 19 calibration rows at alpha 0.05 the 95% rank does not exist.
+
+    Clamping the level to 1.0 returns the largest observed residual and calls it 95%, which
+    under-covers with nothing in the output saying so. Infinity is the honest answer: the interval
+    is useless and visibly so, rather than plausible and wrong.
+    """
+    import numpy as np
+    import pytest as _pt
+    from models.surrogate.tiers import _conformal_quantile
+    scores = np.linspace(0.1, 1.0, 12)                     # 12 rows, alpha 0.05 needs rank 13
+    with _pt.warns(RuntimeWarning, match="cannot support"):
+        assert _conformal_quantile(scores, 0.05, "y") == float("inf")
+    # With enough rows it is finite, and it is the higher quantile rather than the plain one.
+    big = np.linspace(0.1, 1.0, 100)
+    q = _conformal_quantile(big, 0.05, "y")
+    assert np.isfinite(q) and q >= float(np.quantile(big, 0.95, method="higher"))
+
+
+def test_the_reduce_CHECK_stays_RELATIVE_for_small_magnitude_targets():
+    """`np.maximum(1.0, |ref|)` made the reducer check absolute below 1.
+
+    miniLEO's outflow concentrations are around 4.7e-4 mol/L, so a reducer disagreeing with the Y
+    matrix by 20 percent produced a "relative" error of 1e-4 and passed the 1e-4 bar. The floor is
+    now a fraction of the column's own magnitude, so the check means the same thing in any units.
+    """
+    import numpy as np
+    from models.surrogate.tiers import _rel_scale
+    ref = np.array([[4.7e-4, 100.0], [5.0e-4, 200.0]])
+    ok = np.isfinite(ref)
+    red = ref.copy()
+    red[0, 0] *= 1.2                                       # a 20% miss on the small column
+    rel = np.abs(red[ok] - ref[ok]) / _rel_scale(ref, ok)
+    assert rel.max() == pytest.approx(0.2, rel=1e-6), "a 20% miss must read as 0.2"
+    # the old denominator, for contrast: it read the same miss as 1e-4 and passed
+    assert (np.abs(red[ok] - ref[ok]) / np.maximum(1.0, np.abs(ref[ok]))).max() < 1e-4
+
+
+def test_the_relative_scale_is_PER_TARGET_not_global():
+    """One global floor taken from a big column would make a small column's check meaningless.
+
+    This is why the floor is computed per column: a concentration in mol/L beside a flux in
+    grams would otherwise share a denominator set by whichever is larger.
+    """
+    import numpy as np
+    from models.surrogate.tiers import _rel_scale
+    ref = np.array([[1e-6, 1e6], [2e-6, 2e6]])
+    scale = _rel_scale(ref, np.isfinite(ref)).reshape(ref.shape)
+    assert scale[:, 0].max() < 1e-5, "the small column's scale was set by the large one"
+    assert scale[:, 1].min() > 1e5
+
+
+def test_a_reference_column_of_all_zeros_does_not_divide_by_zero():
+    """Relative error is undefined at zero; the check must refuse to produce inf, not crash."""
+    import numpy as np
+    from models.surrogate.tiers import _rel_scale
+    ref = np.zeros((3, 2))
+    scale = _rel_scale(ref, np.isfinite(ref))
+    assert np.all(np.isfinite(scale)) and np.all(scale > 0.0)

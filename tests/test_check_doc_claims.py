@@ -275,3 +275,35 @@ def test_the_live_surface_is_clean():
     assert "file(s) scanned" in r.stdout
     n = int(re.search(r"\((\d+) file\(s\) scanned\)", r.stdout).group(1))
     assert n > 500, f"only {n} files scanned -- the enumeration is broken, so this proved nothing"
+
+
+# ------------------------------------------- the LIVE registry's patterns, pinned by behaviour ---
+
+def _live(tmp_path, text):
+    """Run the REAL tools/doc_claims.yaml against a throwaway repo holding `text`."""
+    root = tmp_path / "repo"
+    root.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    (root / "guide.md").write_text(text)
+    r = subprocess.run([sys.executable, str(TOOL), "--root", str(root),
+                        "--registry", str(ROOT / "tools" / "doc_claims.yaml")],
+                       capture_output=True, text=True, cwd=root)
+    return r.returncode, r.stdout + r.stderr
+
+
+def test_loop_limit_rule_does_not_fire_on_a_larger_number(tmp_path):
+    """`capped at 10\\b` matched the `10` in `10,000`, because a comma IS a word boundary.
+
+    The live instance was `.claude/hooks/greet-on-setup.py:32`, "a hook's context is capped at
+    10,000 characters" -- a correctly sourced statement about a hook's context budget, flagged as
+    if it were a loop limit quoted as a literal.
+    """
+    rc, out = _live(tmp_path, "A hook's context is capped at 10,000 characters.\n")
+    assert rc == 0, f"a larger number must not trip the loop-limit rule:\n{out}"
+
+
+def test_loop_limit_rule_STILL_fires_on_the_literal_it_exists_for(tmp_path):
+    """The control. Narrowing the pattern must not stop it catching the real defect."""
+    rc, out = _live(tmp_path, "The experiment loop is capped at 10 cycles.\n")
+    assert rc == 1 and "loop-limits-as-literals" in out, (
+        f"the rule must still catch a loop max quoted as a literal:\n{out}")

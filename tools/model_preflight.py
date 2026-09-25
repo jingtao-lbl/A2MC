@@ -21,8 +21,13 @@ Usage:
         --checkout ~/EcoSIM \
         --param-file Offline/EcoSIM_sample_files/input/ds_input__pft_test__ex1.nc
 
-Exit 0 if the checkout matches a registered milestone; 2 if unmatched (the
-"unsupported / drift" signal a2mc-init routes on); 1 on usage/IO error.
+Exit codes, which a2mc-init Step 2 routes on:
+    0  the checkout matches a registered milestone
+    3  DRIFT: the model is onboarded, the checkout is at an unregistered commit (proceed; say so)
+    2  not onboarded: no models/<model>/ package, or an adapter with no milestone at all
+       (onboard-model, or resume it)
+    1  usage / IO error, or CANNOT VERIFY (no version could be read from --checkout)
+Drift had its own code from 2026-09-23; before that it shared 2 with "unsupported".
 
 Author: Jing Tao with Claude
 """
@@ -141,6 +146,7 @@ def main() -> int:
 
     print(f"Model:        {spec.name}  ({spec.display_name})")
     matched = None
+    detected = False          # a version was actually read from the checkout
 
     # 1. Version detection + milestone match
     if args.checkout:
@@ -152,8 +158,9 @@ def main() -> int:
                 ver = spec.version_detector_class().detect_from_checkout(co)
                 label = ver.label
                 matched = _match_milestone(label, _load_milestones())
+                detected = True
                 print(f"  version:    {label}")
-                print(f"  milestone:  {matched or '(UNMATCHED — unsupported/drift; route to onboard-model)'}")
+                print(f"  milestone:  {matched or '(UNMATCHED — see VERDICT: drift or no milestone)'}")
             except Exception as e:
                 print(f"  version:    detection failed: {e}")
             # Advisory: model-source push posture (never gates the exit code).
@@ -183,9 +190,35 @@ def main() -> int:
         print("  PFT count:  (skipped — no --param-file)")
 
     if args.checkout and matched is None:
-        print("\nVERDICT: no milestone match — this checkout is NOT a supported version.")
-        print("         Run the `onboard-model` skill to onboard it before `a2mc-init`.")
-        return 2
+        # By this point the model imported and registered, so a miss is never "unsupported model".
+        # It is one of three things, and they route differently (a2mc-init Step 2):
+        #   NO MILESTONE -- the adapter registers but its onboarding never reached step 9. Known
+        #                   from the registry alone, so it is reported even when no version was read.
+        #   CANNOT VERIFY -- no version was read from the checkout (missing path, failed detection).
+        #   DRIFT -- the adapter HAS a registered milestone, the checkout is at another commit.
+        #            The model is onboarded; calibration can proceed on the registered profile.
+        # Until 2026-09-23 all of these printed "NOT a supported version ... run onboard-model", which
+        # sent every EcoSIM user off the single registered commit to re-onboard an onboarded model.
+        entries = _load_milestones().get("milestones", {})
+        mine = sorted(k for k, v in entries.items()
+                      if isinstance(v, dict) and v.get("adapter") == args.model)
+        if not mine:
+            print(f"\nVERDICT: NO MILESTONE — {spec.name}'s adapter registers, but no rag/milestones.json")
+            print("         entry names it, so its onboarding stopped before step 9 (RAG build and")
+            print("         milestone registration). Resume it with the `onboard-model` skill:")
+            print(f"         python3 tools/check_stage_ready.py --model {spec.name}   # first FAIL = resume point")
+            return 2
+        if not detected:
+            print("\nVERDICT: CANNOT VERIFY — no version was read from the checkout (see above).")
+            print("         Fix the path, or get and build the model first, then re-run.")
+            return 1
+        print(f"\nVERDICT: DRIFT — {spec.name} is onboarded (registered: {', '.join(mine)}),")
+        print("         but this checkout is at a commit no milestone describes.")
+        print("         Calibration can proceed: A2MC reasons with the registered profile, which")
+        print("         describes the registered commit, not yours. If your source differs in the")
+        print("         mechanisms you calibrate, rebuild the profile (the `rebuild-rag` skill;")
+        print("         EcoSIM also has `ecosim-version-drift`) and say which you chose.")
+        return 3
     print("\nVERDICT: preflight OK.")
     return 0
 

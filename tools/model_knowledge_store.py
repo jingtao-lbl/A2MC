@@ -24,7 +24,10 @@ a model's store is seeded), the last two since v2.411.
 
 Author: Jing Tao with Claude.
 """
-from __future__ import annotations
+# No `from __future__ import annotations`: this module is loaded by check_stage_ready.py, which
+# runs under the SYSTEM python3 (3.6 on Perlmutter) from hooks and the setup docs, and that
+# import is a SyntaxError before 3.7 (audit 20260923b, finding F103). It annotates nothing that
+# needs it.
 
 import logging
 import re

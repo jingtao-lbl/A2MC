@@ -89,9 +89,10 @@ def scannable(text: str) -> str:
 def staged_logs() -> list[Path]:
     out = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
                          cwd=REPO, capture_output=True, text=True).stdout.split()
+    # RETIRED frozen streams (`memory/model_logs/`, `memory/ana_logs/`) are NOT scanned: a renderer
+    # writes no new log into either, so neither can hold a freshly rendered stub.
     return [REPO / r for r in out
-            if r.endswith(".md") and ("/memory/logs/" in r or "memory/dev_logs" in r
-                                      or "memory/model_logs/" in r or "memory/ana_logs/" in r)]
+            if r.endswith(".md") and ("/memory/logs/" in r or "memory/dev_logs" in r)]
 
 
 def main(argv: list[str]) -> int:

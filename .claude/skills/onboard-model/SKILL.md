@@ -41,31 +41,59 @@ step numbers below are its
 > source-grounded KB, a calibration-ready RAG. Filling it to production quality for a specific
 > model stays the modeler's job. The kit does **not** ship finished EcoSIM/CLM/ATS/TEM adapters.
 
-> **Use Python 3.10** for all RAG/NetCDF ops
-> (`/Library/Frameworks/Python.framework/Versions/3.10/bin/python3`, `$PY` below). Homebrew 3.12
-> fails on PEP-668, and `netCDF4` is absent from `a2mc_env`.
+> **Python for RAG/NetCDF ops (`$PY` below).** On Perlmutter `~/a2mc_env/bin/python` (3.11, with
+> `chromadb` and `netCDF4`). On a Mac, a Python 3.10 environment built from `requirements.txt`: a
+> Homebrew 3.12 refuses `pip install` under PEP 668.
 
-## Step 0 — preconditions (refuse to start without these)
+## Step 0 — what the modeler brings, and what Step 0d produces
 
 > **Definition of done for this stage: `setup-discipline`.** This skill performs the stage; that one
 > collects what "finished" means for it, with the executable gate per item. Check it before
 > declaring this stage complete.
 
 
-The modeler must supply (questionnaire section in parens):
+**Precondition: the clone is wired and the machine config written.** `python3 tools/check_clone_setup.py`
+exits 0 (`a2mc-init` Step 1) and the machine config for the model's family is set (`a2mc-init` Step 3).
+A user who came here directly does those two steps first; without Step 1 the whole onboarding is
+committed with the repo's git hooks off.
+
+**Resuming?** A model whose onboarding stopped part-way (its adapter registers, but it has no
+milestone, memory store or run template — ATS on this line) resumes at the first ✗ of
+`python3 tools/check_stage_ready.py --model <name>`. Never restart it.
+
+What the modeler brings:
 - a **filled questionnaire** (`templates/modeler_questionnaire.yaml`; guide
-  `docs/a2mc_reference/modeler_questionnaire.md`) — `init_adapter.py` refuses to scaffold if a
-  required field picks an `[unsupported]` option;
-- the **model source tree at a known commit** (for commit-pinned wiki + verifiable citations);
-- a **parameter file** (NetCDF/CDL, JSON, YAML, or namelist) and a **sample output NetCDF**;
-- an **HPC job-script template or local run command** (`runtime:`).
-- Strongly recommended: a **user guide + 1–2 application papers** — they make Step 3's mechanism
-  naming tractable.
+  `docs/a2mc_reference/modeler_questionnaire.md`). **The agent reads it; no script does.** Check its
+  required fields for an `[unsupported]` choice yourself before scaffolding;
+- the **model source tree at a known commit** (for a commit-pinned wiki and verifiable citations), or
+  where to get it: Step 0a asks where the checkout is, or where to clone it.
+
+What Step 0d **produces** with a user who does not have them yet (not an entry fee):
+- a **parameter file** (NetCDF/CDL, JSON, YAML, or namelist) and a **sample output**;
+- a **run recipe** that works on this machine (HPC job script or local command).
+
+Strongly recommended: a **user guide + 1–2 application papers** — they make Step 3's mechanism
+naming tractable.
 
 If the model shares CIME + NetCDF param files with E3SM (CESM/CTSM), most of this is reuse — the
 `*_cime.sh.tmpl` runtemplate + the CDL parsers apply with minimal glue.
 
-## Step 0b — wire the source checkout's fork-only push guard (do this BEFORE anything else)
+## Step 0a — where things go on this machine (ask before anything is cloned or built)
+
+A user who arrives here skipped `a2mc-init` Step 2, which is where a model A2MC already has gets its locations asked. So this skill asks them itself, before Step 0b needs a checkout and Step 0d needs somewhere to build and run. **Ask; never pick a path for the user, and never assume the source is already on disk.**
+
+| ask | used by | becomes, for the first case |
+|---|---|---|
+| where the model's source checkout is, or where to clone it | Step 0b (`$CHECKOUT`), 0c, step 3 (the wiki's source), step 9 (the milestone's commit) and the pre-flight check after it | `A2MC_MODEL_PATH` in the case's site config (`a2mc_config.sh` for a CIME-family model) |
+| where archived copies of built binaries go | Step 0d (`tools/model_archive_build.sh --archive`) | the case's binary variable points into it |
+| a run directory for the orientation run: a copy of the model's own sample case, and its output | Step 0d, step 5 (the output surface is read from that output), step 13 (the smoke test's sample files) | recorded in `models/<name>/BUILD.md` as where the sample ran. The case's own output root is a separate question, asked by `onboard-case` round 1A |
+| on a cluster, the account a batch orientation run is charged to | Step 0d | `A2MC_HPC_ACCOUNT`, confirmed again by `onboard-case` round 1A |
+
+Source and binaries belong in a project or software space, output in a scratch or project space: never a node-local temp directory, and never a home directory close to its quota, which a build and a sample run can fill. **Run the sample case in a copy**, never inside the source tree's example directory: a run writes its output beside its inputs, and the checkout should hold source, not run output.
+
+Keep the answers as shell variables for the session (`CHECKOUT`, `ARCHIVE_ROOT`, `RUN_DIR`) and write none of them into a tracked machine config: they are this user's, and for a non-CIME model they belong to each case. The hand-off to `onboard-case` passes them on.
+
+## Step 0b — wire the source checkout's fork-only push guard (right after Step 0a, before anything else)
 
 A fresh model checkout's `origin` points at the **upstream project**, so a stray `git push origin`
 targets someone else's repo. Contract: memory `feedback_model_source_push_fork_only`. `a2mc-init`
@@ -83,6 +111,10 @@ git -C "$CHECKOUT" push fork   HEAD --dry-run    # must SUCCEED
 
 Verify **both** directions; a guard you did not test is a guard you do not have. This is **per-clone
 git config, never committed** — re-apply on any re-clone.
+
+**A user with no fork or no GitHub account** (which `a2mc-init` accepts) gets the sentinel alone, with
+no `fork` remote: `origin` push disabled means a stray push still fails loudly. They cannot push model
+source anywhere until they have a fork, which is the point; record that in `models/<name>/README.md`.
 
 Three things vary by model, so decide rather than copy:
 
@@ -178,16 +210,20 @@ stand the model up and learn it is A2MC's job even when they arrive with no know
    This is where both of you learn what the model actually emits — and it is the evidence Step 5–6's
    parsers get written against.
 4. **Check the adapter can read it** once parsers exist (or note the shape now, for when they do).
-5. **Record what was built and run** — commit, toolchain, machine, sample case, output path — so the
-   next session inherits a **fact** rather than an assumption about whether this model runs here.
+5. **Record what was built and run** — source URL, commit, toolchain and modules, the exact commands,
+   the test that proves the binary exists, machine, sample case and output path — in
+   **`models/<name>/BUILD.md`**, the model's one build guide, which ships with the adapter. `a2mc-init`
+   Step 2 sends every later user of this model there, so the next person inherits a **fact** rather than
+   an assumption about whether this model runs here. Archive the binary (`tools/model_archive_build.sh`).
 
 ### If the build fails
 
 Keep going; do not hand it back. Resolve the toolchain, read the model's build docs, try the known
 variants (compiler, MPI, PETSc pin, module set). Escalate to the model's own team **only with a
 specific, tested question** — "we tried X, Y, Z; failure is F at line L" — never as *"we need you to
-supply a binary."* If it is genuinely blocked, record the **tested** blocker with what was attempted,
-so the next session re-derives rather than re-reports (`20260807f`).
+supply a binary."* If it is genuinely blocked, record the **tested** blocker with what was attempted in
+`models/<name>/BUILD.md`, so the next session re-derives rather than re-reports (`20260807f`). A blocked
+build does not block steps 1–10, which run on the model's shipped sample files (§"Sequencing rule").
 
 **Outputs of this step:** a working build, a real sample output file, a run recipe that works on this
 machine, and two people who have seen the model run. Those are exactly Step 0's "preconditions" —
@@ -195,25 +231,26 @@ produced, not demanded.
 
 ## The arc at a glance
 
-| init_adapter step | What happens | Skill / tool | Gate |
+| step | What happens | Skill / tool | Gate |
 |---|---|---|---|
+| 0a | **Where things go** — source checkout, archive root, orientation-run directory, and on a cluster the account | ask the user | answers held as `CHECKOUT` / `ARCHIVE_ROOT` / `RUN_DIR` |
 | 0b | **Wire the checkout's fork-only push guard** | `git remote set-url --push origin DISABLED_…` | both push directions verified |
 | 0c | **Characterize the codebase** — language, layout, param/output mechanics, run model | read the source tree | the 7-question profile is filled in |
 | 0d | **Orientation run** — build it and run its own sample case, with the user | the model's own build + sample case | a real output file exists and was READ; the run recipe works here |
-| 1–2 | Read questionnaire, scaffold `models/<name>/` from `_template/` | `scripts/init_adapter.py` | scaffold created |
+| 1–2 | Read the questionnaire (the agent), scaffold `models/<name>/` from `_template/` | `scripts/init_adapter.py --model <name>` | scaffold created |
 | 3 | Codebase wiki (commit-pinned) | **`generate-codebase-wiki`** | wiki dir exists |
-| 4 | Wiki ↔ source validation | **V1** `codebase_wiki_validator.py` | Green/Yellow |
+| 4 | Wiki ↔ source validation | **V1** `tools/validate_wiki_vs_source.py --model <name>` | Green/Yellow |
 | 5–6 | Extract param/output surface; write real parsers | `models/<name>/{parameter,output}_parser.py` | parses real files |
 | — | **Adapter conformance** | **V4** `adapter_conformance_validator.py` | ≥ Yellow |
-| 7 | Curated seed (Recipe G1, PI-in-the-loop) | `scripts/curated_seed_builder.py` / **`inject-knowledge`** | seed YAML written |
+| 7 | Curated seed (Recipe G1, PI-in-the-loop) | `scripts/curated_seed_builder.py` / **`inject-knowledge`** | seed written AND `tools/validate_seed_coverage.py` passes |
 | 8 | Curated-YAML ↔ wiki validation | **V2** `yaml_wiki_validator.py` | Green/Yellow |
-| 9 | RAG build + milestone registration | **`build-rag-from-scratch`** + `rag/milestones.json` | index built |
+| 9 | RAG build + milestone registration | `scripts/build_<name>_rag.py` via **`build-rag-from-scratch`** + `rag/milestones.json` | index built and committed; milestone registered; **`model_preflight` against `$CHECKOUT` reports match** |
 | — | RAG diff vs reference (+ FATES regression) | **V3** `rag_diff.py` | no regression |
 | 10 | Seed adaptive memory | `memory/<name>/gained_knowledge/` | **4 stores exist AND `MemoryManager` returns non-empty context** — `check_stage_ready.py --model <m>` |
 | 11 | Pick + render run template | `models/_template/runtemplates/` | — |
 | 12 | Run-template validation | **V5** `run_template_validator.py` | parses, `{{VAR}}` resolved |
-| 13 | Smoke test | orchestrator dry-run Phases 0–2 | reasoning phases run |
-| 14 | Calibration wiring | site config + `validation/targets.yaml` + the ensemble→screen loop | `use_cases/<name>_<site>/`, `tools/validate_model_targets.py`, `screen_ensemble` backend branch | ranked table drops out |
+| 13 | Smoke test | `tests/test_<name>_e2e.py`: the offline chain (parse → bounds → parameter sets → write_parameter_file → extraction) on the sample outputs | the test passes; no binary needed |
+| 14 | Calibration wiring | the case template `use_cases/<Model>_template/` + the targets contract + the ranking seam | `tools/create_use_case.py`, `tools/validate_model_targets.py`, `screen_ensemble` backend branch | `create_use_case.py --model <name> --case Demo --dry-run` resolves the template; the first ranked table comes from `onboard-case`'s first round |
 
 > **Step 10 is the one step whose omission is invisible at every layer**, which is why its gate is
 > spelled out rather than left to the next row. There is no successor validator, and the consumer
@@ -229,11 +266,10 @@ three validators by hand once the seed exists.
 ## Recipe — end to end
 
 ```bash
-# 0. Scaffold (dry-run first). Refuses on unsupported questionnaire options.
+# 0. Scaffold (dry-run first). The questionnaire guides YOU; the script takes no questionnaire flag.
 python scripts/init_adapter.py --model <name> \
-  --questionnaire <filled.yaml> \
   --param-file <param.nc|json> --output-cdl <output.cdl> --dry-run
-python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
+python scripts/init_adapter.py --model <name> \
   --param-file <param.nc> --output-cdl <output.cdl>
 ```
 
@@ -283,9 +319,10 @@ python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
    `scripts/build_<name>_rag.py`, a sibling of the existing per-model family:
 
    ```
-   scripts/build_rag_index.py     FATES/ELM  (ELMFATESVersion-shaped)
-   scripts/build_ecosim_rag.py    EcoSIM
-   scripts/build_ats_rag.py       ATS
+   scripts/build_rag_index.py       FATES/ELM  (ELMFATESVersion-shaped)
+   scripts/build_ecosim_rag.py      EcoSIM
+   scripts/build_pflotran_rag.py    PFLOTRAN
+   (build_ats_rag.py exists on the ATS feature branch only; ATS has not reached step 9 here)
    ```
 
    Start from the closest existing sibling and adapt it. It must call the parsers **via the
@@ -295,15 +332,25 @@ python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
    `$PY scripts/build_<name>_rag.py --rebuild`. Then delegate the surrounding chain to
    `build-rag-from-scratch` (Path N).
 
+   **Then run the pre-flight check against the checkout the milestone was built from.** It is the first
+   point at which `model_preflight` can succeed for this model:
+
+   ```bash
+   python tools/model_preflight.py --model <name> --checkout "$CHECKOUT" --param-file <the sample parameter file from Step 0d>
+   ```
+
+   It must report **match** (exit 0). Anything else means the milestone just registered does not resolve the checkout it was built from, most likely a wrong `model_commit_built` or a `version.py` that reads the commit wrongly, and every later user of this model would meet it as DRIFT or CANNOT VERIFY instead.
+
    **Do NOT merge these into one cross-model builder.** See "Per-model scripts" below — this was
    tried on ATS and reversed.
 6. **Validate the chain.** `validate-rag-chain` (V1→V2→V3). V3 `rag_diff.py` doubles as the
    **regression gate**: the FATES `api-43-1` profile must stay byte-identical — a new model must
    not perturb the shipped index.
 7. **Execution (steps 11–13).** Pick a `runtemplates/` variant (HPC×local × CIME/python/standalone),
-   run **V5** `run_template_validator.py`, then smoke-test the orchestrator's reasoning phases
-   (1/2/3) on the model's existing sample outputs — **no new HPC runs needed** for the knowledge +
-   reasoning phases. Phases 0/5 (which submit jobs) wait on a compiled binary + ensemble.
+   run **V5** `run_template_validator.py`, then write and pass `tests/test_<name>_e2e.py`: the offline
+   chain on the model's sample outputs (siblings: `tests/test_ecosim_e2e.py`, `tests/test_pflotran_e2e.py`).
+   **No binary and no HPC run is needed.** There is no orchestrator dry-run mode, and the orchestrator
+   cannot be constructed for a non-CIME model today, so do not write the smoke test against it.
 8. **Calibration wiring (step 14) — make it actually calibratable.** A2MC's "param-list → ranked
    evaluation" driver already exists and is model-generic at the ranking core
    (`phases/phase2_screening/screen_ensemble.py` + `tools/optimize_function.py` +
@@ -318,23 +365,23 @@ python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
    > case. Duplicating its steps here is what left a second case with no entry point until 2026-08-02.
 
    The model-side wiring:
-   - **Machine config — pick by whether the model is CIME-driven.** CIME-based model (CTSM/CESM/E3SM
-     family, sharing E3SM infra per Step 0) → `a2mc_config.sh`; standalone-binary / non-CIME model
-     (EcoSIM, ATS, TEM, …) → `a2mc_noncime_config.sh`. For a **non-CIME model, source
+   - **Machine config — pick by whether the model is CIME-driven.** It was written in `a2mc-init`
+     Step 3 before this skill started; here you record which file the model's site configs load. CIME-based
+     model (CTSM/CESM/E3SM family, sharing E3SM infra per Step 0) → `a2mc_config.sh`; standalone-binary /
+     non-CIME model (EcoSIM, ATS, TEM, …) → `a2mc_noncime_config.sh`. For a **non-CIME model, source
      `a2mc_noncime_config.sh`, NOT `a2mc_config.sh`.**
      `a2mc_config.sh` is ~80% CIME/E3SM/FATES-specific (E3SM_ROOT, COMPSET, ADSP/RGSP/TRANS, and it
      DEFAULTS `A2MC_MODEL_PATH` to the E3SM checkout — which would shadow your model's checkout). The
      parallel `a2mc_noncime_config.sh` carries only the generic settings (AI config, python env,
      iteration, sampling, RAG dir) and sets NO `A2MC_MODEL_PATH`. The order is still machine→site,
      but since v2.306 the site config **auto-sources** whichever machine config its model needs, so
-     `source use_cases/<name>_<site>/config/<...>.sh` alone is enough — give the template you author
-
-> **If an AGENT is running this, join the `source` to the command that needs it** — `source … && <command>`. A harness gives each shell call a fresh process, so a config sourced on its own is gone by the next call, and the script then reports its variables unset as though nothing had been sourced. A human at a terminal is unaffected. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
-
-     the same guard (copy it from an existing one; `tests/test_site_config_autosource.py` asserts
+     `source use_cases/<name>_<site>/config/<...>.sh` alone is enough — give the template you author the same guard (copy it from an existing one; `tests/test_site_config_autosource.py` asserts
      every shipped config has it). (The two
      machine files mirror their AI/iteration/sampling blocks — keep-in-sync comment in both; kept
      separate rather than DRY-factored so `a2mc_config.sh` stays byte-identical to `main`, docs/38.)
+
+     > An **agent** running these commands joins the `source` to the command that needs it (`source … && <command>`): each shell call is a fresh process. Full statement: `AGENTS.md` §"Source the config and run in the SAME command".
+
    - **Site config — AUTHOR THIS MODEL'S TEMPLATE DIRECTORY; `onboard-case` does the copy.** Your
      job is **`use_cases/<Model>_template/`** (architecture B, PI 2026-08-17): a site-agnostic
      authored case with every site value a `<PLACEHOLDER>`. At minimum
@@ -348,17 +395,12 @@ python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
      a per-model file is now just adding a file: no `EXTRA_TEMPLATE_FILES` row, no suffix
      convention, and nothing regenerates over it. **Templates are PER MODEL and site-agnostic** (2026-08-02): `fates_` (CIME),
      `ecosim_` (standalone namelist), `pflotran_` (deck + thermodynamic database) — run styles
-     differ, so there is no single generic one. Copy the matching
-     `<model>_template_calibration_rounds.yaml` beside it. **Also author
-     `use_cases/TEMPLATE/<model>_template_readme.md` and
-     `use_cases/TEMPLATE/validation/<model>_template_targets.yaml`** (2026-08-13) — same
-     suffix-matching swap (`EXTRA_TEMPLATE_FILES` in `tools/create_use_case.py`), one level
-     outside `config/`. Without a per-model seed, `create_use_case.py` falls back to the
-     generic `README.md`/`validation/targets.yaml`, which assert FATES's `PFT<id>_<vartype>`
-     bare-key convention — actively wrong for an adapter model (`tools/targets_loader.py`'s own
-     comment: that resolution is FATES-only; adapter models set `variable`/`pft`/`window`/
-     `reduce` explicitly). The fallback is soft (no hard refusal, unlike a missing config.sh),
-     but skipping it ships a new case with a misleading targets-file docstring.
+     differ, so there is no single generic one. Put the model's own `README.md`,
+     `validation/targets.yaml` and `config/calibration_rounds.yaml` **inside** the template directory:
+     without them a new case falls back to the generic seed, whose targets header asserts FATES's
+     `PFT<id>_<vartype>` bare-key convention — actively wrong for an adapter model
+     (`tools/targets_loader.py`: that resolution is FATES-only; adapter models set `variable`/`pft`/
+     `window`/`reduce` explicitly).
      The template pre-wires the standard file vars — `A2MC_PARAM_LIST_FILE`, **`A2MC_ENSEMBLE_MATRIX_FILE`**,
      `A2MC_SALIB_PROBLEM_FILE`, `A2MC_VALIDATION_TARGETS`, `A2MC_CASE_NAME_PATTERN` — so a fresh site is
      wired end-to-end; hand-writing the config is how a var silently gets dropped (EcoSIM's config was
@@ -366,7 +408,7 @@ python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
      `A2MC_MODEL_PATH`, and (for a **non-CIME adapter**) swaps the template's FATES/CIME-specific bits
      (base-param JSON path, §5 mode-aware/ELM_OPTIONS/PARTEH) for the backend's run inputs
      (binary/base-namelist/runtemplate keys) + HPC account/queue + `A2MC_OUTPUT_DIR`. (EcoSIM exemplar:
-     `use_cases/EcoSIM_BioCON/config/`.) A standalone
+     `use_cases/EcoSIM_template/config/ecosim_template_config.sh`, which ships everywhere.) A standalone
      base namelist MUST use ABSOLUTE input paths (`create_case` repoints only the parameter file, not
      the other forcing inputs — a relative `../../input/…` breaks from an ensemble case dir); give the
      site its own `case_template/` namelist. Exploratory run-length (e.g. EcoSIM `stop_n`) is a KEY
@@ -440,16 +482,20 @@ python scripts/init_adapter.py --model <name> --questionnaire <filled.yaml> \
 
 ## Hand off to `onboard-case`
 
-Onboarding ends when the model is **calibratable**, not when a case exists. Close by invoking
-**`onboard-case`** for the user's first project on this model — it takes the template you authored
-in step 14 and carries the user to Phase 0. Every later case runs the same skill; `onboard-model`
-does not run again.
+Onboarding ends when the model is **calibratable**, not when a case exists. Confirm it with
+`python3 tools/check_stage_ready.py --model <name>` (no ✗), then close by invoking **`onboard-case`** for
+the user's first project on this model — it takes the template you authored in step 14, binds the case
+to the binary Step 0d built and archived (its Step 2), and carries the user to Phase 0. Every later case
+runs the same skill; `onboard-model` does not run again.
+
+Pass it the Step 0a answers: `onboard-case` round 1A starts from the checkout and the archived binary, and asks only for what belongs to the case, its output root and the account it charges.
 
 ## Sequencing rule (proven by real onboarding)
 
 Do the **knowledge chain + reasoning phases first** (they run on existing sample outputs), the
-**execution phases last** (they need a compiled model + ensemble). Don't block the whole
-onboarding on an HPC-ready binary.
+**execution phases last** (they need a compiled model + ensemble). Step 0d always **attempts** the build;
+if it is genuinely blocked, the tested blocker goes in `BUILD.md` and steps 1–10 continue on the model's
+shipped sample files. Don't block the whole onboarding on an HPC-ready binary.
 
 Corollary, proven on ATS: step 13's smoke test needs **no compiled binary**. Only Phases 0/5 submit
 jobs. Do not mark it blocked on a binary — the offline chain (parse → bounds → parameter sets →
@@ -528,18 +574,19 @@ Two concrete costs of the merged form, both measured:
    <name> --run-root <dir>`**, which reconciles the two (no-tape = FAILED). For the ensemble itself:
    `scripts/run_smoke_ensemble.py`; for provisional bounds: `scripts/model_generate_bounds.py`.
 
-## EcoSIM — the live worked example (current onboarding)
+## Where each onboarded model stands
 
-EcoSIM (`2dea74d9`) is the first model driven through this skill. **Proven** (firm): steps 0–6 +
-V4 (Red→Yellow) — sample staging, output CDL (516 vars), `models/ecosim/` package, conformance.
-**In progress / provisional** (this skill is being followed + hardened here): step 7 curated seed,
-step 9 RAG build + `milestones.json` entry, V2/V3, step 13 smoke test. Threads:
-`memory/dev_logs_adapterkit/20260707a_*` + `20260505a_EcoSIM_First_RAG_Scope.md`. As those tasks
-complete, promote their provisional lines here to firm.
+| model | status on this line | milestone |
+|---|---|---|
+| EcoSIM | the first model driven through this skill; fully onboarded, with cases calibrated end to end | `ecosim-2dea74d9` |
+| PFLOTRAN | the second; fully onboarded. Rebuilt on Perlmutter 2026-09-23 on `cpe/25.09` after its first toolchain was removed (`models/pflotran/BUILD.md`) | `pflotran-157a26f7` |
+| ATS | adapter and parsers done; stopped before step 9 (no milestone, memory store or run template) | none: resume at `check_stage_ready.py --model ats` |
+
+`python3 tools/check_stage_ready.py --model <name>` is the live answer; this table is a snapshot.
 
 ## Cross-references
 
-- Overview + status dashboard: `docs/A2MC_Adapter_Kit_Master_Plan.md`
+- Historical overview (superseded 2026-08-26; its dashboard is a 2026-07-06 snapshot): `docs/A2MC_Adapter_Kit_Master_Plan.md`
 - Contract / implementation: `docs/17_*`, `docs/19_*`
 - Step how-tos: `docs/a2mc_reference/{codebase_wiki_generation,rag_build,graphrag_curated_yaml,rag_validation,version_association}*.md`
 - Delegated skills: `generate-codebase-wiki`, `build-rag-from-scratch`, `inject-knowledge`, `validate-rag-chain`, `rebuild-rag`

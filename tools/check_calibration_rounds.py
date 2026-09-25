@@ -85,8 +85,20 @@ def main() -> None:
 
     traj = int(_env("A2MC_N_TRAJECTORIES", "30"))
     total = _env("A2MC_TOTAL_ENSEMBLE")
+    # `trajectories x (params+1)` IS THE MORRIS IDENTITY, and it is only the Morris identity. A
+    # space-filling design chooses its size directly -- PFLOTRAN_miniLEO R1 is 4096 scrambled
+    # Sobol' points with 16 parameters, which no trajectory count produces -- so applying the
+    # formula there reports a mismatch against a record that is correct. A check that fires on a
+    # correct record is how people learn to ignore the checker, so the identity is skipped unless
+    # the scheme is the one it describes, exactly as the CIME-only protocol checks below are.
+    scheme = str(rnd.get("sampling_scheme") or _env("A2MC_SAMPLING_SCHEME", "morris")).lower()
+    morris_like = scheme.startswith("morris")
     expected_ens = int(total) if total.isdigit() else traj * (n_params + 1)
-    chk(rnd.get("ensembles") == expected_ens, "ensembles == trajectories x (params+1)",
+    if not morris_like and not total.isdigit():
+        skipped.append(f"ensembles == trajectories x (params+1) — Morris-only identity; "
+             f"sampling_scheme={scheme} sets its size directly (yaml={rnd.get('ensembles')})")
+    else:
+        chk(rnd.get("ensembles") == expected_ens, "ensembles == trajectories x (params+1)",
         f"yaml={rnd.get('ensembles')} config={expected_ens} (traj={traj})")
 
     chk(rnd.get("sampling_scheme") == _env("A2MC_SAMPLING_SCHEME"),
@@ -128,6 +140,32 @@ def main() -> None:
         if cv:
             chk(_abs(paths.get(yk, ""), root) == os.path.expandvars(cv), f"{yk} == {ev}",
                 f"yaml={_abs(paths.get(yk, ''), root)} config={os.path.expandvars(cv)}")
+
+    # --- output dirs: and do they EXIST, when the tree they live in does? ---
+    #
+    # THE CHECK ABOVE ONLY FIRES WHEN THE ENV VAR IS SET, so a round record could name a directory
+    # that has never existed and nothing said so. Measured 2026-09-22: PFLOTRAN_miniLEO R1 recorded
+    # `.../PFLOTRAN_runs/R1_16Para_SobolSeq4096` while its 4096 cases sat under
+    # `.../PFLOTRAN_miniLEO_runs/...`, for three weeks, through a round close and a handover.
+    #
+    # GATED ON THE PARENT, deliberately. A missing parent means the filesystem is not mounted here
+    # -- a Mac reading a Perlmutter round record -- which is not a defect in the record. A parent
+    # that exists while the named directory does not is a typo or a move, and is.
+    # ENSEMBLE_OUTPUT ONLY, and not extracted_data. A run directory must exist once a round has
+    # run; an extract directory is a FATES-shaped convention an adapter case may never create --
+    # PFLOTRAN_miniLEO's Phase 1 wrote its Y matrix into the phase's own results folder instead,
+    # so requiring it here would fire on a correct case, which is how a checker earns being
+    # ignored.
+    raw = paths.get("ensemble_output", "")
+    if raw:
+        d = Path(_abs(raw, root))
+        if d.parent.is_dir():
+            chk(d.exists(), "ensemble_output exists on this machine",
+                f"{d} is missing, but its parent {d.parent} is present -- a typo or a move, "
+                f"not an unmounted filesystem")
+        else:
+            skipped.append(f"ensemble_output exists — {d.parent} is not mounted here, so its "
+                           f"absence says nothing about the record")
 
     # --- protocol ---
     #

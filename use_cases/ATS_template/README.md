@@ -77,10 +77,9 @@ column-name based), not the canonical loader.
 ## Getting started
 
 ```bash
-cp -r use_cases/ATS_template use_cases/ATS_<YourCase>
-source a2mc_noncime_config.sh                                   # NON-CIME
-source use_cases/ATS_<YourCase>/config/ats_<yourcase>_config.sh
-python tools/check_stage_ready.py                               # which setup stage am I in?
+python tools/create_use_case.py --model ats --case <YourCase>   # never cp -r: it renames the config
+source use_cases/ATS_<YourCase>/config/ats_<yourcase>_config.sh # loads a2mc_noncime_config.sh itself
+python3 tools/check_stage_ready.py --case ATS_<YourCase>          # what is still outstanding?
 ```
 
 Then work the `onboard-case` skill. Its interview → research plan → parameter list →

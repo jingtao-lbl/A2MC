@@ -157,15 +157,30 @@ def _enumerate_skills_md(repo_root: Path, skills_dir: Path) -> Tuple[List[Path],
     general rule rather than an `.ipynb_checkpoints` special-case. So: git primary,
     `_on_surface()` fallback. See `20260806b_Handoff_To_Main_*`.
     """
+    def _fallback():
+        return ([p for p in sorted(skills_dir.rglob("*.md")) if _on_surface(p, skills_dir)], False)
+
+    # `git -C <dir>` resolves to the ENCLOSING repository, not to <dir>. If `repo_root` is a
+    # subdirectory of some checkout -- an extracted copy unpacked inside one, or a temp dir when
+    # TMPDIR points into a working tree -- `ls-files` answers about that OUTER repo instead, and
+    # every path it returns is rebased onto `repo_root` where nothing exists. The surface then
+    # enumerates EMPTY and the gate reports clean on a tree it never looked at. So git is used
+    # only when it agrees that `repo_root` is itself the top of a repository.
     try:
+        top = subprocess.run(
+            ["git", "-C", str(repo_root), "rev-parse", "--show-toplevel"],
+            capture_output=True, check=True, text=True, timeout=30,
+        ).stdout.strip()
+        if not top or Path(top).resolve() != Path(repo_root).resolve():
+            return _fallback()
         out = subprocess.run(
             ["git", "-C", str(repo_root), "ls-files", "-z",
              "--cached", "--others", "--exclude-standard", "--", ".claude/skills"],
             capture_output=True, check=True, text=True, timeout=30,
         ).stdout
     except (OSError, subprocess.SubprocessError):
-        # Not a git repo / git unavailable (e.g. an extracted copy, or the unit-test tmpdir).
-        return ([p for p in sorted(skills_dir.rglob("*.md")) if _on_surface(p, skills_dir)], False)
+        # Not a git repo / git unavailable (e.g. an extracted copy).
+        return _fallback()
     return (sorted({repo_root / rel for rel in out.split("\0") if rel.endswith(".md")}), True)
 
 

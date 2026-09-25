@@ -1,4 +1,4 @@
-"""KGML sequence emulator: (theta, daily drivers) -> daily fluxes.
+"""KGML sequence emulator: (theta, per-step drivers) -> per-step target trajectories.
 
 THE TIER IS S3 AND THE ARCHITECTURE IS NEW. `tiers.py::S3Surrogate` is a latent ROM with composed
 targets; this is the recurrent, driver-conditioned form of the same tier, after Liu et al. (2024),
@@ -6,10 +6,10 @@ targets; this is the recurrent, driver-conditioned form of the same tier, after 
 its open successor PyKGML. Both are "S2 plus process structure"; they differ in how the trajectory
 is produced and in what the model is conditioned on.
 
-WHY THAT CONDITIONING IS THE POINT. A ROM conditioned only on theta learns ONE site's ONE weather
-history: its basis is tied to the exact window it was fitted on, so it cannot be asked about a
-different year. Feeding the DAILY DRIVERS at every timestep makes the network an emulator of the
-MODEL rather than of the RUN -- give it a parameter vector and any weather series and it answers.
+WHY THAT CONDITIONING IS THE POINT. A ROM conditioned only on theta learns ONE driver history: its
+basis is tied to the exact window it was fitted on, so it cannot be asked about a different period.
+Feeding the DRIVERS at every timestep makes the network an emulator of the MODEL rather than of the
+RUN -- give it a parameter vector and any driver series and it answers.
 That is the arrangement KGML uses, and it is the reason it can be fine-tuned against observations
 at sites it never trained on.
 
@@ -17,20 +17,23 @@ WHAT IS BORROWED FROM KGML, AND WHAT IS NOT
 
 Borrowed, and faithful to `time_series_models.py::RecoGRU_KGML`:
 
-  * a shared GRU trunk, then per-flux branches that each see `[trunk, inputs]`;
-  * HIERARCHICAL WIRING -- the NEE branch consumes the PREDICTED Ra and Rh rather than predicting
-    NEE independently, so the causal order is structural and not merely encouraged;
+  * a shared recurrent trunk, then per-target branches that each see `[trunk, inputs]`;
+  * HIERARCHICAL WIRING -- a derived target's branch consumes its parents' PREDICTED values rather
+    than predicting the derived target independently (in KGML, a net flux from its component
+    fluxes), so the causal order is structural and not merely encouraged;
   * a mass-balance term added to the data loss, as a RELATIVE HINGE: no penalty while the residual
     sits inside a tolerance, quadratic-free ReLU growth outside it.
 
 Not borrowed, and each for a stated reason:
 
-  * KGML takes GPP as an INPUT and predicts three fluxes. Here GPP is a TARGET, because a
-    calibration emulator is asked what a parameter set does and cannot be handed the answer.
-  * KGML's `tol_MB = 0.01`. That value belongs to ecosys, and a tolerance is a claim about how
-    tightly a particular process model closes its own budget. Porting it unchecked is how a
-    physics loss ends up fighting the data it is fitted to. `mass_balance_tol` has NO default for
-    that reason: the caller must measure the closure and pass it.
+  * KGML takes one process output as an INPUT and predicts the others. Here every emulated output
+    is a TARGET, because a calibration emulator is asked what a parameter set does and cannot be
+    handed part of the answer.
+  * KGML's `tol_MB = 0.01`. That value belongs to the process model KGML was built on, and a
+    tolerance is a claim about how tightly a particular process model closes its own budget.
+    Porting it unchecked is how a physics loss ends up fighting the data it is fitted to.
+    `mass_balance_tol` has NO default for that reason: the caller must measure the closure and pass
+    it.
   * pretrain-on-synthetic then finetune-on-observations. The training set here IS process-model
     output, so KGML's "physics as data" arm is already satisfied; and a calibration surrogate
     fine-tuned toward the observations could not then rank candidates against them without
@@ -44,6 +47,8 @@ Author: Jing Tao with Claude on Perlmutter
 from __future__ import annotations
 
 import json
+import math
+import warnings
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -78,7 +83,7 @@ def z_invert(a: np.ndarray, mu: np.ndarray, sd: np.ndarray) -> np.ndarray:
 # =============================================================================
 
 class KGMLEmulator(SurrogateModel):
-    """(theta, drivers) -> daily flux trajectories, with branch wiring and a mass-balance hinge.
+    """(theta, drivers) -> per-step target trajectories, with branch wiring and a mass-balance hinge.
 
     ``fit`` wants three things the other tiers do not: the per-timestep ``drivers`` (D, F_met),
     the per-case ``trajectories`` (N, T, D), and a ``mass_balance`` declaration naming which
@@ -94,13 +99,19 @@ class KGMLEmulator(SurrogateModel):
                  time_index: Optional[np.ndarray] = None,
                  hidden: int = 64, layers: int = 2, dropout: float = 0.2,
                  cell: str = "gru",
+                 nhead: int = 4,
+                 tcn_kernel: int = 3,
                  branch_of: Optional[Dict[str, List[str]]] = None,
                  mass_balance: Optional[Dict[str, float]] = None,
                  mass_balance_scale: Optional[Sequence[str]] = None,
                  mass_balance_tol: Optional[float] = None,
                  mass_balance_weight: float = 1.0,
+                 anomaly_weight: float = 0.0,
+                 diff_weight: float = 0.0,
+                 spatial_graph: Optional[Sequence[Tuple[str, str]]] = None,
                  nonneg: Optional[Sequence[str]] = None,
                  epochs: int = 60, batch_size: int = 32, lr: float = 1e-3,
+                 patience: Optional[int] = None,
                  chunk_days: int = 365, random_state: int = 0,
                  device: Optional[str] = None) -> None:
         if spec.tier != "S3":
@@ -109,32 +120,64 @@ class KGMLEmulator(SurrogateModel):
         names = [t.name for t in spec.targets]
 
         self.driver_names = list(driver_names)
+        self.anomaly_weight = float(anomaly_weight)
+        self.diff_weight = float(diff_weight)
         self.reduce = reduce
         self.time_index = None if time_index is None else np.asarray(time_index)
         self.hidden, self.layers, self.dropout = hidden, layers, dropout
-        # THE RECURRENT CELL IS A CHOICE, NOT A CONSTANT (2026-09-15). This class was hardwired to
-        # nn.GRU in both the trunk and every branch, which is faithful to KGML-ag-Carbon's
-        # RecoGRU_KGML. It is not a property of the ARCHITECTURE: the trunk-plus-branches shape,
-        # the hierarchical wiring and the physics terms are all cell-agnostic. LSTM carries a
-        # separate cell state, which is the reason to want it on a system whose memory is a slowly
-        # evolving mineral inventory rather than a fast seasonal cycle. The two have identical
-        # module signatures in torch, so this selects and nothing else changes.
+        # The sequence encoder is a choice; the trunk-plus-branches shape, the hierarchical wiring
+        # and the physics terms are all encoder-agnostic.
+        #   gru / lstm    recurrent, causal by construction
+        #   transformer   self-attention over the window, CAUSALLY MASKED (see _build)
+        #   tcn           dilated temporal convolutions, CAUSALLY PADDED (see _build)
         cell = str(cell).lower()
-        if cell not in ("gru", "lstm"):
-            raise ValueError(f"cell must be 'gru' or 'lstm', got {cell!r}")
+        if cell not in ("gru", "lstm", "transformer", "tcn"):
+            raise ValueError(f"cell must be 'gru', 'lstm', 'transformer' or 'tcn', got {cell!r}")
+        if cell == "tcn" and int(tcn_kernel) < 2:
+            raise ValueError(f"tcn_kernel must be at least 2, got {tcn_kernel}")
         self.cell = cell
+        self.nhead = int(nhead)
+        self.tcn_kernel = int(tcn_kernel)
         self.branch_of = {k: list(v) for k, v in (branch_of or {}).items()}
+        # Message passing over a DECLARED graph of targets. Edges are undirected pairs of target
+        # names; every target additionally attends to itself. Off unless a graph is given.
+        self.spatial_graph = [tuple(e) for e in (spatial_graph or [])]
+        if self.spatial_graph:
+            unknown = {n for e in self.spatial_graph for n in e} - set(names)
+            if unknown:
+                raise ValueError(f"spatial_graph names targets that do not exist: {sorted(unknown)}")
+            if self.branch_of:
+                raise ValueError("spatial_graph and branch_of cannot be combined: a hierarchical "
+                                 "branch consumes its parents' PREDICTED values, which are produced "
+                                 "after the graph layer would mix them. Declare one or the other.")
+        # nhead has TWO consumers, and the guard covered one of them until 2026-09-22: the
+        # transformer encoder (`nn.TransformerEncoderLayer(d_model, nhead, ...)`) and the graph
+        # attention layer (`GraphAttention(hidden, adj, dropout)` -> `nn.MultiheadAttention(d_model,
+        # nhead, ...)`), both in `_build`. A `cell="gru"` model with a spatial_graph and an
+        # indivisible pair therefore constructed cleanly and died part-way through the first fit on
+        # torch's own bare `AssertionError: embed_dim must be divisible by num_heads` -- exactly the
+        # shape this check exists to replace with a refusal where the object is built.
+        if self.hidden % self.nhead and (self.cell == "transformer" or self.spatial_graph):
+            who = "transformer" if self.cell == "transformer" else "spatial_graph"
+            raise ValueError(f"{who} needs hidden divisible by nhead; "
+                             f"got hidden={self.hidden}, nhead={self.nhead}")
         self.mass_balance = dict(mass_balance or {})
-        # The DENOMINATOR of the relative hinge, declared rather than inferred. KGML uses
-        # |Ra + Rh|, and that is not incidental: respiration is bounded away from zero all year
-        # while GPP hits exactly zero in winter. Measured on this ensemble, |GPP| as the scale
-        # gives a p99 relative residual of 74748 against 0.91 for |Ra + Rh|, so the wrong choice
-        # makes the hinge either inert or explosive depending on the tolerance picked to survive it.
+        # The DENOMINATOR of the relative hinge, declared rather than inferred. It must stay bounded
+        # away from zero over the whole record: where the scale reaches zero (a flux that stops
+        # seasonally, for example) the relative residual is unbounded, so the wrong choice makes the
+        # hinge either inert or explosive depending on the tolerance picked to survive it. KGML
+        # divides by component terms that never reach zero for this reason.
         self.mass_balance_scale = list(mass_balance_scale or [])
         self.mass_balance_tol = mass_balance_tol
         self.mass_balance_weight = mass_balance_weight
         self.nonneg = list(nonneg or [])
         self.epochs, self.batch_size, self.lr = epochs, batch_size, lr
+        #: Stop after this many epochs with no validation improvement. `None` runs the whole budget,
+        #: which is what every fit before 2026-09-22 did -- and all of them ended with their best
+        #: epoch at or one before the last, i.e. the BUDGET decided the fit rather than the data.
+        self.patience = None if patience is None else int(patience)
+        #: Set by `fit`: epochs_run, best_epoch, best_val, stopped_by_patience. The record that
+        #: separates "converged" from "ran out of budget", which a score cannot.
         self.chunk_days, self.random_state = chunk_days, random_state
         self.device = device
 
@@ -158,14 +201,13 @@ class KGMLEmulator(SurrogateModel):
             raise ValueError(
                 "mass_balance was declared without `mass_balance_scale`. The hinge is RELATIVE, "
                 "so it needs a denominator, and the denominator must be bounded away from zero "
-                "over the whole year or the term is inert where the scale vanishes. KGML uses "
-                "the respiration terms for exactly that reason.")
+                "over the whole record, or the term is inert where the scale vanishes.")
         if self.mass_balance and self.mass_balance_tol is None:
             raise ValueError(
                 "mass_balance was declared without `mass_balance_tol`. A tolerance is a claim "
-                "about how tightly THIS process model closes its own budget; KGML's 0.01 belongs "
-                "to ecosys. Measure the residual on the training trajectories and pass it, or a "
-                "physics term will fight the data it is fitted to.")
+                "about how tightly THIS process model closes its own budget, so a value published "
+                "for another model does not transfer. Measure the residual on the training "
+                "trajectories and pass it, or a physics term will fight the data it is fitted to.")
         for t in self.nonneg:
             if t not in names:
                 raise ValueError(f"nonneg names {t!r}, not a target ({names})")
@@ -177,6 +219,7 @@ class KGMLEmulator(SurrogateModel):
         self._gate = HullGate()
         self.history: List[Dict[str, float]] = []
         self.n_viable_train = 0
+        self.fit_info_: Dict[str, Any] = {}
 
     # ---- torch pieces, built lazily ----
 
@@ -186,7 +229,118 @@ class KGMLEmulator(SurrogateModel):
 
         names, branch_of, hidden = self._names, self.branch_of, self.hidden
         layers, dropout = self.layers, self.dropout
-        RNN = nn.LSTM if self.cell == "lstm" else nn.GRU
+        nhead = self.nhead
+        tcn_kernel = self.tcn_kernel
+
+        class CausalTransformer(nn.Module):
+            """Self-attention encoder with nn.GRU's call contract: (B,T,D) -> ((B,T,H), None).
+
+            THE MASK IS NOT OPTIONAL. An unmasked encoder lets step t attend to steps after it, so
+            the fit would use information an artifact consumed step by step cannot have; the result
+            is a smoother, not an emulator. A recurrent cell is causal by construction and gets this
+            for free, which is why the mask has no counterpart above.
+            """
+
+            def __init__(self, d_in: int, d_model: int, n_layers: int, p_drop: float):
+                super().__init__()
+                self.proj = nn.Linear(d_in, d_model)
+                enc = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward=4 * d_model,
+                                                 dropout=p_drop, batch_first=True,
+                                                 norm_first=True, activation="gelu")
+                self.enc = nn.TransformerEncoder(enc, n_layers, enable_nested_tensor=False)
+                self.d_model = d_model
+
+            def _positions(self, T: int, device, dtype):
+                # Sinusoidal, built per call: a learned table would cap the window length, and
+                # chunk length is a fit-time choice.
+                pos = torch.arange(T, device=device, dtype=dtype).unsqueeze(1)
+                i = torch.arange(0, self.d_model, 2, device=device, dtype=dtype)
+                w = torch.exp(-math.log(10000.0) * i / self.d_model)
+                pe = torch.zeros(T, self.d_model, device=device, dtype=dtype)
+                pe[:, 0::2] = torch.sin(pos * w)
+                pe[:, 1::2] = torch.cos(pos * w)
+                return pe.unsqueeze(0)
+
+            def forward(self, x):
+                T = x.shape[1]
+                h = self.proj(x)
+                h = h + self._positions(T, h.device, h.dtype)
+                mask = torch.triu(torch.ones(T, T, device=h.device, dtype=torch.bool), diagonal=1)
+                return self.enc(h, mask=mask), None
+
+        class CausalTCN(nn.Module):
+            """Dilated temporal convolutions with nn.GRU's call contract: (B,T,D) -> ((B,T,H), None).
+
+            CAUSAL BY LEFT PADDING ONLY. A convolution padded on both sides centres its kernel on
+            step t and reads the steps after it, which is the same leak an unmasked attention
+            encoder has, and just as invisible to a whole-window accuracy score. Each block doubles
+            the dilation, so memory reaches back `receptive_field` steps and no further: unlike a
+            recurrent cell, nothing older than that can inform a prediction.
+            """
+
+            def __init__(self, d_in: int, d_model: int, n_layers: int, p_drop: float):
+                super().__init__()
+                self.inp = nn.Conv1d(d_in, d_model, 1)
+                self.c1 = nn.ModuleList()
+                self.c2 = nn.ModuleList()
+                self.pads: List[int] = []
+                for i in range(max(1, n_layers)):
+                    dil = 2 ** i
+                    self.c1.append(nn.Conv1d(d_model, d_model, tcn_kernel, dilation=dil))
+                    self.c2.append(nn.Conv1d(d_model, d_model, tcn_kernel, dilation=dil))
+                    self.pads.append((tcn_kernel - 1) * dil)
+                self.drop = nn.Dropout(p_drop)
+                self.receptive_field = 1 + 2 * sum(self.pads)
+
+            def forward(self, x):
+                import torch.nn.functional as F
+                h = self.inp(x.transpose(1, 2))
+                for c1, c2, pad in zip(self.c1, self.c2, self.pads):
+                    r = h
+                    h = self.drop(F.gelu(c1(F.pad(h, (pad, 0)))))
+                    h = self.drop(F.gelu(c2(F.pad(h, (pad, 0)))))
+                    h = h + r
+                return h.transpose(1, 2), None
+
+        if self.cell == "transformer":
+            def RNN(d_in, d_model, n_layers, dropout=0.0, batch_first=True):
+                return CausalTransformer(d_in, d_model, n_layers, dropout)
+        elif self.cell == "tcn":
+            def RNN(d_in, d_model, n_layers, dropout=0.0, batch_first=True):
+                return CausalTCN(d_in, d_model, n_layers, dropout)
+        else:
+            RNN = nn.LSTM if self.cell == "lstm" else nn.GRU
+
+        # Adjacency over the target axis: self-loops always, declared edges both ways. `None` when
+        # no graph is declared, which is what switches the layer off.
+        adj = None
+        if self.spatial_graph:
+            idx = {n: i for i, n in enumerate(names)}
+            a = torch.eye(len(names), dtype=torch.bool)
+            for u, v in self.spatial_graph:
+                a[idx[u], idx[v]] = True
+                a[idx[v], idx[u]] = True
+            adj = a
+
+        class GraphAttention(nn.Module):
+            """One masked attention pass over the TARGET axis, applied per timestep.
+
+            Each target attends to its declared neighbours and itself, and nowhere else: the mask
+            is the declared graph, so a target cannot draw on one it is not connected to. Applied
+            as a residual, so an untrained layer leaves the branch representation unchanged.
+            """
+
+            def __init__(self, d_model: int, mask: "torch.Tensor", p_drop: float):
+                super().__init__()
+                self.attn = nn.MultiheadAttention(d_model, nhead, dropout=p_drop, batch_first=True)
+                self.norm = nn.LayerNorm(d_model)
+                self.register_buffer("block", ~mask)     # True where attention is FORBIDDEN
+
+            def forward(self, z):                        # z: (B, T, L, H)
+                B, T, L, H = z.shape
+                flat = z.reshape(B * T, L, H)
+                mixed, _ = self.attn(flat, flat, flat, attn_mask=self.block, need_weights=False)
+                return self.norm(flat + mixed).reshape(B, T, L, H)
 
         class Net(nn.Module):
             def __init__(self):
@@ -201,11 +355,17 @@ class KGMLEmulator(SurrogateModel):
                     # parents' PREDICTED values, which is KGML's hierarchical arm
                     self.branch[n] = RNN(n_in + hidden + extra, hidden, 1, batch_first=True)
                     self.head[n] = nn.Linear(hidden, 1)
+                self.graph = None if adj is None else GraphAttention(hidden, adj, dropout)
 
             def forward(self, x):
                 h, _ = self.trunk(x)
                 h = self.drop(h)
                 out: Dict[str, Any] = {}
+                if self.graph is not None:
+                    reps = [self.branch[n](torch.cat([h, x], dim=2))[0] for n in names]
+                    z = self.graph(torch.stack(reps, dim=2))         # (B, T, L, H)
+                    return torch.cat([self.head[n](self.drop(z[:, :, i]))
+                                      for i, n in enumerate(names)], dim=2)
                 for n in names:
                     if n in branch_of:
                         continue
@@ -219,9 +379,9 @@ class KGMLEmulator(SurrogateModel):
         return Net()
 
     def _chunks(self, n_days: int) -> List[Tuple[int, int]]:
-        """Year-length windows. KGML trains on whole multi-year sequences because it has 100 of
-        them; here there are thousands of cases, so a shorter window buys far more gradient steps
-        per epoch at the cost of not propagating state across a year boundary."""
+        """Windows of `chunk_days` steps. Whole multi-year sequences suit a small number of cases; with
+        many cases a shorter window buys far more gradient steps per epoch, at the cost of not
+        propagating state across a window boundary."""
         c = self.chunk_days
         return [(s, min(s + c, n_days)) for s in range(0, n_days, c)]
 
@@ -296,6 +456,47 @@ class KGMLEmulator(SurrogateModel):
         mse = nn.MSELoss()
         relu = nn.ReLU()
         best, best_state = float("inf"), None
+        best_epoch, since, stopped_by_patience = -1, 0, False
+
+        # ONE definition of the objective, used by BOTH the optimiser and the checkpoint rule.
+        # Until 2026-09-22 the training loss carried the anomaly, first-difference and
+        # mass-balance terms while the validation loss was a bare MSE, so the checkpoint was
+        # selected on a DIFFERENT objective from the one the fit was driving towards -- the exact
+        # thing `_nn.fit_torch`'s docstring forbids ("THE VALIDATION CRITERION IS THE TRAINING
+        # LOSS ... A validation loss that leaves out terms the training loss carries selects a
+        # different checkpoint"). That module's own loop passes a single `batch_loss` to both
+        # sides; this class has its own loop because it steps per time window, so it has to keep
+        # the two in step by construction instead, which is what these closures are for.
+        # Consequence for what is already on disk: every fit made before this date, including the
+        # 20260916a loss ablation, chose its weights by level-only MSE whatever its training
+        # objective was.
+        def data_loss(pred, yb):
+            ld = mse(pred, yb)
+            if self.anomaly_weight:
+                # Targets SHAPE rather than level. Y is standardised per target over cases AND
+                # time, so the denominator is dominated by between-case spread and a prediction at
+                # roughly the right level already scores well. Removing each window's own mean
+                # leaves only the within-case variation.
+                ld = ld + self.anomaly_weight * mse(
+                    pred - pred.mean(dim=1, keepdim=True),
+                    yb - yb.mean(dim=1, keepdim=True))
+            if self.diff_weight:
+                # Targets step-to-step change, which a level-matching prediction gets wrong even
+                # when its mean is right.
+                ld = ld + self.diff_weight * mse(pred[:, 1:] - pred[:, :-1],
+                                                 yb[:, 1:] - yb[:, :-1])
+            return ld
+
+        def mb_loss(pred):
+            if not use_mb:
+                return torch.zeros((), device=dev)
+            # physics in PHYSICAL units: un-normalise, then a RELATIVE hinge, exactly PyKGML's
+            # `ReLU(|sum| - tol*|scale|)` shape
+            phys = z_invert(pred, ymu_t, ysd_t)
+            resid = (phys * mb_sign.view(1, -1, 1)).sum(dim=1)
+            scale = (phys * mb_scale.view(1, -1, 1)).sum(dim=1)
+            return torch.mean(relu(resid.abs()
+                                   - self.mass_balance_tol * scale.abs().clamp(min=1e-6)))
 
         for ep in range(self.epochs):
             self._net.train()
@@ -307,16 +508,7 @@ class KGMLEmulator(SurrogateModel):
                 for (s, e) in wins:
                     xb, yb = batch(ii, s, e)
                     pred = self._net(xb).transpose(1, 2)                # (B, T, L)
-                    ld = mse(pred, yb)
-                    lm = torch.zeros((), device=dev)
-                    if use_mb:
-                        # physics in PHYSICAL units: un-normalise, then a RELATIVE hinge, exactly
-                        # PyKGML's `ReLU(|sum| - tol*|scale|)` shape
-                        phys = z_invert(pred, ymu_t, ysd_t)
-                        resid = (phys * mb_sign.view(1, -1, 1)).sum(dim=1)
-                        scale = (phys * mb_scale.view(1, -1, 1)).sum(dim=1)
-                        lm = torch.mean(relu(resid.abs()
-                                             - self.mass_balance_tol * scale.abs().clamp(min=1e-6)))
+                    ld, lm = data_loss(pred, yb), mb_loss(pred)
                     loss = ld + self.mass_balance_weight * lm
                     opt.zero_grad(); loss.backward()
                     torch.nn.utils.clip_grad_norm_(self._net.parameters(), 5.0)
@@ -326,24 +518,65 @@ class KGMLEmulator(SurrogateModel):
 
             self._net.eval()
             with torch.no_grad():
-                vl = 0.0; vn = 0
+                vl = vd = 0.0; vn = 0
                 for b0 in range(0, len(val_i), self.batch_size):
                     ii = val_i[b0:b0 + self.batch_size]
                     for (s, e) in wins:
                         xb, yb = batch(ii, s, e)
-                        vl += float(mse(self._net(xb).transpose(1, 2), yb)); vn += 1
-                vl /= max(vn, 1)
+                        pred = self._net(xb).transpose(1, 2)
+                        # `val` is the OBJECTIVE and is what the checkpoint rule below reads.
+                        # `val_data` is the plain level MSE, kept beside it because it is the
+                        # quantity every fit before 2026-09-22 recorded under `val`, so a history
+                        # written then and one written now stay comparable.
+                        vl += float(data_loss(pred, yb) + self.mass_balance_weight * mb_loss(pred))
+                        vd += float(mse(pred, yb)); vn += 1
+                vl /= max(vn, 1); vd /= max(vn, 1)
             self.history.append({"epoch": ep, "train": tot / nb, "data": totd / nb,
-                                 "mass_balance": totm / nb, "val": vl})
+                                 "mass_balance": totm / nb, "val": vl, "val_data": vd})
+            # A NON-FINITE VALIDATION LOSS IS REFUSED, not carried. NaN never compares less than
+            # `best`, so the checkpoint would silently stay at "none" and the LAST epoch's weights
+            # would be returned as though they had been selected. `_nn.fit_torch` refuses this for
+            # the same reason; this loop is separate and did not.
+            if not math.isfinite(vl):
+                raise FloatingPointError(
+                    f"KGMLEmulator: validation loss is {vl} at epoch {ep}. A non-finite validation "
+                    f"loss never improves on the best checkpoint, so continuing would return the "
+                    f"last epoch silently. Check the viable rows for NaN trajectories and the "
+                    f"drivers for NaN or inf.")
             if vl < best:
-                best = vl
+                best, best_epoch, since = vl, ep, 0
                 best_state = {k: v.detach().clone() for k, v in self._net.state_dict().items()}
+            else:
+                since += 1
             if verbose and (ep % 5 == 0 or ep == self.epochs - 1):
                 print(f"  epoch {ep:3d}  train {tot/nb:.4f}  (data {totd/nb:.4f}, "
                       f"mb {totm/nb:.4f})  val {vl:.4f}", flush=True)
+            if self.patience and since >= self.patience:
+                stopped_by_patience = True
+                break
 
         if best_state is not None:
             self._net.load_state_dict(best_state)          # early-stopping by best validation
+
+        # THE FIT SAYS WHETHER IT FINISHED OR WAS STOPPED. A validation curve whose minimum is the
+        # LAST epoch has not converged -- it ran out of budget -- and the two are indistinguishable
+        # from the score alone. Measured 2026-09-22 across every fit this class has produced: the
+        # miniLEO baseline's best epoch was 29 of 29, the Lusignan KGML fit's 39 of 39, and both
+        # loss-ablation arms' 28 of 29, while `20260916g` recorded that "both had converged ... so
+        # it was not capacity and not under-training" and pivoted the investigation to the objective
+        # on that basis. `_nn.fit_torch` warns for exactly this; this loop is separate and did not.
+        self.fit_info_ = {"epochs_run": len(self.history),
+                          "best_epoch": best_epoch,
+                          "best_val": best if best_state is not None else float("nan"),
+                          "stopped_by_patience": stopped_by_patience}
+        if best_state is not None and not stopped_by_patience and best_epoch == self.epochs - 1:
+            warnings.warn(
+                f"KGMLEmulator: the epoch budget ended this fit while validation was still "
+                f"improving -- the best epoch IS the last one ({best_epoch} of {self.epochs - 1}). "
+                f"The fit was stopped, not converged, so a poor score here is not evidence about "
+                f"capacity, the objective or the architecture. Raise `epochs` (and set `patience` "
+                f"so the budget is not the thing that decides) before drawing a conclusion.",
+                RuntimeWarning)
         self.fitted = True
         return self
 
@@ -351,7 +584,7 @@ class KGMLEmulator(SurrogateModel):
 
     def predict_trajectories(self, X: np.ndarray, drivers: np.ndarray) -> np.ndarray:
         """(N, T, D). `drivers` is passed explicitly because an emulator may be asked about
-        weather it was never trained on -- which is the capability the tier exists for."""
+        drivers it was never trained on -- which is the capability the tier exists for."""
         import torch
         self._check_fitted()
         X = self._check_X(X)
@@ -395,13 +628,24 @@ class KGMLEmulator(SurrogateModel):
                             "time_index": None if self.time_index is None
                             else self.time_index.tolist(),
                             "hidden": self.hidden, "layers": self.layers, "cell": self.cell,
+                            "nhead": self.nhead, "tcn_kernel": self.tcn_kernel,
                             "dropout": self.dropout, "branch_of": self.branch_of,
                             "mass_balance": self.mass_balance,
                             "mass_balance_scale": self.mass_balance_scale,
                             "mass_balance_tol": self.mass_balance_tol,
                             "mass_balance_weight": self.mass_balance_weight,
+                            "anomaly_weight": self.anomaly_weight,
+                            "diff_weight": self.diff_weight,
+                            "spatial_graph": [list(e) for e in self.spatial_graph],
                             "nonneg": self.nonneg, "chunk_days": self.chunk_days,
-                            "random_state": self.random_state},
+                            "patience": self.patience,
+                            "random_state": self.random_state,
+                            # THE DEVICE THE FIT RAN ON, recorded so a reload can reproduce it.
+                            # cuDNN's recurrent kernels and the CPU ones do not agree bit for
+                            # bit (~4e-4 on this model), so a CPU-fitted artifact reloaded onto a
+                            # GPU predicts measurably differently from the thing that was saved,
+                            # and nothing in the artifact said which one it had been.
+                            "fit_device": str(next(self._net.parameters()).device)},
                     "scalers": {"xmu": self._xmu, "xsd": self._xsd,
                                 "mmu": self._mmu, "msd": self._msd,
                                 "ymu": self._ymu, "ysd": self._ysd},
@@ -411,30 +655,34 @@ class KGMLEmulator(SurrogateModel):
         (directory / "history.json").write_text(json.dumps(self.history, indent=2))
 
 
-def load_kgml(directory: Path, spec: SurrogateSpec,
-              device: Optional[str] = None, strict: bool = True) -> KGMLEmulator:
-    """Rebuild a saved emulator. Kept here rather than in `tiers.load` so that module keeps
-    importing with no torch installed.
+def load_kgml(directory: Path, spec: SurrogateSpec, device: Optional[str] = None,
+              strict: bool = True, check_env: bool = True) -> KGMLEmulator:
+    """Rebuild a saved emulator. `tiers.load` dispatches here by the class name in `tier.json`,
+    after its provenance and environment checks; the loader lives in this module so `tiers.py`
+    keeps importing with no torch installed. Called directly, it checks the environment but not
+    provenance, and it builds the emulator on the `spec` it is given.
 
     The net is placed on the SAME device rule `fit` uses (cuda when present) rather than left on
     CPU. That is not only a speed question: cuDNN's GRU and the CPU kernel do not agree bit for
-    bit, so a reloaded model silently landing on CPU predicts slightly differently from the one
-    that was saved -- measured at 3.8e-4 absolute on a small fixture, which is far above float32
-    noise and would read as a corrupted artifact.
+    bit, so a reloaded model silently landing on CPU predicts differently from the one that was
+    saved, by more than float32 noise, which would read as a corrupted artifact.
 
     ``strict`` governs the environment check only (``tiers.load`` uses the same word for the same
     purpose): a MAJOR version change in a library this emulator was built with refuses, because
     torch does not promise that a `state_dict` written by one major version loads into the next.
+    ``check_env=False`` skips that check, for a caller such as ``tiers.load`` that has run it.
     """
     import torch
 
     from .environment import enforce_environment
-    enforce_environment(directory, strict=strict)
+    if check_env:
+        enforce_environment(directory, strict=strict)
 
     blob = torch.load(Path(directory) / "kgml.pt", weights_only=False,
                       map_location="cpu")
     cfg = dict(blob["cfg"])
     ti = cfg.pop("time_index")
+    fit_device = cfg.pop("fit_device", None)          # absent in artifacts written before v2.436
     m = KGMLEmulator(spec, time_index=None if ti is None else np.asarray(ti), **cfg)
     s = blob["scalers"]
     m._xmu, m._xsd = s["xmu"], s["xsd"]
@@ -444,7 +692,20 @@ def load_kgml(directory: Path, spec: SurrogateSpec,
     m.history = blob["history"]
     m.n_viable_train = blob["n_viable_train"]
     n_in = m._xmu.shape[1] + m._mmu.shape[1]
-    dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    # DEVICE ORDER: an explicit argument, then the device the FIT used, then whatever is here.
+    # Reloading a CPU-fitted emulator onto a GPU changes its predictions by more than float32
+    # noise, so "cuda when available" was reintroducing exactly the drift the build skill's step 4
+    # warns about. An artifact from before this was recorded still falls back to the old rule,
+    # which is why the fallback is kept rather than refused.
+    want = device or fit_device or ("cuda" if torch.cuda.is_available() else "cpu")
+    if str(want).startswith("cuda") and not torch.cuda.is_available():
+        warnings.warn(
+            f"this emulator was fitted on {want} and no GPU is available here, so it is being "
+            f"reloaded on the CPU. Recurrent kernels do not agree bit for bit across the two, so "
+            f"expect small differences from the saved model's own predictions.",
+            RuntimeWarning)
+        want = "cpu"
+    dev = torch.device(want)
     m.device = str(dev)
     m._net = m._build(n_in)
     m._net.load_state_dict({k: v.to(dev) for k, v in blob["state_dict"].items()})

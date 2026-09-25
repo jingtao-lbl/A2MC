@@ -27,6 +27,24 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 
 
 
+### `create-project-agent`
+- **Purpose:** Stand up a **project agent**: an `A2MC-<Name>` repo whose **framework half arrives by sync and is replaced on
+  every run**, and whose **one** top-level `<ProjectName>/` folder holds everything the project authors. A2MC's
+  harness engineering — the board, both hook kinds, the log contract and its checkers, the memory bucket, the
+  skills discipline — is reusable independently of calibration, and this packs it for one project.
+- **Invoke when:** a project has **calibration as one step among others**, or **no calibration at all**. Nothing
+  here is needed to simply *use* A2MC for calibration; that is `a2mc-init` / `onboard-model` / `onboard-case`.
+  A project is the fifth unit of work and the only one that owns a repo topology.
+- **Modes:** any — repo topology and the project-folder contract; model-agnostic and calibration-optional.
+- **Backing tools:** `scripts/wrap_for_project_agent.sh` (`--init` / `--refresh`), `scripts/_wrap_scaffold.sh`,
+  `tools/skill_models.py`, `tools/check_clone_setup.py`,
+  `scripts/setup_clone.sh`, the destination's own setup checker.
+- **Key discipline:** every path both halves write is a named conflict surface with exactly one of three
+  resolutions — MERGE, DESTINATION_OWNED, or framework-owned — and the **separation manifest** is signed before
+  any file is written. Protection is established BEFORE the first sync, because forward-only means an exclude
+  retracts nothing. Git hooks **chain** rather than replace. A filtered copy cannot satisfy the framework's own
+  checkers, so the destination is marked at seeding.
+
 
 
 ### `calibration-log`
@@ -81,13 +99,16 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 
 ### `a2mc-init`
 - **Purpose:** First run in a **clone** — the per-clone half of getting started. Greets + gauges
-  experience, verifies the model checkout against the RAG milestone registry (`rag_match.py`),
-  offers fork-safe remotes on the checkout, writes the machine config (`a2mc_config.sh` or
-  `a2mc_noncime_config.sh`), then **routes** to `onboard-model` (new model) or `onboard-case`
-  (new case). It does **not** create a use case — that moved to `onboard-case` on 2026-08-02 so a
+  experience and records the user's name, **wires the clone** (`scripts/setup_clone.sh`, gated by
+  `tools/check_clone_setup.py`; every user, before any routing), gets the model **built and verified
+  on this machine** (`models/<m>/BUILD.md`; `rag_match.py` for ELM, `model_preflight.py` otherwise,
+  where drift is a warning, not a stop), offers fork-safe remotes on the checkout, writes the machine
+  config (`a2mc_config.sh` or `a2mc_noncime_config.sh`), then **routes** to `onboard-model` (new model)
+  or `onboard-case` (new case). It does **not** create a use case — that moved to `onboard-case` on 2026-08-02 so a
   second case has an entry point.
 - **Invoke when:** "set up A2MC", "first time using A2MC", "help me get started / onboard me to
-  A2MC", "configure A2MC on this machine".
+  A2MC", "configure A2MC on this machine", "wire up my clone", or when the session snapshot reports
+  the clone is not fully set up.
 - **Modes:** `any` — model-agnostic. **Distinct from `onboard-session`**, which resumes an
   already-configured setup, and from `onboard-case`, which does the per-case work.
 
@@ -210,17 +231,6 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Invoke when:** "lit review on X", "what's the published range for parameter X", "find bounds for X from the literature", "review papers on X", "synthesize the literature for". NOT a single-citation lookup.
 - **Modes:** `any` — model-agnostic (needs the `paper-search-mcp` server). Pairs with `markdown-to-pdf` and `manuscript-writing-style`.
 
-### `cherrypick-from-main`
-- **Purpose:** Bring `main`'s **generic** improvements into `adapter-kit` by an audited, **selective
-  cherry-pick** — the practice since 2026-07-15, because `main` carries site-calibration work
-  (Kougarok) that `adapter-kit` deliberately omits. Covers the audit-and-categorize pass
-  (generic vs site-specific, by file path), the hard no-FATES-rewrite invariant, the 7
-  conflict-prone shared files + keep-both resolution, the verification gate, and the narrow
-  conditions under which a full merge is still safe.
-- **Invoke when:** "merge main", "cherry-pick from main", "pull main's updates into adapter-kit", "update the branch from main", "sync from main".
-- **Modes:** `any` — dev-repo branch workflow.
-- **Note:** renamed from `merge-from-main` on 2026-07-30 when the default inverted.
-
 ### `onboard-model`
 - **Purpose:** Top-level adapter-kit orchestrator — take a NEW model (EcoSIM, CLM/CTSM, ATS, TEM,
   ReSOM, …) from a filled modeler questionnaire to a calibration-ready A2MC instance: scaffold the
@@ -329,7 +339,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Invoke when:** "port/migrate/convert the param file to api-XX", "map parameters to the new version", "build the new-API base file from the tuned prior one".
 - **Backing tools:** `tools/port_param_file.py` (`identity`/`port`/`verify` subcommands; version/format/param-list agnostic).
 - **Key discipline:** run `identity` FIRST and resolve any `NAME MISMATCH` slot by functional intent (`--map`); port ONTO the target template so no registered param is missing (avoids the `check_var … not on dataset` runtime abort). Doctrine (why/which-values) lives in the memories it cites — thin by design.
-- **Modes:** `any` — model-agnostic.
+- **Modes:** `FATES` — the port TOOL is parameterized (`--pft-dim`/`--id-var`) and ships everywhere, but every worked path in this skill is FATES, so it does not travel to a project without it.
 
 ### `add-skill`
 - **Purpose:** Scaffold + register a new skill (correct frontmatter + `## Changelog`, both

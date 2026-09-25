@@ -51,10 +51,29 @@ def _git(*args):
         return ""
 
 
+def _own_hooks_dir(cur):
+    """True when `core.hooksPath` names a hooks directory this repository TRACKS, other than
+    `.githooks`: a project folder's own commit checks, set by that project's own onboarding.
+
+    Those are commit checks this repository ships, so the clone is wired, and `setup_clone.sh`
+    keeps such a path rather than resetting it (the same rule, in shell). A directory git does not
+    track, one outside the repository, and one with no hook in it do not count.
+    """
+    if not cur or os.path.isabs(cur) or cur.split("/")[0] == "..":
+        return False
+    d = ROOT / cur
+    if not d.is_dir():
+        return False
+    tracked = _git("ls-files", "--", cur).split()
+    return any(Path(t).name in ("pre-commit", "commit-msg") for t in tracked)
+
+
 def _hooks_row():
     cur = _git("config", "--get", "core.hooksPath").strip()
     if cur == ".githooks":
         return (PASS, "git hooks active", "core.hooksPath = .githooks")
+    if _own_hooks_dir(cur.rstrip("/")):
+        return (PASS, "git hooks active", "core.hooksPath = %s (this repository's own tracked hooks)" % cur)
     if not (ROOT / ".githooks").is_dir():
         return (NA, "git hooks active", "this clone ships no .githooks/")
     detail = ("unset — the repo's commit checks never fire, so a bad commit message is accepted"
@@ -110,10 +129,48 @@ def _author_row():
     return (PASS, "author name resolves", "%s (via %s)" % (name, how))
 
 
+def _tmpdir_row():
+    """Does a runtime temp write land somewhere legal on this machine?
+
+    NERSC's hard rule is no writes outside $HOME, and the PreToolUse hook that enforces it can
+    only read a command's TEXT: a path built at RUNTIME -- a tempfile constructor, a library's own
+    scratch file, a plotting backend's cache -- carries no literal for it to match. Pointing the
+    temp-directory variable at the repo's gitignored tmp/ fixes that by construction, in any
+    language that honours it, which is why it is the real fix and the hook is the backstop.
+
+    It lives in a shell profile, so GIT CANNOT CARRY IT: a fresh clone, or the same clone on
+    another machine, silently has only the backstop, and nothing reported that until this row
+    existed (2026-09-22, register item F1). Anything inside $HOME counts, not only the repo's own
+    tmp/ -- the rule is about the quota boundary, not a particular directory.
+    """
+    # The rule is NERSC's, so the row applies only on a NERSC machine. Off NERSC it is NA, per
+    # this file's own contract that a row which cannot apply reports NA rather than FAIL. Until
+    # 2026-09-23 it FAILed on every laptop and workstation (TMPDIR is unset on Linux and under
+    # /var/folders on macOS), so every non-NERSC user saw "THIS CLONE IS NOT FULLY SET UP" at
+    # every session for a rule that does not bind them (audit 20260923b, finding F28).
+    if not os.environ.get("NERSC_HOST"):
+        return (NA, "TMPDIR inside $HOME",
+                "not a NERSC machine (NERSC_HOST unset); the $HOME-only write rule is NERSC's")
+    td = os.environ.get("TMPDIR", "")
+    fix = ('point TMPDIR at %s/tmp in your shell profile, guarded on $SLURM_JOB_ID being unset '
+           'so a batch job keeps node-local scratch' % ROOT)
+    if not td:
+        return (FAIL, "TMPDIR inside $HOME",
+                "unset, so a runtime temp write lands outside $HOME and breaks the NERSC rule  -> " + fix)
+    home = os.path.realpath(os.path.expanduser("~"))
+    real = os.path.realpath(os.path.expandvars(td))
+    if real == home or real.startswith(home + os.sep):
+        inside_repo = real.startswith(os.path.realpath(str(ROOT)))
+        return (PASS, "TMPDIR inside $HOME", "the repo's tmp/" if inside_repo else real)
+    return (FAIL, "TMPDIR inside $HOME",
+            "%s is outside $HOME, so a runtime temp write breaks the NERSC rule  -> %s" % (real, fix))
+
+
 def clone_rows():
     """The per-clone wiring rows. Imported by check_stage_ready.py and the session-start hook so
     there is exactly one definition of what 'wired' means."""
-    return [_hooks_row(), _skip_worktree_row(), _memory_row(), _author_row()]
+    return [_hooks_row(), _skip_worktree_row(), _memory_row(), _author_row(),
+            _tmpdir_row()]
 
 
 def main():

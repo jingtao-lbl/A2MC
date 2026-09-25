@@ -1,25 +1,18 @@
 #!/usr/bin/env python
 """Fit, validate and save a surrogate from a completed A2MC ensemble.
 
-This is the assembly machinery **step A4 would have used**, and the distinction matters. A4 was not
-a coding task left undone: it was the QUESTION "do the existing R1/R2 ensembles suffice, or is a
-purpose-built ensemble a precondition?", it answered *precondition*, and it was WITHDRAWN on
-2026-07-31 (`docs/41` Phase A). Nothing from it carries forward. So this script does not "finish
-A4" -- it supplies the assembly step for Phase C, once the gate opens.
+**CHECK THE GATE FIRST.** An objective emulator is worth fitting only when the completed ensemble
+contains configurations inside the observational bands; decide that with
+`scripts/check_surrogate_gate.py`, never by impression. Fitting is legitimate for a constraint or
+sensitivity model, which the gate does not block; fitting an OBJECTIVE emulator to interpolate
+toward an unsampled target region is exactly what it does block.
 
-**AND THE GATE IS NOT OPEN.** The surrogate build is paused until the completed ensemble contains
-configurations inside the observational bands; decide that with `scripts/check_surrogate_gate.py`,
-never by impression. Fitting is legitimate for a constraint or sensitivity model, which the gate
-does not block; fitting an OBJECTIVE emulator to interpolate toward an unsampled target region is
-exactly what it does block.
-
-The layout this was waiting on is no longer guessed: it is `scripts/extract_flat_ensemble_targets.py`'s
-Y CSV beside the round's X matrix, both verified against a real ensemble rather than assumed.
+The input layout is `scripts/extract_flat_ensemble_targets.py`'s Y CSV beside the round's X matrix.
 
 It closes the middle of the Phase-1 chain for a space-filling round:
 
     extract_flat_ensemble_targets.py  ->  THIS  ->  surrogate_sobol_indices.py
-        Y matrix from the tapes           fit +        indices from a Saltelli
+        Y matrix from model output        fit +        indices from a Saltelli
                                         validate        design through it
 
 THE JOIN IS ASSERTED, NOT ASSUMED. Case `i` carries matrix row `i-1`, which is the materializer's
@@ -145,11 +138,11 @@ def build_spec(param_list: Path, targets_yaml: Path, name: str, model: str,
 
     PROVENANCE IS STAMPED HERE, and it is not decoration. `Provenance.mismatches` only compares
     fields populated on BOTH sides, so an unstamped artifact is silently unprotected -- loading it
-    later cannot detect that the parameter list, the base deck, the scoring convention or the model
-    source changed underneath it. `tiers.load` warns about exactly that, which is how this gap was
-    found. The scoring convention is bound as the CONTENT HASH of `targets.yaml` rather than a
-    label, because this case's own history shows why: re-anchoring the targets onto Cycle A moved
-    the V0 total from 0.2180 to 0.3540 without touching the model, so a surrogate trained under one
+    later cannot detect that the parameter list, the base parameter file, the scoring convention or
+    the model source changed underneath it. `tiers.load` warns about exactly that, which is how this
+    gap was found. The scoring convention is bound as the CONTENT HASH of `targets.yaml` rather than
+    a label, because redefining a target (moving its reduction window, re-anchoring it to a different
+    period) changes the objective without touching the model, so a surrogate trained under one
     target definition scores against a different objective than one trained under the other.
     """
     from models.surrogate.spec import (Provenance, SurrogateSpec, TargetSpec,   # noqa: E402
@@ -184,6 +177,36 @@ def build_spec(param_list: Path, targets_yaml: Path, name: str, model: str,
 # Main
 # =============================================================================
 
+def resolve_bakeoff_learners(arg: str, registered) -> Tuple[str, ...]:
+    """Resolve `--bakeoff-learners` to an explicit, validated, de-duplicated tuple.
+
+    `all` means every REGISTERED family and is the default: a bake-off that silently omits families
+    leaves the tier-level rule -- a failure counts only if it reproduces across every available
+    family -- quantified over a set the reader cannot see. Measured 2026-09-24, a run reported as
+    covering six families had fitted four, because the count was read off the registry while
+    `validate.compare_learners` was called with its own narrower default.
+
+    REGISTERED is not AVAILABLE. `xgb` defers its `xgboost` import to `fit`, so an absent package
+    surfaces as a recorded per-family error after the run rather than a refusal here, and the
+    caller reports the fitted-versus-failed split instead of guessing at it beforehand.
+    """
+    want = str(arg).strip()
+    fams = (tuple(registered) if want.lower() == "all"
+            else tuple(s.strip() for s in want.split(",") if s.strip()))
+    if not fams:
+        raise SystemExit("REFUSING: --bakeoff-learners resolved to an empty set of families")
+    unknown = [f for f in fams if f not in registered]
+    if unknown:
+        raise SystemExit(f"REFUSING: unknown learner families {unknown}; "
+                         f"registered are {sorted(registered)}")
+    seen, out = set(), []
+    for f in fams:
+        if f not in seen:
+            seen.add(f)
+            out.append(f)
+    return tuple(out)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -197,6 +220,14 @@ def main() -> int:
     ap.add_argument("--learner", default="rf")
     ap.add_argument("--bakeoff", action="store_true",
                     help="compare learner families before fitting and report the ranking")
+    ap.add_argument("--bakeoff-learners", default="all",
+                    help="comma-separated learner families for --bakeoff, or `all` (the default) "
+                         "for every family in models.surrogate.learners.LEARNERS. `all` is the "
+                         "default because a bake-off that silently omits families makes the "
+                         "tier-level rule -- a failure counts only if it reproduces across every "
+                         "AVAILABLE family -- quantified over a set the reader cannot see. "
+                         "`validate.compare_learners` has its own narrower default and is "
+                         "unchanged, so other callers are unaffected")
     ap.add_argument("--test-fraction", type=float, default=0.2)
     ap.add_argument("--split", default="random",
                     choices=["random", "block", "axis", "shell"],
@@ -305,9 +336,27 @@ def main() -> int:
     bakeoff = None
     if a.bakeoff:
         from models.surrogate.validate import bakeoff_summary, compare_learners
+        from models.surrogate.learners import LEARNERS
+        fams = resolve_bakeoff_learners(a.bakeoff_learners, LEARNERS)
+        # WHAT THE VERDICT IS QUANTIFIED OVER MUST BE VISIBLE, NOT INFERRED FROM A REGISTRY.
+        # A family can be registered and still not fit -- `xgb` defers its import to `fit`, so an
+        # absent `xgboost` shows up as a recorded error rather than a crash. Printing the requested
+        # roster BEFORE the run, and the fitted-versus-failed split after it, is what stops a reader
+        # reading "no family succeeded" off a table that never tried two of them.
+        print(f"bakeoff   : {len(fams)} learner families requested: {', '.join(fams)}")
         m = vtr
-        bakeoff = compare_learners(spec, Xtr[m], Ytr[m])
+        bakeoff = compare_learners(spec, Xtr[m], Ytr[m], learners=fams)
+        res = bakeoff.get("results", {})
+        fitted = sorted(k for k, v in res.items() if "error" not in v)
+        failed = {k: v["error"] for k, v in res.items() if "error" in v}
+        bakeoff["requested_learners"] = list(fams)
+        bakeoff["fitted_learners"] = fitted
+        bakeoff["failed_learners"] = failed
         print(bakeoff_summary(bakeoff))
+        print(f"bakeoff   : fitted {len(fitted)} of {len(fams)} requested "
+              f"({', '.join(fitted) or 'none'})")
+        for name, err in sorted(failed.items()):
+            print(f"  NOT FITTED  {name}: {err}")
 
     model = S1Surrogate(spec, learner=a.learner).fit(Xtr, Ytr, viable=vtr)
 

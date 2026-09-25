@@ -8,10 +8,10 @@ description: >
 visibility: public
 category: calibration
 modes:
-  requires_fates: false      # version/format-agnostic port tool; validated on FATES api-31 -> api-43 but not FATES-only
+  requires_fates: true       # the underlying tool is parameterized, but every worked path here is FATES
   nutrient_pathway: any
-  scope: [calibration]
-  summary: "Port a tuned parameter file across model/API versions (PFT identity remap + tuned-value transfer). Model-agnostic."
+  scope: [fates, calibration]
+  summary: "Port a tuned FATES parameter file across API versions (PFT identity remap + tuned-value transfer). The tool takes --pft-dim/--id-var, so it CAN serve another model; this skill does not yet show how, which is why it declares FATES."
 ---
 
 # port-param-file — migrate a tuned parameter file across model/API versions

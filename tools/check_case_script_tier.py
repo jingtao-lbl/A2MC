@@ -52,6 +52,25 @@ TIER_RULE_EFFECTIVE = "20260822"
 STEM_DATE = re.compile(r"(\d{8})")
 
 
+#: Suffix a case uses to mark a stem copy as an UNADAPTED copy of its template, so a reader of the
+#: stem can see at a glance that it was not modified. PFLOTRAN_miniLEO uses it
+#: (`compare_outflow_chemistry_TEMPLATE_COPY.py` beside the template `compare_outflow_chemistry.py`).
+TEMPLATE_COPY_SUFFIX = "_TEMPLATE_COPY"
+
+
+def _template_of(name: str) -> str:
+    """The template name a decorated stem copy corresponds to, or the name unchanged.
+
+    Without this the pairing is defeated by the copy ADVERTISING what it is: a copy named
+    `X_TEMPLATE_COPY.py` never matches the template `X.py`, so a case that followed the tier rule and
+    labelled its copies was reported as having skipped it (measured 2026-09-22, PFLOTRAN_miniLEO).
+    """
+    stem, dot, ext = name.rpartition(".")
+    if dot and stem.endswith(TEMPLATE_COPY_SUFFIX):
+        return stem[: -len(TEMPLATE_COPY_SUFFIX)] + dot + ext
+    return name
+
+
 def tracked_files() -> list[str]:
     """Enumerate from the git index, never a filesystem walk.
 
@@ -88,9 +107,25 @@ def scan(site_filter=None):
     instances: dict[str, dict[str, list[tuple[str, str]]]] = collections.defaultdict(
         lambda: collections.defaultdict(list))
 
+    # A PACKAGED BUNDLE IS NOT CASE SCRIPTS. `tools/package_surrogate.py` copies part of
+    # `models/surrogate/` into a bundle under a stem, so every module in it is FRAMEWORK code that
+    # happens to sit in `phase_results/`. Measured 2026-09-22: the two `__init__.py` package markers
+    # of one bundle (`models/` and `models/surrogate/`) were reported as a duplicated case script
+    # with advice to template them, which is meaningless -- and had a case ever held two bundles,
+    # every shipped module would have been flagged too. A bundle root is the directory holding the
+    # manifest the packager writes, so the file list identifies them without touching the disk.
+    bundle_roots = tuple(rel.rsplit("/", 1)[0] + "/"
+                         for rel in files if rel.endswith("/MANIFEST.sha256"))
+
     for rel in files:
         parts = rel.split("/")
         if len(parts) < 3 or parts[0] != "use_cases" or not rel.endswith(".py"):
+            continue
+        # A package marker is not an analysis script: there is nothing to template, and two of them
+        # are two directories rather than two copies of one tool.
+        if parts[-1].startswith("__") and parts[-1].endswith("__.py"):
+            continue
+        if any(rel.startswith(root) for root in bundle_roots):
             continue
         site = parts[1]
         if site_filter is not None and site not in site_filter:
@@ -107,7 +142,7 @@ def scan(site_filter=None):
         for name, hits in byname.items():
             if len(hits) < 2:
                 continue
-            if name in templates.get(site, set()):
+            if name in templates.get(site, set()) or _template_of(name) in templates.get(site, set()):
                 continue                                 # the template tier is being used
             newest = max((STEM_DATE.match(s).group(1) if STEM_DATE.match(s) else "00000000")
                          for s, _ in hits)

@@ -1,20 +1,27 @@
 """Learner families — the model-class axis, orthogonal to the tier axis.
 
 TIER answers *what is emulated* (scalar vs trajectory vs field). LEARNER answers
-*with what model family*. An earlier cut of this package conflated them by
-hard-coding RandomForest inside S0/S1, which shipped one family and called it a
-ladder. This module separates the axes so a tier can be fitted with any family
-and the acceptance battery decides which wins, on evidence rather than taste.
+*with what model family*. The axes are independent, so a tier class can be fitted
+with any family and the acceptance battery decides which wins, on evidence rather
+than taste.
 
 Families, and the inductive bias each brings:
 
-  rf    RandomForest. Axis-aligned splits REPRESENT a cliff, which matters here:
-        the recorded 2025 failure (Fineroot_PFT7 R2=0.48) was attributed to
-        threshold structure, and EcoSIM restates it with the VCMX4 knife-edge.
+  ridge Cross-validated ridge regression. Linear: the COMPLEXITY BASELINE, which
+        answers whether the flexible families earn their complexity. Native std
+        from leverage.
+
+  rf    RandomForest. Axis-aligned splits REPRESENT a cliff, which matters for
+        process models whose response switches regime at a parameter threshold
+        (a knife-edge beyond which a run collapses).
         Native std from inter-tree spread. Cheap, tuning-free. The baseline.
 
   gbm   Histogram gradient boosting. Same axis-aligned bias, usually stronger
         pointwise than RF, native NaN handling. No native std.
+
+  xgb   XGBoost gradient-boosted trees, the same algorithmic family as `gbm`.
+        OPTIONAL: needs the `xgboost` package, imported at fit. For a caller who
+        wants XGBoost specifically. No native std.
 
   gp    Gaussian process, ARD Matern-5/2 + white noise. The canonical emulator
         for computer experiments. Two things RF cannot give: a predictive
@@ -25,9 +32,8 @@ Families, and the inductive bias each brings:
         precisely because RBF's smoothness prior is wrong for knife edges.
 
   mlp   Deep ensemble of MLPs (torch). Epistemic UQ from ensemble disagreement,
-        and the on-ramp to S2/S3 because it is the only family here that accepts
-        a CUSTOM LOSS. That is what makes physics-guided training possible at
-        all: see `KnowledgeGuidedLoss` below, which implements the "physics-
+        and the only family here that accepts a CUSTOM LOSS. That is what makes
+        physics-guided training possible at all: see `KnowledgeGuidedLoss` below, which implements the "physics-
         guided loss" family of Willard et al. (2022) / the review's Table 1
         (conservation, monotonicity, bounds, consistency as penalties).
 
@@ -57,6 +63,10 @@ class Learner(ABC):
 
     #: True when `predict_std` returns a meaningful per-point sigma rather than None.
     supports_std: bool = False
+    #: True only when `predict_std` is a predictive POSTERIOR std that may be integrated as a
+    #: Gaussian, which is what an acquisition function does with it. A spread across trees, a
+    #: leverage term or an ensemble disagreement is a sigma for shaping conformal scores, not one.
+    posterior_std: bool = False
     name: str = "learner"
 
     @abstractmethod
@@ -133,14 +143,15 @@ class RidgeLearner(Learner):
     Correlation is a real risk here even though a Sobol design samples inputs
     independently, for two reasons that are easy to miss: the regressors are fit
     on the VIABLE SUBSET ONLY, and filtering rows on an outcome can induce
-    correlation among inputs within the retained set; and R1/R2 are Morris
-    trajectories and crossed factorials rather than space-filling, so their
-    columns are correlated by construction.
+    correlation among inputs within the retained set; and Morris trajectories and
+    crossed factorial designs are not space-filling, so their columns are
+    correlated by construction.
 
     **Not Lasso**, which is a different tool: it performs variable SELECTION, and
     under correlated inputs it arbitrarily keeps one member of a correlated group
-    and zeros the others. That produces a false sensitivity story ("VRNXI matters,
-    PPI does not") in a module that is explicitly building toward sensitivity.
+    and zeros the others. That produces a false sensitivity story ("parameter A
+    matters, parameter B does not") in a module that is explicitly building toward
+    sensitivity.
 
     Native sigma comes from LEVERAGE, the textbook extrapolation diagnostic for a
     linear model: var(x) = s^2 (1 + z' (Z'Z + alpha I)^-1 z). Exact for OLS,
@@ -232,52 +243,163 @@ class GBMLearner(Learner):
         return self._m.predict(X)
 
 
+class XGBLearner(Learner):
+    """XGBoost gradient-boosted trees. OPTIONAL: `xgboost` is not a dependency of this module.
+
+    `gbm` (sklearn's histogram gradient boosting) is the same algorithmic family and needs nothing
+    beyond scikit-learn, so it stays the default boosted learner. This entry exists for a caller who
+    wants XGBoost specifically -- its regularisation terms, its GPU training, or parity with a
+    published XGBoost surrogate. The import is deferred to `fit`, so registering it costs nothing
+    where the package is absent, and a missing package fails loudly at the point of use.
+    """
+
+    supports_std = False
+    name = "xgb"
+
+    def __init__(self, random_state: int = 0, n_estimators: int = 600,
+                 learning_rate: float = 0.05, max_depth: int = 6, subsample: float = 0.8,
+                 colsample_bytree: float = 0.8, **kw: Any) -> None:
+        self.kw = dict(random_state=random_state, n_estimators=n_estimators,
+                       learning_rate=learning_rate, max_depth=max_depth, subsample=subsample,
+                       colsample_bytree=colsample_bytree, tree_method="hist", **kw)
+        self._m: Any = None
+
+    def fit(self, X, y):
+        try:
+            import xgboost
+        except ImportError as e:
+            raise ImportError(
+                "the 'xgb' learner needs the optional `xgboost` package (pip install xgboost). "
+                "`gbm` is the dependency-free gradient-boosting family.") from e
+        self._m = xgboost.XGBRegressor(**self.kw).fit(np.asarray(X, dtype=float),
+                                                      np.asarray(y, dtype=float))
+        return self
+
+    def predict(self, X):
+        return self._m.predict(np.asarray(X, dtype=float))
+
+
 # =============================================================================
 # Gaussian process
 # =============================================================================
+
+def _fitted_length_scale(kernel: Any) -> Optional[np.ndarray]:
+    """The ARD length scales of a fitted composite kernel, or None if it has none.
+
+    Read through `get_params()` rather than by walking `k1.k2...`, because the path depends on how
+    the kernel was composed and a wrong attribute chain would raise where this is only diagnostic.
+    """
+    try:
+        params = kernel.get_params()
+    except AttributeError:                                    # pragma: no cover - not a kernel
+        return None
+    for key, value in params.items():
+        if key.endswith("length_scale") and not key.endswith("length_scale_bounds"):
+            return np.atleast_1d(np.asarray(value, dtype=float))
+    return None
+
 
 class GPLearner(Learner):
     """ARD Matern-5/2 GP with a learned noise term.
 
     Standardises X and y internally because GP hyperparameter optimisation is
-    scale-sensitive and our inputs span wildly different units (a season length
-    in days beside a pool multiplier).
+    scale-sensitive and calibration inputs routinely span very different units (a
+    duration in days beside a dimensionless multiplier).
     """
 
     supports_std = True
+    posterior_std = True
     name = "gp"
 
     def __init__(self, nu: float = 2.5, max_points: int = 1500,
                  n_restarts: int = 2, random_state: int = 0,
-                 normalize_y: bool = True) -> None:
+                 normalize_y: bool = True,
+                 length_scale0: Optional[float] = None) -> None:
+        #: Starting value for every ARD length scale. `None` means sqrt(d), which is the fix for
+        #: the high-dimension non-fit described in `fit`; an explicit number overrides it, and is
+        #: there so a test can reproduce the old unit start rather than that value being baked in
+        #: where nothing can reach it.
+        self.length_scale0 = length_scale0
         self.nu = nu
         self.max_points = max_points
         self.n_restarts = n_restarts
         self.random_state = random_state
         self.normalize_y = normalize_y
+        #: Set by `fit`: the start actually used, the length scales the optimiser reached, and the
+        #: median relative distance between them -- the diagnostic that separates a fit from a
+        #: non-fit, since a GP that never left its start scores like a bad fit and is not one.
+        self.length_scale_start_: Optional[float] = None
+        self.length_scale_: Optional[np.ndarray] = None
+        self.length_scale_move_: float = float("nan")
         self._m: Any = None
         self._mu: Optional[np.ndarray] = None
         self._sd: Optional[np.ndarray] = None
         self.n_used = 0
+        #: Sorted indices into the `X` passed to `fit` of the rows the posterior was fitted on.
+        #: The same row SET as `training_inputs()` before any `condition_on`, not the same ORDER:
+        #: a subsample without `priority` keeps the random draw order, so pair the two by
+        #: coordinates, never by position.
+        self.train_idx_: Optional[np.ndarray] = None
 
-    def fit(self, X, y):
+    def fit(self, X, y, priority=None, keep_best: int = 0):
+        """Fit on `(X, y)`, subsampling to `max_points` rows when there are more.
+
+        `priority` (n,) and `keep_best` shape that subsample: the `keep_best` rows with the
+        smallest finite priority are always kept (ties to the lower index) and the other
+        `max_points - keep_best` rows are drawn without replacement from the rest. A search passes
+        its objective here so the incumbent cannot be subsampled away. Without `priority` the
+        subsample is the plain random draw. `train_idx_` records which rows were used.
+        `keep_best` must be a whole number in [0, max_points] and `priority` must have one entry
+        per row of `X`, whether or not a subsample happens.
+        """
         from sklearn.gaussian_process import GaussianProcessRegressor
         from sklearn.gaussian_process.kernels import (
             ConstantKernel, Matern, WhiteKernel)
 
         X = np.asarray(X, dtype=float)
         y = np.asarray(y, dtype=float)
+        kb = float(keep_best)
+        if not (np.isfinite(kb) and kb == int(kb)):
+            raise ValueError(
+                f"keep_best must be a whole number of rows, got {keep_best!r}; pass an int")
+        keep_best = int(kb)
+        if not 0 <= keep_best <= self.max_points:
+            raise ValueError(
+                f"keep_best must be in [0, max_points={self.max_points}], got {keep_best}; "
+                "raise max_points or keep fewer rows")
+        if priority is not None:
+            priority = np.asarray(priority, dtype=float).ravel()
+            if len(priority) != len(X):
+                raise ValueError(
+                    f"priority has {len(priority)} entries, X has {len(X)} rows; pass one "
+                    "priority per row")
 
         # O(n^3): subsample rather than hang. Loud, because a silently
         # subsampled GP would be compared against full-data rivals in a bakeoff.
-        if len(X) > self.max_points:
+        n = len(X)
+        if n > self.max_points:
             rng = np.random.default_rng(self.random_state)
-            idx = rng.choice(len(X), self.max_points, replace=False)
+            if priority is None:
+                idx = rng.choice(n, self.max_points, replace=False)
+                kept = ""
+            else:
+                finite = np.flatnonzero(np.isfinite(priority))
+                best = finite[np.argsort(priority[finite], kind="stable")[:keep_best]]
+                rest = np.ones(n, dtype=bool)
+                rest[best] = False
+                others = np.flatnonzero(rest)
+                drawn = others[rng.choice(len(others), self.max_points - len(best),
+                                          replace=False)]
+                idx = np.sort(np.concatenate([best, drawn]))
+                kept = f", keeping the {len(best)} lowest-priority rows"
             warnings.warn(
-                f"GPLearner: subsampled {len(X)} -> {self.max_points} points "
+                f"GPLearner: subsampled {n} -> {self.max_points} points{kept} "
                 "(cubic cost). Raise max_points or prefer a tree family.",
                 RuntimeWarning)
             X, y = X[idx], y[idx]
+            self.train_idx_ = np.sort(idx)
+        else:
+            self.train_idx_ = np.arange(n)
         self.n_used = len(X)
 
         self._mu = X.mean(axis=0)
@@ -287,17 +409,52 @@ class GPLearner(Learner):
         Z = (X - self._mu) / self._sd
 
         d = Z.shape[1]
+        # THE ARD LENGTH SCALES START AT sqrt(d), NOT AT 1, and the difference is the whole fit in
+        # high dimension. On standardised inputs the squared distance between two points grows like
+        # 2d, so with a unit length scale in 54 dimensions every pair is effectively uncorrelated:
+        # measured on EcoSIM_Lusignan, median off-diagonal kernel correlation 1.7e-8 and an
+        # objective gradient of 1.5e-4, whereupon L-BFGS-B reports convergence AT THE STARTING
+        # POINT and the restarts do not rescue it. Nothing warned; the learner returned R^2 -0.003
+        # and looked like a family that had been tried and failed. Started at sqrt(d) the same fit
+        # on the same 1,000 points returns R^2 0.881 with no restarts. The threshold measured on
+        # synthetic data is between 40 and 44 inputs, so BioCON (28) and miniLEO (16) were below it
+        # and Lusignan (54) above -- which is why this survived every case that had run.
+        # Full account: memory/dev_logs_adapterkit/20260916j, finding C1, and 20260916k section 2.
+        ls0 = float(self.length_scale0) if self.length_scale0 else float(np.sqrt(d))
         # Generous ConstantKernel bounds: with a narrow upper bound the signal
         # variance saturates against it and sklearn emits a ConvergenceWarning,
         # which means the fit was bound-limited rather than optimised.
         kernel = (ConstantKernel(1.0, (1e-4, 1e6))
-                  * Matern(length_scale=np.ones(d), nu=self.nu,
+                  * Matern(length_scale=np.full(d, ls0), nu=self.nu,
                            length_scale_bounds=(1e-2, 1e3))
                   + WhiteKernel(1e-3, (1e-8, 1e1)))
         self._m = GaussianProcessRegressor(
             kernel=kernel, normalize_y=self.normalize_y,
             n_restarts_optimizer=self.n_restarts,
             random_state=self.random_state).fit(Z, y)
+        self.length_scale_start_ = ls0
+        self.length_scale_ = _fitted_length_scale(self._m.kernel_)
+        # THE SILENT HALF OF THE DEFECT, made loud. A GP whose optimiser never left its starting
+        # point is not a GP that fitted badly, it is a GP that did not fit, and a score alone
+        # cannot tell the two apart. sklearn raises nothing for it, so this does.
+        #
+        # THE MEASURE IS THE MEDIAN RELATIVE MOVE, and the bar is not arbitrary: on a 48-input
+        # synthetic case the failed fit moves its length scales by a median of 5e-6 relative while
+        # the working one moves by 143, eight orders of magnitude apart, so anything in between
+        # separates them. An exact-equality test would MISS it -- L-BFGS-B takes one flat step and
+        # stops, leaving the scales near the start rather than exactly on it.
+        self.length_scale_move_ = (
+            float(np.median(np.abs(self.length_scale_ - ls0) / ls0))
+            if self.length_scale_ is not None and self.length_scale_.size else float("nan"))
+        if self.length_scale_move_ < 1e-3:
+            warnings.warn(
+                f"GPLearner: the optimiser barely moved the {d} ARD length scales from their "
+                f"start of {ls0:.4g} (median relative move {self.length_scale_move_:.2e}), so the "
+                f"kernel is effectively the initial one and the fit carries little information "
+                f"from the data. This is the high-dimension failure mode: with too small a start "
+                f"the objective is flat where the optimiser begins. Check the score, and see "
+                f"`length_scale0` if you set it yourself.",
+                RuntimeWarning)
         return self
 
     def _z(self, X):
@@ -309,6 +466,73 @@ class GPLearner(Learner):
     def predict_std(self, X):
         _, sd = self._m.predict(self._z(X), return_std=True)
         return sd
+
+    def training_inputs(self) -> np.ndarray:
+        """(n_used, p) native-unit inputs the posterior conditions on.
+
+        The de-standardised stored training set: after any `max_points` subsample, and including
+        points added by `condition_on`. Rows are in stored order, which is not the order of
+        `train_idx_` (see there), so `training_inputs()[i]` need not be `X[train_idx_[i]]`.
+        """
+        if self._m is None:
+            raise RuntimeError("GPLearner.training_inputs: the learner is not fitted")
+        return np.asarray(self._m.X_train_, dtype=float) * self._sd + self._mu
+
+    def predict_mean_std(self, X):
+        """Posterior mean and predictive std from ONE posterior evaluation.
+
+        The std is the predictive std of an observation: it includes the fitted WhiteKernel noise,
+        so it does not fall to zero at a training point.
+        """
+        return self._m.predict(self._z(X), return_std=True)
+
+    def condition_on(self, X_new, y_new) -> "GPLearner":
+        """A NEW learner whose posterior also conditions on `(X_new, y_new)`, nothing refitted.
+
+        Kernel hyperparameters, the X standardisation and the y normalisation are all FROZEN at
+        the values this learner was fitted with, which is what a Kriging believer requires: the
+        fake observation may shrink the posterior spread near it, and must not move the
+        hyperparameters or the prior mean anywhere else. `y_new` is in this learner's own
+        training space. It conditions on the stored training set (`X_train_`, possibly
+        subsampled by `max_points`), never on the caller's data, so no point is counted twice.
+        This learner is left untouched.
+        """
+        import copy
+        from sklearn.gaussian_process import GaussianProcessRegressor
+
+        if self._m is None:
+            raise RuntimeError("GPLearner.condition_on: the learner is not fitted")
+        g = self._m
+        # sklearn stores the training targets normalised and keeps the constants only as private
+        # attributes; refuse rather than silently de-normalise with the wrong ones.
+        for attr in ("X_train_", "y_train_", "kernel_", "_y_train_mean", "_y_train_std"):
+            if not hasattr(g, attr):
+                raise RuntimeError(
+                    f"GPLearner.condition_on: the fitted GaussianProcessRegressor has no {attr!r} "
+                    "(sklearn internals changed); conditioning cannot freeze the normalisation")
+        Xn = np.atleast_2d(np.asarray(X_new, dtype=float))
+        yn = np.asarray(y_new, dtype=float).ravel()
+        if len(Xn) != len(yn):
+            raise ValueError(f"condition_on: {len(Xn)} points but {len(yn)} values")
+        if not np.all(np.isfinite(yn)) or not np.all(np.isfinite(Xn)):
+            raise ValueError("condition_on: non-finite conditioning point or value")
+        Z = np.vstack([g.X_train_, self._z(Xn)])
+        yz = np.concatenate([np.asarray(g.y_train_, dtype=float).ravel(),
+                             (yn - g._y_train_mean) / g._y_train_std])
+        gp = GaussianProcessRegressor(kernel=g.kernel_, optimizer=None, normalize_y=False,
+                                      alpha=g.alpha)
+        try:
+            gp.fit(Z, yz)
+        except np.linalg.LinAlgError as exc:
+            raise ValueError(
+                "condition_on: the kernel matrix is not positive definite after adding the "
+                "points, typically because one duplicates a training point; separate proposals "
+                "from observed points before conditioning") from exc
+        gp._y_train_mean, gp._y_train_std = g._y_train_mean, g._y_train_std
+        out = copy.copy(self)
+        out._m = gp
+        out.n_used = len(Z)
+        return out
 
     def sensitivity(self):
         """Inverse ARD length-scale per input: short length-scale = influential.
@@ -342,8 +566,8 @@ class KnowledgeGuidedLoss:
     network with respect to SPACE AND TIME and drives a PDE residual to zero;
     this penalises a relation among the OUTPUTS of a theta -> y map, and has no
     coordinates to differentiate against. Adding a PDE residual term here would
-    need a governing equation, which exists for PFLOTRAN and ATS and does not
-    for EcoSIM or ELM-FATES, plus boundary and initial conditions and a
+    need a governing equation, which a PDE-based process model has and many
+    process models do not, plus boundary and initial conditions and a
     loss-balancing scheme. Scope, entry condition and the documented failure
     modes: `docs/41` section 4.2. It is gated two tiers away and is deliberately
     not started here.
@@ -405,10 +629,8 @@ class MLPEnsembleLearner(Learner):
     ensembles); it is used to normalise conformal scores, never as an interval
     on its own.
 
-    This family exists for two reasons beyond accuracy: it is the only one here
-    that accepts a custom loss, so it is the entry point for knowledge-guided
-    training; and it is the architecture S2/S3 would grow from, so building it
-    now means the later tiers are an extension rather than a rewrite.
+    Beyond accuracy, it is the only family here that accepts a custom loss, which
+    makes it the entry point for knowledge-guided training (`KnowledgeGuidedLoss`).
     """
 
     supports_std = True
@@ -503,7 +725,7 @@ class MLPEnsembleLearner(Learner):
 # =============================================================================
 
 LEARNERS = {"ridge": RidgeLearner, "rf": RFLearner, "gbm": GBMLearner,
-            "gp": GPLearner, "mlp": MLPEnsembleLearner}
+            "gp": GPLearner, "mlp": MLPEnsembleLearner, "xgb": XGBLearner}
 
 
 def make_learner(spec: Any, **kw: Any) -> Learner:
@@ -526,22 +748,21 @@ def make_learner(spec: Any, **kw: Any) -> Learner:
 # =============================================================================
 #
 # S1 answers two questions: "will this run survive?" (classification) and "if it
-# does, what comes out?" (regression). An earlier cut let the caller choose the
-# regression family while silently hard-coding RandomForest for classification,
-# so a bake-off that appeared to compare four approaches was really comparing
-# four half-approaches over one fixed other half. Worse, the fixed half is the
-# alive/dead boundary -- the cliff that has caused most of this project's
-# trouble. That is the last place to bury a choice nobody can see.
+# does, what comes out?" (regression). Both families are the caller's choice: a
+# bake-off with the classifier fixed would compare half-approaches over one hidden
+# other half, and that half is the alive/dead boundary -- typically the sharpest
+# structure in a process model's response.
 
 class MLPEnsembleClassifier:
     """Deep ensemble of MLPs for the alive/dead question, optionally guided.
 
     The torch counterpart of `MLPEnsembleLearner`, and the reason it exists is
     not symmetry: it is the ONLY viability model here that can carry a
-    knowledge-guided loss. The cliff is where this project's difficulty lives
-    (the VCMX4 collapse; R1's bounds centred on a dead graft), so being able to
-    assert "survival must be monotone in this parameter" applies domain
-    knowledge exactly where guessing has been most expensive.
+    knowledge-guided loss. The viability boundary is typically the sharpest
+    structure in a process model's response and the region with least training
+    data on either side, so being able to assert "survival must be monotone in
+    this parameter" applies domain knowledge exactly where guessing is most
+    expensive.
 
     Deliberate choices:
 

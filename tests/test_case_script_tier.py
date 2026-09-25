@@ -112,3 +112,71 @@ def test_non_python_files_are_ignored(repo):
     put(repo, f"{PR}/20260901a_phase5_testing_r03_c01_x/notes.md", "x")
     put(repo, f"{PR}/20260901b_phase6_refinement_r03_c01_x/notes.md", "x")
     assert load(repo).scan()[0] == []
+
+
+# -----------------------------------------------------------------------------
+# What is NOT a case script: a packaged bundle, and a package marker
+# -----------------------------------------------------------------------------
+
+def test_a_PACKAGED_BUNDLE_under_a_stem_is_not_case_scripts(repo):
+    """`package_surrogate.py` copies part of models/surrogate/ into a bundle under a stem.
+
+    Every module in it is FRAMEWORK code that happens to live in phase_results/, so advising the
+    case to template it is advice about somebody else's file. Measured 2026-09-22: a bundle's two
+    package markers were reported as a duplicated case script; had a case held two bundles, every
+    shipped module would have been reported too. The bundle root is the directory holding the
+    manifest the packager writes.
+    """
+    b1 = f"{PR}/20260901a_phase5_testing_r03_c01_x/pkg_review"
+    b2 = f"{PR}/20260901b_phase6_refinement_r03_c01_x/pkg_review"
+    for b in (b1, b2):
+        put(repo, f"{b}/MANIFEST.sha256", "deadbeef  models/surrogate/learners.py\n")
+        put(repo, f"{b}/models/surrogate/learners.py", "SHIPPED\n")
+    f, _ = load(repo).scan()
+    assert f == [], f"a packaged bundle's modules were read as case scripts: {f}"
+
+
+def test_a_script_OUTSIDE_the_bundle_in_the_same_stem_is_still_flagged(repo):
+    """The complement: skipping bundles must not blind the check to the stem around them."""
+    put(repo, f"{PR}/20260901a_phase5_testing_r03_c01_x/pkg_review/MANIFEST.sha256", "x  y\n")
+    put(repo, f"{PR}/20260901a_phase5_testing_r03_c01_x/pkg_review/models/learners.py", "S\n")
+    put(repo, f"{PR}/20260901a_phase5_testing_r03_c01_x/analyze.py")
+    put(repo, f"{PR}/20260901b_phase6_refinement_r03_c01_x/analyze.py")
+    f, _ = load(repo).scan()
+    assert [x["name"] for x in f] == ["analyze.py"]
+
+
+def test_a_PACKAGE_MARKER_is_not_a_duplicated_script(repo):
+    """Two `__init__.py` are two directories, not two copies of one tool, and there is nothing
+    to template. They were 1 of the 4 findings this case carried before 2026-09-22."""
+    put(repo, f"{PR}/20260901a_phase5_testing_r03_c01_x/sub/__init__.py", "")
+    put(repo, f"{PR}/20260901b_phase6_refinement_r03_c01_x/other/__init__.py", "")
+    f, _ = load(repo).scan()
+    assert f == [], f"package markers were read as duplicated scripts: {f}"
+
+
+# -----------------------------------------------------------------------------
+# A copy that LABELS itself an unadapted template copy still pairs with its template
+# -----------------------------------------------------------------------------
+
+def test_a_TEMPLATE_COPY_suffix_pairs_with_its_template(repo):
+    """The pairing must not be defeated by the copy advertising what it is.
+
+    PFLOTRAN_miniLEO names an unadapted stem copy `X_TEMPLATE_COPY.py` beside the template `X.py`,
+    so a reader of the stem can see it was not modified. Matching on the exact filename reported
+    that case as having SKIPPED the tier rule it was following most visibly.
+    """
+    put(repo, f"{SITE}/scripts/compare.py")
+    put(repo, f"{PR}/20260901a_phase5_testing_r03_c01_x/compare_TEMPLATE_COPY.py")
+    put(repo, f"{PR}/20260901b_phase6_refinement_r03_c01_x/compare_TEMPLATE_COPY.py")
+    f, _ = load(repo).scan()
+    assert f == [], f"a labelled template copy did not pair with its template: {f}"
+
+
+def test_the_suffix_does_NOT_excuse_a_MISSING_template(repo):
+    """The other direction, so the suffix cannot become a way to opt out of the rule: with no
+    template of the undecorated name, two labelled copies are still a finding."""
+    put(repo, f"{PR}/20260901a_phase5_testing_r03_c01_x/compare_TEMPLATE_COPY.py")
+    put(repo, f"{PR}/20260901b_phase6_refinement_r03_c01_x/compare_TEMPLATE_COPY.py")
+    f, _ = load(repo).scan()
+    assert [x["name"] for x in f] == ["compare_TEMPLATE_COPY.py"]

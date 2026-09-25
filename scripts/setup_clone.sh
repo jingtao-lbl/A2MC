@@ -43,8 +43,16 @@ echo
 # ---------------------------------------------------------------- 1. git hooks
 echo "[1/3] git hooks (core.hooksPath)"
 CUR_HOOKS="$(git config --get core.hooksPath 2>/dev/null || true)"
+CUR_HOOKS="${CUR_HOOKS%/}"
 if [ "$CUR_HOOKS" = ".githooks" ]; then
     echo "    already set: core.hooksPath = .githooks"
+elif [ -n "$CUR_HOOKS" ] && [ "${CUR_HOOKS#/}" = "$CUR_HOOKS" ] && [ "${CUR_HOOKS%%/*}" != ".." ] \
+     && [ -d "$ROOT/$CUR_HOOKS" ] \
+     && [ -n "$(git -C "$ROOT" ls-files -- "$CUR_HOOKS/pre-commit" "$CUR_HOOKS/commit-msg" 2>/dev/null)" ]; then
+    # A hooks directory this repository TRACKS, set by a project folder's own onboarding.
+    # Resetting it would break that project's own checks; tools/check_clone_setup.py::_own_hooks_dir
+    # is the same rule.
+    echo "    kept: core.hooksPath = $CUR_HOOKS (this repository's own tracked hooks)"
 elif [ -d "$ROOT/.githooks" ]; then
     do_or_echo git config core.hooksPath .githooks
     echo "    set core.hooksPath = .githooks"
@@ -112,5 +120,44 @@ else
         echo "    verify: $(head -1 "$BUCKET/MEMORY.md")"
     fi
 fi
+
+# ---------------------------------------------------------------------------------------------
+# 5. the temp directory a RUNTIME write lands in
+#
+# NERSC's hard rule is no writes outside $HOME. The PreToolUse hook that enforces it can only read
+# a command's TEXT, so a path built at runtime -- a tempfile constructor, a library's scratch file
+# -- carries no literal to match and slips past it. Pointing the temp-directory variable inside
+# $HOME fixes that by construction, in any language that honours the variable.
+#
+# This lives in a SHELL PROFILE, so git cannot carry it and a fresh clone always starts without
+# it. This step reports and prints the line; it does NOT edit your profile, because that file is
+# outside this repository and outside this script's remit.
+# ---------------------------------------------------------------------------------------------
+echo
+echo "== 5. runtime temp directory"
+if [ -z "${NERSC_HOST:-}" ]; then
+    # The rule is NERSC's; off NERSC this step does not apply, matching check_clone_setup.py's NA
+    # (audit 20260923b, F28 and persona P2).
+    echo "    N/A: not a NERSC machine (NERSC_HOST unset); the \$HOME-only write rule is NERSC's"
+else
+TD_REAL="$(cd "${TMPDIR:-/nonexistent}" 2>/dev/null && pwd -P || echo "")"
+HOME_REAL="$(cd "$HOME" && pwd -P)"
+case "$TD_REAL" in
+    "$HOME_REAL"|"$HOME_REAL"/*)
+        echo "    OK: $TMPDIR is inside \$HOME"
+        ;;
+    *)
+        echo "    NOT SET UP: a runtime temp write would land outside \$HOME."
+        echo "    Add this to your shell profile (~/.bashrc), then open a new shell:"
+        echo
+        echo "        [ -z \"\$SLURM_JOB_ID\" ] && [ -d \"$ROOT/tmp\" ] && export TMPDIR=\"$ROOT/tmp\""
+        echo
+        echo "    The SLURM_JOB_ID guard is deliberate: inside a batch job the system default"
+        echo "    stands, so a large job's temporaries stay on node-local storage rather than"
+        echo "    filling the home quota."
+        ;;
+esac
+fi
+
 echo
 echo "== done.$([ "$DRY" = 1 ] && echo ' (dry-run — nothing changed)')"

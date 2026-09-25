@@ -40,10 +40,12 @@ if git diff --cached --name-only --diff-filter=ACMRD \
      | grep -qE '^\.claude/skills/|^docs/a2mc_reference/skills_catalog\.md$|^AGENTS\.md$|^tools/|^scripts/|^CLAUDE\.md$|^README\.md$'; then
     PY="$(pick_py)"
     if [[ -z "$PY" ]]; then
-        echo "pre-commit: python3 not found; skipping skill-registry check" >&2
-        exit 0
+        # NOT `exit 0`: that leaves the HOOK, not this check, so every check BELOW would be
+        # skipped and the commit reported clean. Fall through instead -- the guard on the next
+        # line skips only this one, which is what the rest of the hook already does.
+        echo "pre-commit: python3 not found; skipping the skill-registry check ONLY" >&2
     fi
-    if ! "$PY" "$ROOT/tools/check_skill_registry.py"; then
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_skill_registry.py"; then
         echo "" >&2
         echo "pre-commit: skill-registry drift — fix the above (register in all THREE: the" >&2
         echo "  README 'Current skills' table, docs/a2mc_reference/skills_catalog.md, AND the" >&2
@@ -57,10 +59,12 @@ fi
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^phases/'; then
     PY="$(pick_py)"
     if [[ -z "$PY" ]]; then
-        echo "pre-commit: python3 not found; skipping phase script-doc check" >&2
-        exit 0
+        # NOT `exit 0`: that leaves the HOOK, not this check, so every check BELOW would be
+        # skipped and the commit reported clean. Fall through instead -- the guard on the next
+        # line skips only this one, which is what the rest of the hook already does.
+        echo "pre-commit: python3 not found; skipping the phase script-doc check ONLY" >&2
     fi
-    if ! "$PY" "$ROOT/tools/check_phase_script_docs.py"; then
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_phase_script_docs.py"; then
         echo "" >&2
         echo "pre-commit: phase script-doc drift — scripts are truth. Update the phase" >&2
         echo "  CLAUDE.md 'Scripts in This Folder' table to match the *.py on disk (do NOT" >&2
@@ -75,10 +79,12 @@ fi
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude_memory/'; then
     PY="$(pick_py)"
     if [[ -z "$PY" ]]; then
-        echo "pre-commit: python3 not found; skipping memory-bucket check" >&2
-        exit 0
+        # NOT `exit 0`: that leaves the HOOK, not this check, so every check BELOW would be
+        # skipped and the commit reported clean. Fall through instead -- the guard on the next
+        # line skips only this one, which is what the rest of the hook already does.
+        echo "pre-commit: python3 not found; skipping the memory-bucket check ONLY" >&2
     fi
-    if ! "$PY" "$ROOT/tools/check_memory_bucket.py"; then
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_memory_bucket.py"; then
         echo "" >&2
         echo "pre-commit: memory-bucket frontmatter invalid — every .claude_memory/*.md needs a" >&2
         echo "  valid machine/visibility/scope/type (schema: docs/29). Bypass with --no-verify" >&2
@@ -304,7 +310,7 @@ fi
 # passed did not reach the log, and committing it makes the loss permanent -- the source dict is
 # gone and the log is the only record. That is exactly what happened to the 20.
 if git diff --cached --name-only --diff-filter=ACMR \
-     | grep -qE '(/memory/logs/|^memory/(dev_logs|model_logs|ana_logs))'; then
+     | grep -qE '(/memory/logs/|^memory/dev_logs)'; then
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
@@ -386,7 +392,7 @@ fi
 # on a judgement is how gates get bypassed wholesale. What it removes is the ability to defer
 # SILENTLY.
 if git diff --cached --name-only --diff-filter=ACMR \
-     | grep -qE '^memory/(dev_logs|model_logs)'; then
+     | grep -qE '^memory/dev_logs'; then
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
@@ -413,7 +419,7 @@ fi
 # each Skill invocation. BLOCKS on a claimed-but-never-invoked skill; the fix is to invoke the
 # skill and redo the step it governs, or to drop the name.
 if git diff --cached --name-only --diff-filter=ACMR \
-     | grep -qE '^(use_cases/.+/memory/logs/|memory/(dev_logs|model_logs|ana_logs))'; then
+     | grep -qE '^(use_cases/.+/memory/logs/|memory/dev_logs)'; then
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
@@ -645,7 +651,7 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^rag/'; then
     fi
 fi
 
-# (17) Curated-seed -> knowledge-graph COVERAGE. Fires only when a commit touches a seed, a graph
+# (19) Curated-seed -> knowledge-graph COVERAGE. Fires only when a commit touches a seed, a graph
 # or a graph builder, because it reads every registered profile and there is no reason to pay that
 # on an unrelated commit.
 #
@@ -735,6 +741,155 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^use_cases/[^/]+
         echo "  See .claude/skills/write-report/SKILL.md and .claude/skills/literature-review/SKILL.md" >&2
         echo "  (Stage 2/4: validate the DOI before including it). Bypass with --no-verify only if" >&2
         echo "  you know why." >&2
+        exit 1
+    fi
+fi
+
+# (23) tools/check_source_notes.py -- incident detail belongs in the dev log, not in a docstring.
+#
+# WHY. `feedback_notes_go_to_dev_logs_not_source` says a docstring states what the code does and why
+# it is shaped that way, while dates, costs and post-mortems go in the dev log, which is written to be
+# read as history and is where the detail should be COMPLETE. A dated post-mortem in a docstring is
+# also stale by construction when it asserts a mutable state, and `tools/` SHIPS, so development
+# history there is the same leak class as a skill's stripped `## Changelog`.
+#
+# DELIBERATELY NARROW, because a checker that fires on a third of the codebase gets switched off.
+# Dated evidence in an inline comment is this repo's established style, measured at 1,461 occurrences
+# across 609 tracked files, and is NOT touched. Two signals are: an observed environment state in any
+# docstring or comment, and a dated passage ADDED to a MODULE docstring that names no dev log.
+if [[ -n "$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(py|sh)$')" ]]; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        CSN_OUT="$("$PY" "$ROOT/tools/check_source_notes.py" --staged 2>&1)"
+        CSN_RC=$?
+        set -e
+        if [[ $CSN_RC -ne 0 ]]; then
+            echo "" >&2
+            echo "$CSN_OUT" | sed 's/^/  /' >&2
+            echo "pre-commit: a staged source file carries incident detail that belongs in a dev log." >&2
+            echo "  Keep the durable rule in the docstring and put the account in the dev log, IN FULL." >&2
+            echo "  See .claude_memory/feedback_notes_go_to_dev_logs_not_source.md" >&2
+            exit 1
+        fi
+    fi
+fi
+
+# (22) OVERSIZED BLOB. GitHub hard-REJECTS any file over 100 MB, and the rejection lands at PUSH,
+# after the commit already exists -- so the cost is a history rewrite rather than an edit. Nothing
+# else here catches it: .gitignore closes instances by NAME, and a name list cannot anticipate the
+# next generated array. Measured 2026-09-23: a 486 MB extraction sat untracked-and-unignored
+# because the pattern meant to catch it required a suffix the filename did not have.
+#
+# The threshold is 50 MB, half of GitHub's limit, so a file that grows between commits still trips
+# this before it trips the server. Overridable for the deliberate case:  A2MC_ALLOW_BIG=1 git commit
+if [[ "${A2MC_ALLOW_BIG:-0}" != "1" ]]; then
+    BIG=""
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        sz=$(stat -c '%s' "$f" 2>/dev/null || echo 0)
+        if [[ "$sz" -gt 52428800 ]]; then
+            BIG+="      $(awk -v s="$sz" 'BEGIN{printf "%6.1f MB", s/1048576}')  $f"$'\n'
+        fi
+    done < <(git diff --cached --name-only --diff-filter=ACM)
+    if [[ -n "$BIG" ]]; then
+        echo "" >&2
+        echo "  staged file(s) over 50 MB:" >&2
+        printf '%s' "$BIG" >&2
+        echo "" >&2
+        echo "pre-commit: a staged file is large enough to be a problem at push." >&2
+        echo "  GitHub REJECTS anything over 100 MB, and it rejects at push -- the commit exists by" >&2
+        echo "  then, so the fix is a history rewrite, not an edit. If this is a regenerable build" >&2
+        echo "  artifact, add it to .gitignore beside the *heldout*.npz family. If it genuinely" >&2
+        echo "  belongs in git, commit it deliberately:  A2MC_ALLOW_BIG=1 git commit ..." >&2
+        exit 1
+    fi
+fi
+
+# (24) tools/check_model_evolution_conformance.py -- a staged MODEL-EVOLUTION record matches the
+# `model-evolution` step-6 contract, when one is staged.
+#
+# WHY. This was the only one of the three hand-written log streams with no checker: the `log` skill
+# said so in as many words ("held by review, and a candidate for the report/log conformance
+# family"). The dev-log checker cannot serve it -- pointed at one of these it produces five errors
+# demanding a Topic_In_Title_Case filename, a Version/Branch header and
+# Summary/Files Changed/Verification, none of which this stream has. Across the six records written
+# before the rule, `## Summary` appears in ZERO and `## Files Changed` in one, so the shapes are
+# genuinely different and each tool now refuses the other's stream by name.
+#
+# The load-bearing rule is `## Skills and memory invoked` naming `model-evolution` (PI, 2026-09-24:
+# "it needs to invoke the model-evolution skill"), which is the same reasoning as check (12) one
+# level down -- a record written without the source of truth open is the failure, and the claim is
+# the only part of it a machine can see. NON-RETROACTIVE, so the six existing records are exempt
+# and counted rather than blocking an edit to one.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^use_cases/.+/memory/model_evolution/.+\.md$'; then
+    PY="$(pick_py)"
+    _mec_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_model_evolution_conformance.py" --staged || _mec_rc=$?
+    fi
+    if [[ $_mec_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: a model-evolution record does not match the \`model-evolution\` step-6" >&2
+        echo "  contract -- see above. RE-READ .claude/skills/model-evolution/SKILL.md step 6" >&2
+        echo "  rather than recalling it. Bypass with --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+
+# (25) tools/check_model_change_ledger.py -- a `model_change_ledger` row still matches the record
+# it was copied from, when a case's ledger or a model-evolution record is staged.
+#
+# WHY. The row is a DERIVED fact: `summarize-calibration-round` copies a change's commit, branch
+# and V0 result OUT of the record, and both it and `compare-calibration-rounds` read the copy at
+# every round close -- so a drifted row is ACTED ON rather than merely filed. Check (24) checks the
+# record; this checks the LINK, in both directions, the same shape the repo runs between a memory
+# and its log and for the same reason: neither half alone catches a pointer that resolves to a real
+# file carrying none of the content it is cited for.
+#
+# G1 requires the pointer to resolve to a FILE, not merely to exist -- two ledger rows point at a
+# bare `memory/model_logs/`, which is a directory, so an `exists()` check would report the broken
+# pointers clean and put the failure this exists to catch inside the check itself.
+#
+# SCOPE is narrow (PI): only pointers into a case's own memory/model_evolution/. An entry with no
+# model_log, or one into the RETIRED repo-root memory/model_logs/ archive, is skipped.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^use_cases/[^/]+/(config/calibration_rounds\.yaml|memory/model_evolution/)'; then
+    PY="$(pick_py)"
+    _mcl_rc=0
+    if [[ -n "$PY" ]]; then
+        "$PY" "$ROOT/tools/check_model_change_ledger.py" --staged || _mcl_rc=$?
+    fi
+    if [[ $_mcl_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: a model_change_ledger row no longer matches its record -- see above." >&2
+        echo "  The RECORD is the source; the ledger row is a copy of it. Fix the row, or the" >&2
+        echo "  pointer, per .claude/skills/model-evolution/SKILL.md step 6." >&2
+        exit 1
+    fi
+fi
+
+# (26) tools/check_script_visibility.py -- a NEW test or tool declares whether it SHIPS.
+#
+# WHY. `tests/` and `tools/` are whole INCLUDE paths on both sync legs, so a new file ships the
+# moment it is committed and nothing asks whether it should. A skill answers this in its
+# frontmatter and the legs DERIVE the exclusion from it; a script had no equivalent, so the
+# decision was made by default and never recorded. One header line, `visibility: public` or
+# `visibility: private`, makes it a decision. `public` is not a no-op: it is the author stating a
+# downstream reader can run this.
+#
+# NON-RETROACTIVE, keyed on the git ADD date: the existing tools and tests are exempt, per the
+# instruction that this is for future scripts. A file git has never seen is being written now and
+# so is in scope.
+if git diff --cached --name-only --diff-filter=ACM | grep -qE '^(tools|tests)/.*\.(py|sh)$'; then
+    PY="$(pick_py)"
+    if [[ -z "$PY" ]]; then
+        echo "pre-commit: python3 not found; skipping the script-visibility check ONLY" >&2
+    fi
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_script_visibility.py" --staged; then
+        echo "" >&2
+        echo "pre-commit: a new test or tool does not say whether it ships -- see above." >&2
         exit 1
     fi
 fi

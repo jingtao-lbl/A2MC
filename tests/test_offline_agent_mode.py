@@ -146,6 +146,35 @@ class TestAgentSurfaceValidator(unittest.TestCase):
         errors = [f for f in validate_agent_surface(_REPO_ROOT) if f.level == "ERROR"]
         self.assertEqual(errors, [], f"agent surface should validate clean; got {errors}")
 
+    def test_git_enumeration_is_used_ONLY_when_the_root_is_the_repo_top(self):
+        """`git -C <dir> ls-files` answers about the ENCLOSING repo, not <dir>.
+
+        Handed a subdirectory, the old code succeeded, skipped the `_on_surface()` fallback, and
+        rebased the OUTER repo's paths onto <dir> where nothing exists -- so the surface
+        enumerated EMPTY and this gate reported clean on a tree it never read.
+
+        Asserted on the GUARD rather than on a built fixture, deliberately. The behavioural tests
+        below reach this path only when `tempfile.mkdtemp()` happens to land inside a checkout,
+        which is true on a clone whose TMPDIR points into the repo and false elsewhere -- coverage
+        that a machine can silently take away. These three assertions hold regardless of TMPDIR,
+        need no temp directory, and pin the contract directly.
+        """
+        from tools.validate_agent_surface import _enumerate_skills_md
+
+        files, used_git = _enumerate_skills_md(_REPO_ROOT, _REPO_ROOT / ".claude/skills")
+        self.assertTrue(used_git, "the repo top itself must use the git enumeration")
+        self.assertTrue(files, "the git enumeration must actually return the surface")
+
+        for sub in ("tools", "tmp"):
+            d = _REPO_ROOT / sub
+            if not d.is_dir():
+                continue
+            _, sub_used_git = _enumerate_skills_md(d, d / ".claude/skills")
+            self.assertFalse(
+                sub_used_git,
+                f"{sub}/ is INSIDE the repo but is not its top: git must not be trusted here, "
+                "or the enumeration silently describes the outer repo")
+
     def test_public_contact_is_exempt_but_never_masks_a_real_leak(self):
         """`jingtao@lbl.gov` is published; the bare `jingtao` token targets HOST PATHS.
 

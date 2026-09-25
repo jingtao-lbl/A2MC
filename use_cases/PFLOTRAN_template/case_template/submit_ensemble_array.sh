@@ -80,12 +80,13 @@ set -uo pipefail
 export SLURM_CPUS_PER_TASK="${A2MC_HPC_CPUS_PER_TASK:-1}"
 
 # ---- Toolchain (runtime) -- must match what the binary was BUILT against ----
-# gfortran .mod files are not readable across compiler major versions, so the
-# COMPILER is the binding constraint, not PETSc. cpe/23.12 pins all four of
-# gfortran 12.3 / cray-mpich / cray-hdf5-parallel / cray-libsci together.
-# NEVER `module load PrgEnv-gnu` after cpe/23.12 -- it silently reverts the swap.
+# Build PETSc and PFLOTRAN with the same compiler, and run with the modules both
+# were built with; the case's site config carries them in A2MC_PFLOTRAN_MODULES.
+# The Cray PE release is part of that pairing and NERSC retires releases
+# (cpe/23.12 went in 2026-09); the current recipe is models/pflotran/BUILD.md.
+# NEVER `module load PrgEnv-gnu` after `cpe/<release>` -- it silently reverts the swap.
 # NEVER `module purge` on Perlmutter -- it leaves MODULEPATH broken.
-# cpe/23.12 is DEPRECATED; petsc-3.24 has been TESTED against our pin and FAILS.
+# PETSc 3.23+ does not build the 157a26f7 pin (tested with 3.24: it FAILS).
 eval "${A2MC_PFLOTRAN_MODULES:?source the site config first}"
 
 export OMP_NUM_THREADS="${A2MC_OMP_NUM_THREADS:-1}"   # parallelism is MPI, not OpenMP

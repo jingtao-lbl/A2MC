@@ -340,13 +340,24 @@ class WorkflowStateOffline:
         return self.add_evidence("diagnoses", stem, log_path, artifact_dir, one_line)
 
     def add_thread(self, thread_id, summary, next_action="", priority=None, refs=None):
-        """Add or replace an open thread (idempotent on thread_id)."""
-        t = {"id": thread_id, "summary": summary, "next_action": next_action}
+        """Add or replace an open thread (idempotent on thread_id).
+
+        STAMPED WITH TWO DATES, because a thread that carries none cannot be measured. `opened`
+        survives a re-add -- re-stating a thread does not make it new -- and `updated` moves every
+        time, so "was this re-affirmed after the round closed, or has it simply never been
+        retired?" becomes a question the checker can answer. Measured 2026-09-22 on
+        PFLOTRAN_miniLEO R1: 16 open threads on a round that closed three weeks earlier, several
+        of them resolved long before that, and nothing could see it.
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        threads = self.data["open_threads"]
+        prior = next((x for x in threads if x.get("id") == thread_id), None)
+        t = {"id": thread_id, "summary": summary, "next_action": next_action,
+             "opened": (prior or {}).get("opened", today), "updated": today}
         if priority is not None:
             t["priority"] = priority
         if refs:
             t["refs"] = list(refs)
-        threads = self.data["open_threads"]
         threads[:] = [x for x in threads if x.get("id") != thread_id] + [t]
         threads.sort(key=_priority_key)
         return self

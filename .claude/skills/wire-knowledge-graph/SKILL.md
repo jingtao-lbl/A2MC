@@ -59,7 +59,7 @@ $PY tools/check_graph_coverage.py --profile <name> --verbose   # list every unco
 $PY tools/check_graph_coverage.py --profile <name> --seed <path>   # test which seed a graph came from
 ```
 
-**It runs in the pre-commit hook** (check 17), fired only by a commit touching a seed, a graph or a
+**It runs in the pre-commit hook** (check 19), fired only by a commit touching a seed, a graph or a
 builder. It went in only once every non-legacy profile was green: a check that is red on arrival is
 one people learn to skip. A `legacy: true` milestone is reported and never fails the run, because
 `rag/milestones.json`'s own note on `api-31-0` says not to rebuild it.

@@ -70,6 +70,13 @@ def memory_checkup_due(root, lines):
     interval elapses, which for a weekly audit is exactly when it is useful.
     """
     import datetime
+    # The checkup and the bucket it audits exist only in the private dev repo: both legs exclude
+    # .claude_memory/ and the skill is visibility: private. Without this guard every public clone
+    # was told at every session to run a skill it does not have and write into a directory it
+    # lacks (audit 20260923b, finding F39) -- the same guard ensure_memory_symlink already has.
+    if not os.path.isdir(os.path.join(root, ".claude_memory")) or \
+            not os.path.isdir(os.path.join(root, ".claude", "skills", "memory-checkup")):
+        return
     stamp = os.path.join(root, ".claude_memory", ".last_checkup")
     today = datetime.date.today()
     try:
@@ -84,6 +91,58 @@ def memory_checkup_due(root, lines):
     elif days >= 7:
         lines.append("\u23f0 memory checkup DUE \u2014 %d days since %s. Run the `memory-checkup` "
                      "skill (then: date -I > .claude_memory/.last_checkup)" % (days, last))
+
+
+def resource_headroom(root, lines, relay=None):
+    """Filesystem quota and compute allocation, BEFORE anything is written or submitted.
+
+    THE BLIND SPOT THIS CLOSES. Every other line in this snapshot describes work state -- what is
+    running, what was logged, what is pending. None describes the RESOURCES that work consumes, so
+    resource state only ever becomes visible by failing, and it fails as an error that reads nothing
+    like a quota or allocation problem. The queries are sub-second, so the only reason they go
+    unrun is that nothing prompts them. (The incident that prompted this is in the dev log named
+    below, not here: a docstring asserting a filesystem's state is stale the moment it changes.)
+
+    Why it belongs in the SNAPSHOT rather than in a pre-write check alone: by the time an agent is
+    choosing where to put a 2 GB dump it has already designed the experiment around the assumption
+    that space exists. The number has to arrive before the design, not during it.
+
+    Only problems are printed. A clone with room says nothing, so this costs a line only when it
+    matters. Full detail on demand: tools/check_resources.py
+
+    Background: memory/dev_logs_adapterkit/reflection/20260923e_Reflection_I_Never_Measured_The_Resources_I_Was_Spending.md
+    """
+    script = os.path.join(root, "tools", "check_resources.py")
+    if not os.path.isfile(script):
+        return
+    # NOT sh(): it uses check_output, which RAISES on a non-zero exit and is swallowed by its
+    # try/except -- and check_resources.py signals "over threshold" with exit 1. Routed through
+    # sh() this function printed nothing EXACTLY when it had something to say, which is the same
+    # failure shape the tool exists to prevent. Read the output regardless of the exit code.
+    try:
+        proc = subprocess.run([sys.executable, script, "--quiet"],
+                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                              universal_newlines=True, timeout=90)
+        out = (proc.stdout or "").strip()
+    except Exception:
+        return
+    if not out:
+        return
+    lines.append("RESOURCES -- headroom problems (tools/check_resources.py for the full table):")
+    for row in out.splitlines():
+        if row.strip():
+            lines.append("  " + row.strip())
+    lines.append("  A near-full quota breaks the agent's OWN diagnostics: tool output is captured "
+                 "under the repo, so a full home degrades the ability to diagnose a full home.")
+    lines.append("  Before any bulk write: python3 tools/check_resources.py --need-gb <N>  "
+                 "(exit 1 = will not fit, 2 = could not confirm; both mean do not write).")
+    # Relay only a CROSSED threshold. A machine without `myquota` prints "QUOTA UNREADABLE
+    # [absent]" at every session, and telling a laptop user their disk is low every time would be
+    # a false alarm that teaches them to ignore the real one.
+    low = [" ".join(r.split()[1:]) for r in out.splitlines() if r.strip().startswith("!!")]
+    if relay is not None and low:
+        relay.append("Disk or allocation headroom is low: %s. Large writes (an ensemble, big "
+                     "outputs) may fail until space is freed." % "; ".join(low))
 
 
 def hpc_jobs_in_flight(root, lines):
@@ -162,7 +221,7 @@ def hpc_jobs_in_flight(root, lines):
 
 
 
-def clone_setup(root, lines):
+def clone_setup(root, lines, relay=None):
     """Report per-clone wiring that has not happened, AT EVERY STAGE.
 
     `setup_stage()` below returns silently at stage 4 -- correct for its own question, and exactly
@@ -196,11 +255,14 @@ def clone_setup(root, lines):
         lines.append("  This is the per-clone half of the `a2mc-init` skill (its Step 1); "
                      "run that skill to")
         lines.append("  work through it, and record the user's name rather than inferring it.")
+        if relay is not None:
+            relay.append("This A2MC clone is not fully set up (%s). The `a2mc-init` skill, Step 1, "
+                         "finishes it." % "; ".join(label for _, label, _ in bad))
     except Exception:
         return                          # a hook must never break a session
 
 
-def setup_stage(root, lines):
+def setup_stage(root, lines, relay=None):
     """Surface the SETUP stage when this clone is not yet configured.
 
     Every other line in this snapshot presumes a configured clone -- handoff, offline state,
@@ -224,20 +286,47 @@ def setup_stage(root, lines):
         if stage == 4:
             return                      # setup is done; say nothing
         names = {1: "a2mc-init", 2: "onboard-model", 3: "onboard-case"}
-        lines.append("\u25ba SETUP STAGE %d \u2014 start with the `%s` skill (%s)."
+        lines.append("\u25ba SETUP STAGE %d: start with the `%s` skill (%s)."
                      % (stage, names[stage], why))
         lines.append("  Definition of done: the `setup-discipline` skill. "
                      "Audit it now: python3 tools/check_stage_ready.py")
+        if relay is not None:
+            relay.append("Setup is not finished: it is at stage %d, and the next step is the `%s` "
+                         "skill (%s)." % (stage, names[stage], why))
     except Exception:
         return                          # a hook must never break a session
+
+
+RELAY_HEADER = ("TELL THE USER, briefly, in your first reply: they cannot see this snapshot. "
+                "Claude Code gives a start-up hook's output to you, not to them, so what they need "
+                "to know reaches them only if you say it:")
+
+
+def render(lines, relay):
+    """The snapshot text. What the USER needs to know comes first, as an instruction to relay it.
+
+    WHY. Claude Code puts SessionStart output (plain stdout, `additionalContext` and `systemMessage`
+    alike) into the MODEL's context; the person at the terminal sees at most a collapsed hook line
+    (code.claude.com/docs/en/hooks, SessionStart). Until 2026-09-23 this snapshot told a user nothing
+    at all: its "THIS CLONE IS NOT FULLY SET UP" line even said "nothing else will mention it", and
+    nothing did. `relay` holds the few items that are the USER's business -- an unfinished clone or
+    setup, low disk, an invalid calibration state -- each added where it is detected. Empty `relay`
+    means no header, so a session with nothing to report stays silent.
+    """
+    head = []
+    if relay:
+        head = [RELAY_HEADER] + ["  - " + r for r in relay] + [""]
+    return "A2MC session snapshot \u2014\n" + "\n".join(head + lines)
 
 
 def main():
     root = os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd()
     lines = []
+    relay = []
     ensure_memory_symlink(root, lines)
-    clone_setup(root, lines)
-    setup_stage(root, lines)
+    clone_setup(root, lines, relay)
+    setup_stage(root, lines, relay)
+    resource_headroom(root, lines, relay)
 
     branch = sh(["git", "-C", root, "branch", "--show-current"])
     if branch:
@@ -258,24 +347,36 @@ def main():
                                 os.path.basename(best))
         return os.path.basename(best)
 
-    # Calibration logs AND round/cycle reports — the application-agent record, and the
-    # only such stream that exists in every clone. Reports are included because a round
-    # or cycle report is often the single fastest read for "where does this stand", while
-    # the phase logs carry the finer-grained trail. Newest by MTIME (what was actually
-    # touched last), not by the filename date, so an older file revised today still
-    # surfaces. READMEs are excluded: a template case carries one and it would otherwise
-    # lead the list.
-    cal = [f for f in
-           glob.glob(os.path.join(root, "use_cases", "*", "memory", "logs", "*.md"))
-           + glob.glob(os.path.join(root, "use_cases", "*", "reports", "*", "*.md"))
-           if os.path.basename(f) != "README.md"]
-    if cal:
-        cal.sort(key=os.path.getmtime, reverse=True)
-        lines.append("Recent calibration logs + reports (newest first):")
-        for f in cal[:4]:
-            parts = f.split(os.sep + "use_cases" + os.sep)[-1].split(os.sep)
-            kind = "report" if "reports" in parts else "log"
-            lines.append("  %s (%s) / %s" % (parts[0], kind, os.path.basename(f)))
+    # Calibration logs AND round/cycle reports — the application-agent record, and the only
+    # such stream that exists in every clone. Reports are included because a round or cycle
+    # report is often the fastest read for "where does this stand", while the phase logs carry
+    # the finer-grained trail. READMEs are excluded: a template case carries one.
+    #
+    # NEWEST PER CASE, not newest overall: a flat mtime sort is dominated by whichever case is
+    # busiest, which answers "what did I touch last" rather than "where does each case stand".
+    # Ordering the per-case rows newest-first still answers the first question with row one. The
+    # date is printed so a stale case is visible as stale rather than merely present.
+    by_case = {}
+    for f in (glob.glob(os.path.join(root, "use_cases", "*", "memory", "logs", "*.md"))
+              + glob.glob(os.path.join(root, "use_cases", "*", "reports", "*", "*.md"))):
+        if os.path.basename(f) == "README.md":
+            continue
+        case = f.split(os.sep + "use_cases" + os.sep)[-1].split(os.sep)[0]
+        try:
+            mt = os.path.getmtime(f)
+        except OSError:
+            continue
+        if case not in by_case or mt > by_case[case][0]:
+            by_case[case] = (mt, f)
+    if by_case:
+        rows = sorted(by_case.items(), key=lambda kv: kv[1][0], reverse=True)
+        lines.append("Calibration logs + reports, newest per case:")
+        for case, (mt, f) in rows[:8]:
+            kind = "report" if (os.sep + "reports" + os.sep) in f else "log"
+            day = __import__("datetime").date.fromtimestamp(mt).isoformat()
+            lines.append("  %-22s (%-6s) %s  %s" % (case, kind, day, os.path.basename(f)))
+        if len(rows) > 8:
+            lines.append("  ... and %d more case(s)" % (len(rows) - 8))
 
     # Narrow cold-start pointer: latest Handoff/Session log specifically.
     # `dev_logs*` — NOT `dev_logs`. Every feature branch keeps its own stream
@@ -291,28 +392,89 @@ def main():
         lines.append("Latest handoff/session log: %s / %s"
                      % (os.path.basename(os.path.dirname(_h)), os.path.basename(_h)))
 
-    # Latest of ANY type in each stream, so no recent work is missed.
+    # Latest of ANY type in each LIVE stream, so no recent work is missed.
+    #
+    # `memory/ana_logs/` is deliberately NOT here: that stream is retired, and a stream that
+    # receives no new log has a "latest" that can only get staler. The live streams are
+    # `memory/dev_logs*/` and `use_cases/<Case>/memory/model_evolution/`; the authority for which
+    # is which is `.claude/skills/log/SKILL.md`.
     dev = latest(os.path.join(root, "memory", "dev_logs*", "20*.md"), with_stream=True)
     if dev:
         lines.append("Latest dev_log (any type): %s" % dev)
-    ana = latest(os.path.join(root, "memory", "ana_logs", "20*.md"))
-    if ana:
-        lines.append("Latest ana_log (any type): %s" % ana)
+    # These two are NOT `latest()`: that helper sorts by BASENAME, which is correct only for a
+    # stream whose filenames start with YYYYMMDDx. A report basename carries no date, so it needs
+    # mtime. Both live under `use_cases/<Case>/...`, so the useful label is the CASE rather than
+    # the immediate parent directory, which for one of them is the constant "model_evolution".
+    def newest_by_case(pattern, skip_readme=False):
+        hits = [f for f in glob.glob(pattern)
+                if not (skip_readme and os.path.basename(f) == "README.md")]
+        if not hits:
+            return ""
+        try:
+            best = max(hits, key=os.path.getmtime)
+        except OSError:
+            return ""
+        case = best.split(os.sep + "use_cases" + os.sep)[-1].split(os.sep)[0]
+        return "%s / %s" % (case, os.path.basename(best))
 
-    # Offline-agent resume state (docs/31): the highest-round workflow_state_offline_r{RR}.json.
-    best = None
+    mev = newest_by_case(os.path.join(root, "use_cases", "*", "memory",
+                                      "model_evolution", "20*.md"))
+    if mev:
+        lines.append("Latest model_evolution record: %s" % mev)
+    rep = newest_by_case(os.path.join(root, "use_cases", "*", "reports", "*", "*.md"),
+                         skip_readme=True)
+    if rep:
+        lines.append("Latest report (any case): %s" % rep)
+
+    # Offline-agent resume state (docs/31): each case's HIGHEST-round
+    # workflow_state_offline_r{RR}.json, the most recently TOUCHED case first.
+    #
+    # NOT the highest round across all cases. A round number is per case -- one case is at R3
+    # because it has been calibrated three times, another at R1 because it is newer -- so the two
+    # numbers do not share a scale and ranking by them ranks nothing. mtime is what "active"
+    # means, and this block carries the `► NEXT: execute it` line, so naming the wrong case here
+    # misdirects the whole session.
+    #
+    # The detail lines (NEXT, objective, validity) are rendered for the ACTIVE case only; every
+    # other campaign gets one line, so a second one is visible without burying the first.
+    per_case = {}
     for p in glob.glob(os.path.join(root, "use_cases", "*", "memory",
                                     "workflow_state_offline_r*.json")):
         m = re.search(r"_r(\d+)\.json$", p)
-        if m and (best is None or int(m.group(1)) > best[0]):
-            best = (int(m.group(1)), p)
+        if not m:
+            continue
+        case = p.split(os.sep + "use_cases" + os.sep)[-1].split(os.sep)[0]
+        rnd = int(m.group(1))
+        if case not in per_case or rnd > per_case[case][0]:
+            try:
+                per_case[case] = (rnd, p, os.path.getmtime(p))
+            except OSError:
+                continue
+    ordered = sorted(per_case.items(), key=lambda kv: kv[1][2], reverse=True)
+    # Labelled by the CASE DIRECTORY, not the state file's `site` field: the two can disagree,
+    # and a round label always carries its case, since every case has its own R1
+    # ([[feedback_prefix_round_labels_with_the_case]]).
+    also_lines = []
+    for _case, (_rnd, _p, _mt) in ordered[1:]:
+        try:
+            with open(_p) as f:
+                _st = json.load(f)
+            _nt = len(_st.get("open_threads", []))
+            also_lines.append(
+                "  (also) %s R%s %s | cycle %s | %d open thread%s | last touched %s"
+                % (_case, _st.get("calibration_round"), _st.get("current_phase"),
+                   _st.get("experiment_count"), _nt, "" if _nt == 1 else "s",
+                   __import__("datetime").date.fromtimestamp(_mt).isoformat()))
+        except (OSError, ValueError):
+            continue
+    best = (ordered[0][1][0], ordered[0][1][1], ordered[0][0]) if ordered else None
     if best:
         try:
             with open(best[1]) as f:
                 st = json.load(f)
             nt = len(st.get("open_threads", []))
-            lines.append("Offline state: R%s (%s) %s | cycle %s | %d open thread%s"
-                         % (st.get("calibration_round"), st.get("site", "?"),
+            lines.append("Offline state (ACTIVE): %s R%s %s | cycle %s | %d open thread%s"
+                         % (best[2], st.get("calibration_round"),
                             st.get("current_phase"), st.get("experiment_count"),
                             nt, "" if nt == 1 else "s"))
             # docs/35: the next action is the most salient cold-start line — DRIVE it, don't wait.
@@ -338,10 +500,15 @@ def main():
                     lines.append("⚠ Offline state INVALID (%d error%s) — run "
                                  "tools/check_workflow_state_offline.py before driving: %s"
                                  % (len(_errs), "" if len(_errs) == 1 else "s", _errs[0]))
+                    relay.append("The offline calibration state for %s is invalid (%s), so the "
+                                 "calibration cannot safely resume until it is fixed."
+                                 % (st.get("site", "?"), _errs[0]))
             except Exception:
                 pass
         except Exception:
             pass
+
+    lines.extend(also_lines)
 
     open_props = 0
     for p in glob.glob(os.path.join(root, "use_cases", "*", "memory",
@@ -376,7 +543,7 @@ def main():
     except Exception:
         pass
 
-    ctx = "A2MC session snapshot —\n" + "\n".join(lines)
+    ctx = render(lines, relay)
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "SessionStart",
         "additionalContext": ctx}}))

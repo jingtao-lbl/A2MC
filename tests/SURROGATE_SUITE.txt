@@ -1,0 +1,39 @@
+# THE SURROGATE SUITE — the test files that exercise models/surrogate/ and its tools.
+#
+# WHY THIS FILE EXISTS. Three dev logs reported three different totals for "the surrogate tests"
+# (230, 246, 254) because each ran its own ad-hoc recipe: one used `pytest -k surrogate`, which
+# silently DESELECTS tests/test_kgml_emulator.py entirely -- neither the module name nor any test
+# name contains the word, and that file holds every property the sequence-emulator work is about.
+# Another used a `grep -l` over tests/*.py, whose match set grows with every new test file, so the
+# number it printed could not be compared with the number printed a week earlier. A count nobody
+# can reproduce is not evidence that a suite passed.
+#
+# HOW TO RUN IT:
+#     ~/a2mc_env/bin/python -m pytest $(grep -v '^#' tests/SURROGATE_SUITE.txt) -q
+#
+# HOW IT STAYS TRUE: tests/test_surrogate_suite_registry.py fails when a test file imports the
+# surrogate module or one of its tools and is not listed here, and when a listed file is missing.
+# Adding a test file to the tree is therefore enough to be told to add it here.
+tests/test_bo_acquisition.py
+tests/test_bo_loop.py
+tests/test_check_surrogate_gate.py
+tests/test_deeponet_emulator.py
+tests/test_field_emulators.py
+tests/test_fit_ensemble_surrogate.py
+tests/test_graph_emulators.py
+tests/test_kgml_emulator.py
+tests/test_multioutput_surrogate.py
+tests/test_package_surrogate.py
+tests/test_promote_surrogate.py
+tests/test_s2_trajectory_tier.py
+tests/test_s3_knowledge_guided_tier.py
+tests/test_spatiotemporal_emulators.py
+tests/test_surrogate_environment.py
+tests/test_surrogate_low_severity_fixes.py
+tests/test_surrogate_module.py
+tests/test_surrogate_nn_common.py
+tests/test_surrogate_robustness.py
+tests/test_surrogate_search_hooks.py
+tests/test_surrogate_sobol_indices.py
+tests/test_surrogate_splits.py
+tests/test_surrogate_tier_registry.py

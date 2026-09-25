@@ -15,7 +15,7 @@ description: >-
 modes:
   requires_fates: false
   nutrient_pathway: any
-  scope: [adapter]
+  scope: [ecosim, adapter]
   summary: "EcoSIM-only: sanity-check + refine per-PFT trait VALUES via the ecosim-agent skills (referenced, not ported); a diagnostic, not a guaranteed fix."
 ---
 

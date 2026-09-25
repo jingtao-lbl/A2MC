@@ -102,7 +102,11 @@ def staged_logs() -> list[Path]:
     out = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
                          cwd=REPO, capture_output=True, text=True).stdout.split()
     return [REPO / r for r in out
-            if r.endswith(".md") and ("memory/dev_logs" in r or "memory/model_logs/" in r)]
+        # RETIRED frozen streams `memory/model_logs/` and `memory/ana_logs/` are NOT scanned:
+        # no new log is written to either, so nothing they hold can be a new finding. The
+        # ambiguity defence is unaffected -- `_short_is_unambiguous` globs `memory/*logs*/*.md`
+        # independently of this filter, so a frozen log still makes a short form ambiguous.
+            if r.endswith(".md") and "memory/dev_logs" in r]
 
 
 def main(argv: list[str]) -> int:

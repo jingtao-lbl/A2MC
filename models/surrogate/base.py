@@ -108,11 +108,15 @@ class BatchPrediction:
 # Extrapolation gate
 # =============================================================================
 
+#: Elements (not rows) allowed in one pairwise-difference chunk of the k-NN distance: 2e7 float64
+#: elements is 160 MB whatever the dimension.
+_KNN_CHUNK_ELEMENTS = 2e7
+
 @dataclass
 class HullGate:
     """Refuse-rather-than-guess gate on how far a query is from training data.
 
-    Calibration drives to the edges of the parameter box (R2's VRNXI 52 corner),
+    Calibration drives to the edges of the parameter box (an optimum on a bound),
     which is exactly where an emulator is weakest, so a surrogate that silently
     extrapolates will be most confident where it is least entitled to be.
 
@@ -150,9 +154,10 @@ class HullGate:
     def _knn_distance(self, Z: np.ndarray, exclude_self: bool, k: int) -> np.ndarray:
         if self._train is None or len(self._train) == 0:
             return np.full(len(Z), np.inf)
-        # Chunked to keep the pairwise matrix bounded for large query batches.
+        # Chunked to keep the pairwise difference array, (rows, n_train, p) float64, bounded for
+        # large query batches: the budget counts every element, so it divides by the dimension too.
         out = np.empty(len(Z), dtype=float)
-        step = max(1, int(2e7 // max(1, len(self._train))))
+        step = max(1, int(_KNN_CHUNK_ELEMENTS // max(1, len(self._train) * Z.shape[1])))
         for a in range(0, len(Z), step):
             b = min(a + step, len(Z))
             d = np.linalg.norm(Z[a:b, None, :] - self._train[None, :, :], axis=2)

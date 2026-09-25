@@ -1,7 +1,11 @@
 """Bayesian optimization for A2MC -- the SEARCH layer (`docs/42`).
 
-A2MC ranks a completed ensemble. It has never had a way to ASK for the next point to run. This
-package is that: propose the parameter sets most likely to put every validation target inside its
+A2MC already proposes what to run next by REASONING: diagnosis returns parameter recommendations,
+a hypothesis designs targeted experiments, and every round report ends with a next-round plan
+(which parameters to test, add or drop, their bounds, the base and the design) that Phase 0 takes as
+its input. What it has not had is a MODEL-BASED search: nothing fits the completed runs and proposes
+specific parameter vectors by optimizing an acquisition on the joint objective. This package is
+that: propose the parameter sets most likely to put every validation target inside its
 observational band at once, confirm them on the physics model, repeat.
 
 WHAT IT IS NOT. It is not the surrogate (`models/surrogate/`), which EMULATES the model; this
@@ -17,8 +21,14 @@ MODULES, in the order `docs/42` section 6 builds them:
                        check against the composite A2MC ranks by today.
     bo_replay.py   S1  the GO/NO-GO gate: replay the propose loop against a COMPLETED ensemble
                        and measure whether it rediscovers a known optimum faster than random.
-    acquisition.py S2  feasibility-weighted expected improvement (not built -- gated on S1)
-    bo_loop.py     S3  propose -> run -> refit, with the three stopping rules (not built)
+    acquisition.py S2  feasibility-weighted expected improvement, P(viable) * E[max(0, V* - V)],
+                       with the expectation integrated exactly, and the batch proposal: candidate
+                       sets, admissibility, Kriging-believer batching with a diversity guard, and
+                       the cold-start path.
+    bo_loop.py     S3  the dry run: fit the search surrogate on a completed ensemble, propose q
+                       parameter sets in the matrix format the materializer reads, and stop.
+                       Running them, refitting and the stopping rules are the closed loop, S4
+                       (not built).
 
 Nothing here is wired into `orchestrator.py`. `docs/42` section 6 S6 places the Phase-6 hook at
 the END of the build, "only at this stage, when the capability is real".
@@ -33,6 +43,25 @@ from .objective import (  # noqa: F401
     violation,
     violation_matrix,
 )
+from .acquisition import (  # noqa: F401
+    Proposal,
+    band_probability,
+    check_alignment,
+    density_radius,
+    expected_improvement,
+    incumbent,
+    local_candidates,
+    local_penalisation_batch,
+    maximin_batch,
+    min_distance,
+    native_to_unit,
+    propose_batch,
+    reflect_unit,
+    score_candidates,
+    sd_floor,
+    sobol_candidates,
+    unit_to_native,
+)
 
 __all__ = [
     "Target",
@@ -41,4 +70,21 @@ __all__ = [
     "load_targets",
     "violation",
     "violation_matrix",
+    "Proposal",
+    "band_probability",
+    "check_alignment",
+    "density_radius",
+    "expected_improvement",
+    "incumbent",
+    "local_candidates",
+    "local_penalisation_batch",
+    "maximin_batch",
+    "min_distance",
+    "native_to_unit",
+    "propose_batch",
+    "reflect_unit",
+    "score_candidates",
+    "sd_floor",
+    "sobol_candidates",
+    "unit_to_native",
 ]

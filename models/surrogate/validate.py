@@ -1,7 +1,7 @@
 """The acceptance battery — five tests that replace R2 as the gate.
 
-The 2025 Kougarok attempt reported R2 per output and it told nobody what to do.
-R2 is the wrong gate for this use, in both directions: ranking and ruling out are
+R2 per output does not say what to do next, and it is the wrong gate for this
+use in both directions: ranking and ruling out are
 WEAKER requirements than accurate point prediction, while honesty about
 uncertainty is a much STRONGER one, and R2 measures neither.
 
@@ -20,7 +20,7 @@ Author: Jing Tao with Claude
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 import numpy as np
 
@@ -131,11 +131,11 @@ def manifold_respect(Y_train: np.ndarray, Y_pred: np.ndarray,
                      k: int = 5, quantile: float = 0.99) -> Dict[str, float]:
     """Fraction of predicted target VECTORS that the model could actually produce.
 
-    Independent per-target regressors will happily emit a (plant_C, NPP) pair
+    Independent per-target regressors will happily emit a pair of target values
     that lies off the model's reachable manifold, because nothing in their loss
-    couples the outputs. Since that manifold is R2's central finding, a surrogate
-    violating it does not merely lose accuracy, it invents a physically
-    unreachable configuration and then recommends it.
+    couples the outputs. A surrogate violating that manifold does not merely lose
+    accuracy, it invents a physically unreachable configuration and then
+    recommends it.
 
     Measured with the same k-NN support test the input gate uses, applied in
     standardised OUTPUT space.
@@ -163,8 +163,9 @@ def boundary_classifier_report(viab_prob: np.ndarray, viable_true: np.ndarray,
 
     A global accuracy figure is dominated by easy interior points and will look
     excellent while the boundary, the only region that decides anything, is
-    unresolved. The knife-edge structure this model has (the VCMX4 collapse)
-    makes that gap the normal case rather than a corner case.
+    unresolved. In a process model with knife-edge structure (a run that
+    collapses beyond a parameter threshold) that gap is the normal case rather
+    than a corner case.
     """
     p = np.asarray(viab_prob, dtype=float).ravel()
     t = np.asarray(viable_true, dtype=bool).ravel()
@@ -199,6 +200,7 @@ class AcceptanceReport:
 
     def summary(self) -> str:
         lines = [f"acceptance: {'PASS' if self.passed else 'FAIL'}"]
+        # (see `report_passed` below for reading this verdict back out of a SERIALIZED report)
         for name, ok in self.verdicts.items():
             lines.append(f"  [{'ok ' if ok else 'FAIL'}] {name}")
         for t, d in self.per_target.items():
@@ -217,12 +219,35 @@ class AcceptanceReport:
         return "\n".join(lines)
 
 
+def report_passed(report: Mapping[str, Any]) -> Optional[bool]:
+    """The verdict a SERIALIZED acceptance report records: True, False, or None for none at all.
+
+    ONE derivation, because two gates read this and they disagreed. `passed` is a *property* of
+    `AcceptanceReport`, not a field, so a report written straight from the dataclass carries
+    `verdicts` and no `passed` key: measured 2026-09-22, 8 of 21 tracked `acceptance.json` files
+    have no `passed`, and `scripts/surrogate_sobol_indices.py` refused only on `passed is False`,
+    so every one of those cleared its accuracy gate with no verdict ever being read. Three of the
+    eight do carry `verdicts`, and all three record a FAIL.
+
+    Returns None when the file records no verdict in either form -- an emulator fit script writing
+    its own ad-hoc summary, for instance. **None means "no verdict", never "fine"**, and a caller
+    deciding whether to proceed must fail closed on it; that is the whole reason this returns three
+    values rather than a bool.
+    """
+    if "passed" in report:
+        return bool(report["passed"])
+    verdicts = report.get("verdicts")
+    if isinstance(verdicts, Mapping) and verdicts:
+        # The dataclass's own rule, kept identical to `AcceptanceReport.passed` above.
+        return all(bool(v) for v in verdicts.values())
+    return None
+
+
 def r2_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """Coefficient of determination, for the ONLINE-INFERENCE bar only.
 
-    Deliberately absent from the offline_search battery. The module README is explicit that "R^2 is
-    not the gate. It was what the 2025 Kougarok attempt reported, and it told nobody what to do" --
-    a calibration surrogate needs to RANK, and a good R2 with a bad ranking is useless to the loop.
+    Deliberately absent from the offline_search battery: a calibration surrogate needs to RANK, and a
+    good R2 with a bad ranking is useless to the loop.
     An online-inference surrogate has the opposite requirement: it substitutes for the physics model
     inside a coupled runtime, so its pointwise value IS the product.
     """
@@ -256,11 +281,9 @@ def per_case_r2(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
     contributes one number and the across-case variance IS the signal -- and wrong for a sequence
     artifact, where it divides by the between-case spread. On a parameter sweep that spread is
     large, so predicting each case's LEVEL captures nearly all of it while the trajectory stays
-    free, and the pooled score approaches 1 on a model with no within-case skill at all.
-
-    Measured: a pooled 10-of-10 pass became 7 of 10 within cases, and 0 of 10 with every median
-    NEGATIVE once a forcing replay was withheld
-    (`use_cases/PFLOTRAN_miniLEO/reports/20260915a_LSTM_Emulator_Methodology/`).
+    free, and the pooled score approaches 1 on a model with no within-case skill at all. The gap
+    between the two scores widens further when whole driver periods are withheld, because a model
+    can place each case's level without having learned the response to the drivers.
 
     Both arrays are (n_cases, n_steps). A case with fewer than 8 finite pairs, or with zero
     variance of its own, yields NaN rather than a number that would be read as a score.
@@ -478,8 +501,23 @@ def run_acceptance(model: SurrogateModel,
                 "is the binding one for a runtime emulator. Coverage remains in per_target and a "
                 "reader should still look at it.")
     else:
-        rep.notes.append("tier produces no intervals; coverage not evaluated, "
-                         "so this artifact may not be used to rule anything out")
+        from .tiers import S1Surrogate
+        if isinstance(model, S1Surrogate) and not model.calibrated:
+            if model.believed:
+                # A believer copy of a calibrated model has calibration_fraction > 0, so the
+                # note below would misstate how it was fitted.
+                rep.notes.append(
+                    "S1 Kriging-believer copy: its regressors condition on fake observations at "
+                    "believed points, it claims no intervals, coverage was not evaluated, and it "
+                    "may not be used to rule anything out")
+            else:
+                rep.notes.append(
+                    "S1 model fitted without a calibration split (calibration_fraction=0): it "
+                    "claims no intervals, coverage was not evaluated, and it may not be used to "
+                    "rule anything out")
+        else:
+            rep.notes.append("tier produces no intervals; coverage not evaluated, "
+                             "so this artifact may not be used to rule anything out")
 
     if Y_train is not None:
         man = manifold_respect(Y_train, pred.values)
@@ -623,17 +661,34 @@ def perturbation_stability(model: SurrogateModel,
 
     base = model.predict_batch(X).values
     names = model.spec.target_names
+    targets = list(model.spec.targets)
+
+    # RANK THE SAME QUANTITY `run_acceptance` RANKS. Both this check and the acceptance battery
+    # score a shortlist, and until 2026-09-22 they built different ones: acceptance orders by
+    # `|value - observed|` when a target declares an observation (line ~460), while this ordered
+    # by the predicted LEVEL. For a calibration target the interesting cases are the ones CLOSEST
+    # to the observation, not the ones with the smallest value, so the stability reported to the
+    # human in `promote_surrogate review` was the stability of a shortlist nothing else uses.
+    def _key(values: np.ndarray, j: int) -> np.ndarray:
+        obs = targets[j].observed
+        return np.abs(values[:, j] - obs) if obs is not None else values[:, j]
+
     overlaps: Dict[str, List[float]] = {t: [] for t in names}
     for _ in range(max(1, n_rep)):
         Xp = X + rng.normal(0.0, eps, size=X.shape) * scale
         Xp = np.clip(Xp, lo, hi)                    # stay inside the declared box
         pert = model.predict_batch(Xp).values
         for j, t in enumerate(names):
-            a = set(np.argsort(base[:, j])[:k].tolist())
-            b = set(np.argsort(pert[:, j])[:k].tolist())
+            a = set(np.argsort(_key(base, j))[:k].tolist())
+            b = set(np.argsort(_key(pert, j))[:k].tolist())
             overlaps[t].append(len(a & b) / k)
     return {"eps": eps, "k": k, "n_rep": n_rep, "n": n,
-            "top_k_overlap": {t: float(np.mean(v)) for t, v in overlaps.items()}}
+            "top_k_overlap": {t: float(np.mean(v)) for t, v in overlaps.items()},
+            # Stated rather than implied, so a reader of the report knows WHICH shortlist was
+            # measured without reading this function.
+            "ranked_on": {t: ("abs_error_vs_observed" if targets[j].observed is not None
+                              else "predicted_level")
+                          for j, t in enumerate(names)}}
 
 
 # =============================================================================
@@ -777,12 +832,11 @@ def compare_learners(spec, X, Y, viable=None, learners=("rf", "gbm", "gp", "mlp"
 # Ranking keys — which family wins DEPENDS ON WHAT YOU ARE DOING
 # =============================================================================
 #
-# A single key cannot serve every use, and pretending otherwise misleads. The
-# first cut ranked on top-k recall with width only as a tiebreak, and the very
-# first real bake-off showed why that is wrong: `mlp` won on top-k while
-# carrying 5x the interval width of `rf`, over-covering at 0.977 against 0.95
-# nominal. That is the "honest but useless" case this module warns about
-# elsewhere -- and for SCREENING it is genuinely fine, because ranking is the
+# A single key cannot serve every use, and pretending otherwise misleads. Ranking
+# on top-k recall with width only as a tiebreak can crown a family that wins on
+# top-k while carrying several times another family's interval width and
+# over-covering the nominal level. That is the "honest but useless" case this
+# module warns about elsewhere -- and for SCREENING it is genuinely fine, because ranking is the
 # product and width is irrelevant. For RULING OUT it is the opposite: an
 # interval so wide it overlaps everything excludes nothing, so width IS the
 # product once coverage is met.

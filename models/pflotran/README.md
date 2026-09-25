@@ -33,14 +33,14 @@ The output tape is **not a CSV**. Its header is comma-separated and quoted; its 
 
 ## Execution status (updated 2026-08-14)
 
-A PFLOTRAN binary now exists at `157a26f7`, built on Perlmutter (`cpe/23.12` / gfortran 12.3 / PETSc 3.21.4 — toolchain details below). It has been run and scored, not just built:
+A PFLOTRAN binary exists at `157a26f7`, built on Perlmutter. The results below come from the first build (`cpe/23.12` / gfortran 12.3 / PETSc 3.21.4); that Cray PE was retired in 2026-09, and the current binary is a rebuild on `cpe/25.09` (gfortran 14.3 / PETSc 3.21.4), whose recipe and reproducibility check are in [`BUILD.md`](BUILD.md). It has been run and scored, not just built:
 
 - **V0 reproducibility gate PASSES.** Our binary vs the team's own reference tape: RMSRE 0.2276 vs 0.2277, max |Δ ratio| 2.9e-05 across the 10 solute targets. The two runs are not bit-for-bit identical (different compiler/PETSc), but the divergence is bounded, does not grow over the 70-day run, and is invisible after each target's own time-averaging.
 - **The full case pipeline is wired end to end**: `write_parameter_file` (perturbs the 17 calibration knobs by editing exact deck lines), `create_case` (stages the mesh, thermodynamic database, restart checkpoint, and deck into a case directory), and `submit_ensemble` (writes and submits the Slurm script) have all been implemented and exercised.
 - **A real, non-dry-run submission completed**: `miniLEO_case0` (the unperturbed V0 baseline), Slurm job `56826414`, 8 MPI ranks, COMPLETED in 14m20s, re-scored to the same RMSRE 0.2276.
 - **Not yet done**: the full 360-member R1 Morris ensemble has not been submitted — only this single baseline case has run.
 
-Toolchain: `module load cpe/23.12` (pins gfortran 12.3 / cray-mpich 8.1.28 / cray-hdf5-parallel), `PETSC_DIR=/global/common/software/pflotran/petsc-3.21`. A later test of the newer PETSc 3.24 build against this source pin failed (279 errors, one root cause: PETSc 3.23+ requires `use petscsys`, which upstream master already has and this 523-commit-old pin does not) — a property of the pin's age, not a PFLOTRAN defect; watch for `cpe/23.12` deprecation.
+Toolchain: see [`BUILD.md`](BUILD.md) for the current one. The first build used `module load cpe/23.12` (gfortran 12.3 / cray-mpich 8.1.28 / cray-hdf5-parallel 1.12.2.9) and `PETSC_DIR=/global/common/software/pflotran/petsc-3.21`, both gone since NERSC retired that release. A later test of the newer PETSc 3.24 build against this source pin failed (279 errors, one root cause: PETSc 3.23+ requires `use petscsys`, which upstream master already has and this 523-commit-old pin does not) — a property of the pin's age, not a PFLOTRAN defect. It is why a retired Cray PE is met by rebuilding PETSc 3.21.4, not by upgrading PETSc.
 
 Full narrative, figures, and the 11-target scoreboard this binary now produces: `use_cases/PFLOTRAN_miniLEO/reports/20260814a_MiniLEO_Full_Case_Report_And_Coupling_Roadmap/miniLEO_full_report.md`.
 

@@ -217,3 +217,51 @@ def test_a_promotion_does_not_survive_a_refit(tmp_path):
     with pytest.raises(SystemExit) as e:
         load_accuracy_gate(str(p), allow_missing=False)
     assert "STALE" in str(e.value)
+
+
+def test_refuses_a_report_that_records_NO_VERDICT(tmp_path):
+    """Fail closed on a file that looks like an acceptance report and rules nothing in or out.
+
+    `passed` is a PROPERTY of AcceptanceReport rather than a field, so a fit script writing its own
+    summary dict, or a report serialized straight from the dataclass, produces a file with no
+    `passed` key. The gate refused only on `passed is False`, so those fell through to the
+    promotion check with no verdict ever read. Measured 2026-09-22: 8 of 21 tracked
+    acceptance.json files, of which three record a FAIL.
+    """
+    from scripts.surrogate_sobol_indices import load_accuracy_gate
+
+    p = tmp_path / "acceptance.json"
+    p.write_text(json.dumps({"architecture": "kgml", "targets_meeting_bar": ["GPP", "RA", "ET"],
+                             "emulator_bar_daily_r2": 0.9}))
+    with pytest.raises(SystemExit) as e:
+        load_accuracy_gate(str(p), allow_missing=False)
+    assert "NO VERDICT" in str(e.value)
+
+
+def test_a_verdicts_only_report_is_READ_rather_than_ignored(tmp_path):
+    """The other half: a dataclass-shaped report DOES carry its verdict, in `verdicts`.
+
+    Refusing everything without a `passed` key would be fail-closed and also wrong: it would
+    reject the real `AcceptanceReport` serialization. The verdict is derived the way the dataclass
+    derives it, so a FAIL in `verdicts` is refused as a FAIL, not as a missing verdict.
+    """
+    from scripts.surrogate_sobol_indices import load_accuracy_gate
+
+    p = tmp_path / "acceptance.json"
+    p.write_text(json.dumps({"verdicts": {"ranking": True, "coverage": False},
+                             "per_target": {}, "overall": {}, "notes": []}))
+    with pytest.raises(SystemExit) as e:
+        load_accuracy_gate(str(p), allow_missing=False)
+    assert "passed=False" in str(e.value)
+
+
+def test_a_verdicts_only_PASS_reaches_the_promotion_gate(tmp_path):
+    """And a passing one is not blocked by this check; it meets the human gate instead."""
+    from scripts.surrogate_sobol_indices import load_accuracy_gate
+
+    p = tmp_path / "acceptance.json"
+    p.write_text(json.dumps({"verdicts": {"ranking": True, "coverage": True},
+                             "per_target": {}, "overall": {}, "notes": []}))
+    with pytest.raises(SystemExit) as e:
+        load_accuracy_gate(str(p), allow_missing=False)
+    assert "not PROMOTED" in str(e.value)

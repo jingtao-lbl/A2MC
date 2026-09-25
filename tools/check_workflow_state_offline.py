@@ -384,6 +384,34 @@ def _check_round_close(path, d):
     closing = (bool(d.get("converged")) or dec in ENDING
                or (isinstance(ec, int) and isinstance(mx, int) and ec >= mx))
 
+    # ---- rule 0: threads that outlived the round's close without being re-affirmed ----
+    #
+    # `close_thread()` exists and nothing ever required calling it, so a closed round keeps every
+    # thread it ever opened and a cold session reads them as live. Measured 2026-09-22:
+    # PFLOTRAN_miniLEO R1, closed 2026-09-02, still carried 16 -- among them a wait on a
+    # filesystem drain and a queue gate, both resolved weeks earlier, and a "NOT YET DONE" item
+    # that had in fact been done.
+    #
+    # A thread may legitimately outlive its round (an open question for the next one, a standing
+    # instruction), so this WARNS and asks for one of two things: close it, or re-affirm it. A
+    # re-affirm is visible, because `add_thread` stamps `updated` on every write. Threads written
+    # before that stamp existed have no date and are reported as unreviewed, which is what they
+    # are.
+    if rc:
+        closed_at = (rc.get("closed_at") or "").strip()
+        threads = d.get("open_threads") or []
+        if closed_at and threads:
+            stale = [t.get("id", "<unnamed>") for t in threads
+                     if (t.get("updated") or "") <= closed_at]
+            if stale:
+                warnings.append(
+                    "%s round %s: %d of %d open thread(s) have not been touched since the round "
+                    "closed on %s: %s. Close each with `close_thread(id)`, or re-affirm it with "
+                    "`add_thread(...)` so its `updated` stamp moves -- a cold session reads an "
+                    "open thread as live work."
+                    % (_case_of(path), rnd, len(stale), len(threads), closed_at,
+                       ", ".join(sorted(stale)[:8]) + (" ..." if len(stale) > 8 else "")))
+
     # ---- rule 1: the pointer. Wrong at ANY age -- it asserts evidence that is not there.
     if rc:
         rp = (rc.get("report_path") or "").strip()

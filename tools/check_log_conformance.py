@@ -21,9 +21,14 @@ to re-read the skill is exactly the step an author who already skipped the skill
 will skip again — so the check is mechanical
 (`feedback_build_validators_for_all_pitfalls`).
 
-DELIBERATELY DEPENDENCY-FREE: stdlib only, no PyYAML. The Tier-2 skill smoke
-harness cannot go green on a Mac precisely because it shells a checker that needs
-`yaml` under a system `python3` that lacks it; this one runs anywhere.
+DELIBERATELY DEPENDENCY-FREE AND 3.6-COMPATIBLE: stdlib only, no PyYAML, and no syntax newer
+than Python 3.6 -- which is what `python3` is on a Perlmutter login node. The Tier-2 skill smoke
+harness cannot go green on a Mac precisely because it shells a checker that needs `yaml` under a
+system `python3` that lacks it; this one has no such dependency. It also had
+`from __future__ import annotations` until 2026-09-22, which needs 3.7, so "runs anywhere" was
+false for the one interpreter the claim was about: the file raised SyntaxError under the system
+python while its own docstring said it would not. tests/test_check_log_conformance_runs_on_py36.py
+holds the claim to the interpreter.
 
 WHAT IT CHECKS
 --------------
@@ -35,6 +40,7 @@ WHAT IT CHECKS
                      on/after the day it landed (2026-08-01), so ~200 older logs
                      are not retroactively failed
   L5  branch match   a log under `dev_logs_<branch>/` names that branch
+  L7  stem unique    no two logs in a directory share a YYYYMMDD+letter stem
 
 Scope: pass explicit paths (what the pre-commit hook does), or a directory plus
 `--since YYYYMMDD` for a sweep.
@@ -50,14 +56,13 @@ Usage
 Author: Jing Tao with Claude
 """
 
-from __future__ import annotations
-
 import argparse
 import re
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import List
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -155,7 +160,7 @@ def _is_ana(path: Path) -> bool:
     return "ana_logs" in path.parts
 
 
-def _branch_from_dir(path: Path) -> str | None:
+def _branch_from_dir(path):
     """`memory/dev_logs_adapterkitpflotran/` -> the squashed branch token."""
     for part in path.parts:
         if part.startswith("dev_logs_"):
@@ -173,6 +178,10 @@ def wrong_stream(path: Path):
     reads as "your log is broken" when the truth is "wrong tool".
     """
     parts = path.parts
+    if "model_evolution" in parts:
+        return ("a MODEL-EVOLUTION record (use_cases/<Case>/memory/model_evolution/) — use "
+                "`tools/check_model_evolution_conformance.py`, whose contract is different (its "
+                "own stem, a Round header, and no Summary/Files Changed/Verification)")
     if "use_cases" in parts and "logs" in parts:
         return ("a CALIBRATION log (use_cases/<site>/memory/logs/) — use "
                 "`tools/check_calibration_log_conformance.py`, whose contract is different "
@@ -183,8 +192,55 @@ def wrong_stream(path: Path):
     return None
 
 
-def check_file(path: Path) -> list[Finding]:
-    out: list[Finding] = []
+def _next_free_letter(directory, date):
+    """The letter a new log for `date` should take, following the overflow rule (z, za, zb...)."""
+    taken = set()
+    for f in directory.glob("%s*.md" % date):
+        m = _FNAME.match(f.name)
+        if m:
+            taken.add(m.group("letter"))
+    for ch in "abcdefghijklmnopqrstuvwxy":
+        if ch not in taken:
+            return ch
+    for ch in "abcdefghijklmnopqrstuvwxyz":                  # z, then za..zz
+        if ("z" + ch) not in taken:
+            return "z" + ch
+    return "zz?"
+
+
+def _check_stem_is_unique(path):
+    """L7 — no two logs in a directory share a date-and-letter stem.
+
+    The letter is what makes a stem sortable and citable: `20260922b` has to name ONE log. Two
+    sessions writing on the same day both take the next free letter they can see, and neither sees
+    the other's uncommitted file, so the collision appears only once both are committed -- by which
+    time a reader, a cross-reference and the session snapshot all resolve the stem to whichever
+    file they happened to find. Measured 2026-09-22: two handoff logs both landed as `20260922b`,
+    three minutes apart, and the snapshot showed only one of them.
+
+    An ERROR rather than a warning, because the fix is a rename and renaming later breaks any
+    citation written in between.
+    """
+    m = _FNAME.match(path.name)
+    if not m:
+        return []
+    stem = "%s%s" % (m.group("date"), m.group("letter"))
+    directory = path.parent
+    if not directory.is_dir():
+        return []
+    siblings = sorted(f.name for f in directory.glob(stem + "_*.md") if f.name != path.name)
+    if not siblings:
+        return []
+    free = _next_free_letter(directory, m.group("date"))
+    return [Finding(path, "L7", "error",
+                    "stem %s is used by %d other log(s): %s. A stem must name one log. "
+                    "Rename the LATER one to %s%s_... (git log --diff-filter=A settles which "
+                    "that is)" % (stem, len(siblings), ", ".join(siblings),
+                                  m.group("date"), free))]
+
+
+def check_file(path):
+    out = []
     if not path.is_file():
         return [Finding(path, "L0", "error", "file not found")]
     other = wrong_stream(path)
@@ -214,7 +270,7 @@ def check_file(path: Path) -> list[Finding]:
 
     # ---- L2 header order ----
     head = lines[:14]
-    seen: list[str] = []
+    seen = []
     for ln in head:
         fm = re.match(r"^\*\*(\w+):\*\*", ln)
         if fm:
@@ -278,6 +334,7 @@ def check_file(path: Path) -> list[Finding]:
 
     out.extend(_check_capability_names(path, text))
     out.extend(_check_memory_written(path, text))
+    out.extend(_check_stem_is_unique(path))
     return out
 
 
@@ -411,7 +468,7 @@ def _pure_rename_paths(repo):
     return pure
 
 
-def _staged_logs() -> list[Path]:
+def _staged_logs():
     try:
         raw = subprocess.check_output(
             ["git", "diff", "--cached", "--name-only", "--diff-filter=ACMR"],
@@ -444,11 +501,17 @@ def main() -> int:
                     help="check staged log files (what the pre-commit hook runs)")
     args = ap.parse_args()
 
-    files: list[Path] = list(args.paths)
+    files = [p for p in args.paths if not p.is_dir()]
+    # A POSITIONAL DIRECTORY MEANS --dir. Passing one used to report `[L0] file not found` on the
+    # directory itself and check nothing, which reads as "the directory has no problems". The two
+    # forms now mean the same thing, and `--since` applies to either.
+    dirs = [p for p in args.paths if p.is_dir()]
+    if args.dir:
+        dirs.append(args.dir)
     if args.staged:
         files += _staged_logs()
-    if args.dir:
-        for p in sorted(args.dir.glob("*.md")):
+    for d in dirs:
+        for p in sorted(d.glob("*.md")):
             if p.name in _NOT_LOGS:       # the style guide is not an instance of itself
                 continue
             if args.since:
@@ -462,7 +525,7 @@ def main() -> int:
         print("no log files to check")
         return 0
 
-    findings: list[Finding] = []
+    findings = []
     for f in files:
         findings.extend(check_file(f))
 

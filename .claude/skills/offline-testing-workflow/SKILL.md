@@ -6,7 +6,7 @@ description: Design + launch + analyze an A2MC offline HPC experiment (parameter
 modes:
   requires_fates: true
   nutrient_pathway: any
-  scope: [analysis]
+  scope: [fates, analysis]
   summary: "Design+launch+analyze a FATES parameter-sweep experiment on a Morris base case (HPC); requires FATES. Paths come from a2mc_config.sh config vars."
 ---
 

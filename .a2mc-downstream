@@ -1,0 +1,10 @@
+# This is a DOWNSTREAM COPY of the A2MC framework, produced by a one-way sync.
+#
+# Do not edit framework files here expecting the change to last: the next sync overwrites every
+# included path. A framework fix belongs in the development repository, which is where the sync
+# runs from. Files this repository owns are not synced and are safe to edit.
+#
+# A2MC's checkers read this file. Its presence tells them that content the sync deliberately
+# removes -- each skill's `## Changelog`, the private skills, the case studies and internal plans --
+# is absent BY DESIGN here, so they report that as advisory instead of failing. Deleting this file
+# does not break anything; it only makes those checks fail for things this copy cannot have.

@@ -143,6 +143,34 @@ def manifest_required(d: Path) -> bool:
 # the manifest
 # ---------------------------------------------------------------------------------------------
 
+def read_native(path: Path) -> set:
+    """Figures a report DECLARES as report-native, via `# report-native <figure.png>` comment lines.
+
+    WHY THIS EXISTS. `write-report` section 3 makes the report folder the canonical home for a
+    synthesis figure belonging to no single phase, and this tool's own error message tells the author
+    such a figure "belongs in a comment line". That advice did not work: `manifest_required` makes
+    every embedded figure need a MAPPED entry for a report dated on or after the cutoff, and
+    `read_manifest` skips comments, so a correctly-authored report-native figure was an ERROR with no
+    conforming way to clear it. The only ways out were to map a figure to ITSELF, which is a check
+    that cannot fail, or to leave the report permanently red.
+
+    A declaration is not an escape hatch. Each figure must be named explicitly on its own line, so an
+    unlisted figure is still an error, and a figure that DOES carry a mapped source is still compared
+    by hash.
+    """
+    out = set()
+    if not path.is_file():
+        return out
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line.startswith("#") or "report-native" not in line:
+            continue
+        for tok in line.lstrip("#").split():
+            if tok.lower().endswith((".png", ".jpg", ".jpeg", ".svg")):
+                out.add(tok)
+    return out
+
+
 def read_manifest(d: Path) -> Dict[str, str]:
     path = d / MANIFEST
     if not path.is_file():
@@ -244,7 +272,8 @@ def check_report(d: Path, strict_unmapped: bool = False
             continue
         checked += 1
 
-    missing = [i.name for i in images if i.name not in manifest]
+    native = read_native(d / MANIFEST)
+    missing = [i.name for i in images if i.name not in manifest and i.name not in native]
     unmapped = len(missing)
     if missing:
         shown = ", ".join(missing[:4]) + (f", +{len(missing) - 4} more" if len(missing) > 4 else "")

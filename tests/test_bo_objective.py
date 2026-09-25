@@ -241,13 +241,14 @@ def test_composite_rmsre_is_the_LIBRARY_metric_not_a_reimplementation():
     assert got == pytest.approx(expect)
 
 
-def test_both_modules_resolve_the_REPO_ROOT_and_not_their_own_parent():
+def test_every_module_resolves_the_REPO_ROOT_and_not_its_own_parent():
     """Moving these files into `tools/bayesian_optimization/` broke `parents[1]` -- it then
     pointed at `tools/`, and the CLI died with `No module named 'tools'` the first time it was
     run from the new path. A path constant counted in directory levels breaks silently on the
     next move, so it is asserted against something only the real root has.
     """
-    from tools.bayesian_optimization import bo_replay, objective as objective_mod
-    for m in (objective_mod, bo_replay):
+    from tools.bayesian_optimization import (
+        acquisition, bo_loop, bo_replay, objective as objective_mod)
+    for m in (objective_mod, bo_replay, acquisition, bo_loop):
         assert (m.REPO / "CLAUDE.md").is_file(), (
             f"{m.__name__}.REPO resolves to {m.REPO}, which is not the repository root")

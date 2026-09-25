@@ -53,6 +53,21 @@ if [ -z "${A2MC_ROOT:-}" ]; then
     export A2MC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
+# ========================
+# TMPDIR — runtime temp writes stay inside the repo
+# ========================
+# NERSC hard rule: no writes outside $HOME. A path built at RUNTIME (`tempfile.mkdtemp()` and
+# friends) carries no literal for `.claude/hooks/block-forbidden-writes.py` to match, so the hook
+# denies those constructors unless $TMPDIR already resolves inside $HOME. Pointing it at the repo's
+# gitignored tmp/ satisfies that for A2MC work.
+#
+# ABSOLUTE, never relative: a temp library resolves $TMPDIR at CALL time against the process's
+# current directory, so `./tmp` would scatter directories wherever a tool has chdir'd.
+#
+# `export` only if `mkdir` succeeds: a $TMPDIR naming a missing directory fails deep inside whatever
+# library called it, while an unset one degrades to the hook's deny, which names the remedy.
+mkdir -p "${A2MC_ROOT}/tmp" 2>/dev/null && export TMPDIR="${A2MC_ROOT}/tmp"
+
 # E3SM/FATES source code (canonical api-43-1 checkout: FATES e027a40 / ELM d40b843)
 export A2MC_E3SM_ROOT="~/E3SM_FATES_api43"
 

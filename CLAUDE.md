@@ -2,7 +2,7 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of process-based environmental models using AI API + HPC + Adaptive Memory. **This line is the NON-CIME one** (EcoSIM · PFLOTRAN · ATS, via the `models/` adapter registry); the CIME-configured ESMs (ELM, ELM-FATES) are developed in the sibling **[`A2MC-elm`](https://github.com/jingtao-lbl/A2MC-elm/)**. See §"What is A2MC?" below.
-**Status:** Implementation Complete (v2.429)
+**Status:** Implementation Complete (v2.474)
 **Last Updated:** September 15, 2026
 ---
 
@@ -312,7 +312,8 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 
 | Skill | Modes | When to use |
 |-------|-------|-------------|
-| `a2mc-init` | any | First run in a CLONE: verify checkout + milestone, fork-safe remotes, machine config, then route onward (distinct from `onboard-session`, which resumes an existing setup) |
+| `a2mc-init` | any | First run in a CLONE: wire the clone (commit hooks, name), get + build + verify the model on this machine, fork-safe remotes, machine config, then route onward (distinct from `onboard-session`, which resumes an existing setup) |
+| `onboard-model` | any | Add a model A2MC does not have yet: adapter package, source-grounded knowledge chain, milestone, the model's build guide (`models/<m>/BUILD.md`) and its case template, then hand off to `onboard-case` |
 | `onboard-case` | any | Create a NEW case for an already-onboarded model: interview → research plan → `use_cases/<Model>_<Case>/` from that model's template → param list → Phase 0 |
 | `onboard-session` | any | Cold-start: orient at session start or after a compaction/reset |
 | `calibration-goal` | any | Run-to-convergence driver — the conductor above the phase skills; drives the offline 7-phase loop to CONVERGED, pausing only at the human gates (docs/43; harness-neutral) |
@@ -321,8 +322,9 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 | `curate-knowledge` | any | Review + promote staged Tier-3 knowledge proposals (the write-gate loop) |
 | `round-housekeeping` | any | Post-round curation AFTER the gate, before the next Phase 0 — curate the round's verified findings, promote/discard staged proposals, emit the open-questions list, record bound debt, and ASSERT the KB is non-empty. FULLER on convergence |
 | `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
-| `port-param-file` | any | Port a calibrated/tuned parameter file across model/API versions — remap PFT identity by functional type, transfer overlapping tuned values (api-31 `.nc` → api-43 `.json` and beyond) |
+| `port-param-file` | FATES | Port a calibrated/tuned parameter file across model/API versions — remap PFT identity by functional type, transfer overlapping tuned values (api-31 `.nc` → api-43 `.json` and beyond) |
 | `calibration-log` | any | Log interactive calibration/exploration for a site — a PhaseLogger phase log or a free-form session log under `use_cases/{site}/memory/logs/` |
+| `create-project-agent` | any | Stand up a PROJECT AGENT — an `A2MC-<Name>` repo, its framework half arriving by sync, its one project folder holding everything the project authors; for a project where calibration is one step among others or absent entirely (`docs/46`) |
 | `diagnose-forensics` | any | Triage ONE anomaly — real or artifact? — then root-cause it (a whole round -> `phase3-diagnosis`) |
 | `scientific-analysis` | any | Investigation → figure → ana_log (manuscript-supporting) |
 | `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |

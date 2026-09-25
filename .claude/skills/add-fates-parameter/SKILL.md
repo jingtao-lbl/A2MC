@@ -7,7 +7,7 @@ allowed-tools: [Read, Glob, Grep, Write, Edit, Bash]
 modes:
   requires_fates: true       # a FATES source change; only meaningful with FATES
   nutrient_pathway: any
-  scope: [model-dev]
+  scope: [fates, model-dev]
   summary: "Wire a new FATES EDParamsMod parameter + param-file entry; model-dev on the pinned checkout."
 ---
 

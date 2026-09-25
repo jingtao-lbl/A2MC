@@ -83,7 +83,7 @@ def known_skills() -> set[str]:
     return {d.name for d in SKILLS_DIR.iterdir() if (d / "SKILL.md").is_file()}
 
 
-def invoked_skills() -> tuple[dict, int]:
+def invoked_skills(log_names=()) -> tuple[dict, int]:
     """-> ({skill: latest YYYYMMDD it was invoked}, n transcripts read).
 
     SCOPE IS THE SESSION, not the calendar day, and both alternatives were tried and rejected:
@@ -95,11 +95,45 @@ def invoked_skills() -> tuple[dict, int]:
         flagged `calibration-log`, `plotting` and `calibration-discipline` as stale when they had
         genuinely been invoked in the same continuous session.
 
-    So: the CURRENT session (newest transcript). That is the session staging the commit, and a
-    skill invoked anywhere in it was actually read.
+    So: the CURRENT session. That is the session staging the commit, and a skill invoked anywhere
+    in it was actually read.
+
+    IDENTIFYING "THE CURRENT SESSION" IS NOT newest-by-mtime, and that bug produced a FALSE STALE.
+    This clone is worked by concurrent sessions (see feedback_commit_only_your_own_changes), and
+    their transcripts are written continuously -- measured 2026-09-23, two were one second apart.
+    Taking files[:1] by mtime therefore reads whichever session flushed last, which is a coin flip.
+    It landed on the wrong one and validated a log against a transcript that never wrote it: the
+    OTHER session had `log` before its own compaction boundary, so a correct claim was reported
+    STALE, repeatedly and unfixably by the author. The docstring below already names that direction
+    as the dangerous one -- a check that fails correct logs "would train people to strip true
+    claims".
+
+    So the transcript is selected by AUTHORSHIP: the session that wrote a log necessarily mentions
+    its filename. Measured on the same incident -- of 18 transcripts in the project dir, exactly one
+    contained the staged log's basename (13 times) and every other contained it zero times. Falls
+    back to newest-by-mtime when no log name is supplied or none matches, which preserves the old
+    behaviour for an explicit-path check of a log written by an earlier session.
     """
     files = sorted((f for d in transcript_dirs() for f in d.glob("*.jsonl")),
                    key=lambda p: p.stat().st_mtime, reverse=True)
+    if log_names:
+        # SCORE, do not merely match. A first attempt took any transcript CONTAINING the name and
+        # got it wrong: one `ls memory/dev_logs_adapterkit/20260923*` echoes another session's
+        # filenames into this session's transcript, so "mentions it at all" is satisfied by both.
+        # Measured on that incident: the authoring session named its own log 55 times while the
+        # other session carried 6 incidental mentions from directory listings. Argmax over the
+        # count separates them cleanly; a bare membership test does not.
+        scored = []
+        for f in files:
+            try:
+                blob = f.read_text(errors="ignore")
+            except OSError:
+                continue
+            c = sum(blob.count(n) for n in log_names)
+            if c:
+                scored.append((c, f))
+        if scored:
+            files = [max(scored, key=lambda cf: cf[0])[1]]
     found, pos, boundary, n = {}, {}, -1, 0
     for f in files[:1]:            # the current session only
             n += 1
@@ -198,10 +232,33 @@ def staged_logs() -> list[Path]:
     for rel in out:
         if not rel.endswith(".md"):
             continue
-        if ("/memory/logs/" in rel or "memory/dev_logs" in rel
-                or "memory/model_logs/" in rel or "memory/ana_logs/" in rel):
+        # `memory/ana_logs/` and `memory/model_logs/` are RETIRED frozen streams and are NOT
+        # watched: no new log is written to either, and the only write either still sees is a
+        # supersede banner, which adds no claim to verify. The live model-dev stream
+        # `use_cases/<Case>/memory/model_evolution/` is deliberately not added either -- none of
+        # its records carries a "Skills and memory invoked" section, so it would be a no-op.
+        # See memory/dev_logs_adapterkit/20260924d_Check_Skill_Claims_Stops_Watching_Two_Retired_Streams.md
+        if "/memory/logs/" in rel or "memory/dev_logs" in rel:
             keep.append(REPO / rel)
     return keep + staged_new_reports()
+
+
+def staged_added_text(rel: str) -> str:
+    """The lines this commit ADDS to `rel`, as one blob.
+
+    An EDIT to an existing log is made in a LATER session than the one that wrote it -- a supersede
+    banner, a corrected number, a dated inline correction. Its "Skills and memory invoked" section
+    records what the ORIGINAL session did, and this checker can only see the CURRENT session's
+    transcript, so validating the whole section against it reports every pre-existing claim as
+    never invoked. Measured 2026-09-22: a commit adding correction banners to five logs was
+    refused because one of them, written days earlier, had legitimately claimed `plotting`.
+
+    So an edit is judged on what it ADDS, which is the only part its author is answerable for.
+    """
+    out = subprocess.run(["git", "diff", "--cached", "-U0", "--", rel],
+                         cwd=REPO, capture_output=True, text=True).stdout
+    return "\n".join(ln[1:] for ln in out.splitlines()
+                      if ln.startswith("+") and not ln.startswith("+++"))
 
 
 def staged_added_paths() -> set:
@@ -239,7 +296,9 @@ def main(argv: list[str]) -> int:
         return 0
 
     universe = known_skills()
-    invoked, inv_pos, boundary, ntr = invoked_skills()
+    # Pass the log basenames so the AUTHORING transcript is chosen, not merely the most
+    # recently flushed one -- concurrent sessions in this clone make those different.
+    invoked, inv_pos, boundary, ntr = invoked_skills([f.name for f in files])
     # explicit-path mode: the caller asked, so apply the staleness tier to everything.
     added = staged_added_paths() if argv[0] == "--staged" else None
 
@@ -272,6 +331,13 @@ def main(argv: list[str]) -> int:
             rel = f.name
         # staleness applies to a log being ADDED (or to an explicit-path check), never to an edit
         apply_stale = (added is None) or (rel in added)
+        # ... and so does the claim check itself: an edit is answerable only for the claims IT
+        # adds, because the rest were written by a session this checker cannot see.
+        if added is not None and rel not in added:
+            c = claimed_skills(staged_added_text(rel), universe)
+            if not c:
+                checked -= 1
+                continue
         for s in sorted(c):
             if s not in invoked:
                 missing.append(s)

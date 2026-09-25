@@ -86,6 +86,16 @@ def logs_claiming(version: str, repo: Path = REPO) -> list[Path]:
 
 
 def main() -> int:
+    # A downstream copy has no CLAUDE.md version header: that file is the PROJECT's there, and the
+    # development history this check enforces does not travel. Skip rather than error -- failing on
+    # an absence that is by design blocks a commit for something the user did not cause.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from downstream import is_downstream
+    if is_downstream(REPO):
+        print("check_dev_log_for_version: downstream copy (skip) — the version header is the "
+              "project's here, and dev logs do not travel")
+        return 0
+
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", help="check this version instead of CLAUDE.md's")

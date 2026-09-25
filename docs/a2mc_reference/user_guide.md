@@ -57,8 +57,8 @@ this repo) drives setup through skills, and each stage has a checklist and a run
 
 | your situation | start with |
 |---|---|
-| fresh clone, model A2MC already supports | **`a2mc-init`** — verifies your checkout against the RAG milestone registry, offers fork-safe remotes, writes the machine config, then routes onward |
-| a model A2MC has never seen | **`onboard-model`** first — including **Step 0d, the orientation run**: A2MC builds the model with you and runs its own sample case, so neither of you is reasoning about a model nobody here has executed |
+| fresh clone (any model) | **`a2mc-init`** — wires the clone (commit hooks, your name), gets your model built and verified on this machine (`models/<model>/BUILD.md`), offers fork-safe remotes, writes the machine config, then routes onward |
+| a model A2MC has never seen | `a2mc-init` Steps 0, 1 and 3 (wiring and the machine config), then **`onboard-model`** — starting with **Step 0a, where things go** (the source checkout or where to clone it, the archive root, a folder for the orientation run, and on a cluster the account), then **Step 0d, the orientation run**: A2MC builds the model with you and runs its own sample case, so neither of you is reasoning about a model nobody here has executed |
 | adding a case to an onboarded model | **`onboard-case`** — interview → research plan → `use_cases/<Model>_<Case>/` → parameter list → Phase 0 |
 | resuming an already-configured clone | **`onboard-session`** — reads the active case's `memory/workflow_state_offline_r{RR}.json` (highest round) for where the loop stands, its `next_action`, and any Phase-6 binding target, and validates it before acting on it; re-reads the project's operating rules, checks the branch and uncommitted work, reads the latest calibration log or round report, looks for in-flight HPC jobs and arms monitoring, and surfaces any pending knowledge proposals. It then **drives that next action** rather than reporting and waiting |
 
@@ -70,7 +70,7 @@ python3 tools/check_stage_ready.py          # which stage am I in, and what is o
 
 It needs no sourced config (that is the point — it answers the question that comes *before* `check_setup_ready.py`), routes from what is on disk, and prints the items it cannot verify so a clean run is never mistaken for a finished stage. The full per-stage definition of done is the **`setup-discipline`** skill. A session that opens in an unconfigured clone is also told this automatically by the `SessionStart` hook.
 
-The manual steps below are what those skills automate — read them to understand the machinery, or to work without an agent harness.
+The manual steps below are what those skills automate — read them to understand the machinery, or to work without an agent harness. Do not skip the clone wiring in step 2b: git cannot carry it, and without it the repository's own commit checks never run.
 
 ### Manual installation
 
@@ -95,6 +95,12 @@ python -m venv ~/a2mc_env
 source ~/a2mc_env/bin/activate
 # anthropic SDK for the Anthropic provider; openai SDK for OpenAI/CBorg providers
 pip install anthropic openai numpy pandas xarray netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml Pillow
+
+# 2b. Wire the clone: things git cannot carry (commit hooks, a database-file flag, the memory
+#     link, your name). Idempotent; the checker exits 0 when the clone is set up.
+scripts/setup_clone.sh
+python3 tools/whoami.py --set "Your Name"
+python3 tools/check_clone_setup.py
 
 # 3. Set API key (add to ~/.bashrc for persistence)
 # Use the env var matching your provider (see a2mc_config.sh -> A2MC_AI_PROVIDER):
@@ -143,11 +149,15 @@ echo "$A2MC_MAX_EXPERIMENTS $A2MC_MAX_SKIP_TESTING $A2MC_CONFIDENCE_THRESHOLD"  
 ### 2.1 Create a use case
 
 ```bash
-# Copy the Kougarok example (recommended) or the minimal template
-cp -r use_cases/ELM-FATES_Kougarok use_cases/YourSite
-# OR
-cp -r use_cases/TEMPLATE use_cases/YourSite
+python tools/create_use_case.py --list                              # model keys and their templates
+python tools/create_use_case.py --model <model> --case YourSite --dry-run
+python tools/create_use_case.py --model <model> --case YourSite     # -> use_cases/<Prefix>_YourSite/
 ```
+
+Never scaffold with `cp -r`: the tool renames the template's site config to
+`config/<model>_yoursite_config.sh`, refuses an existing case, and leaves nothing behind on failure.
+To start from a finished case instead of the template, add `--seed <CaseDir>`; only a case present in
+your clone can seed, and the public `A2MC` ships none.
 
 ### 2.2 Site-specific settings
 
@@ -197,7 +207,12 @@ vim use_cases/YourSite/validation/your_targets.txt
 
 ### 2.4 Machine settings
 
-Only edit `a2mc_config.sh` (or `a2mc_noncime_config.sh` for non-CIME models) if you need to change HPC-level settings:
+**Which file holds what depends on the model family.** For ELM / ELM-FATES (CIME) the machine
+config `a2mc_config.sh` holds the HPC project, the E3SM checkout and the output root, as below. For
+EcoSIM, PFLOTRAN and ATS the machine config `a2mc_noncime_config.sh` holds only shared settings (Python
+environment, AI provider, default MPI layout), and the **site** config holds the model checkout
+(`A2MC_MODEL_PATH`), the archived binary (`A2MC_ECOSIM_BINARY` / `A2MC_PFLOTRAN_BINARY` /
+`A2MC_ATS_EXE`), the HPC account (`A2MC_HPC_ACCOUNT`) and the output root. For ELM / ELM-FATES:
 
 ```bash
 export A2MC_PROJECT="your_project"        # HPC allocation
@@ -287,15 +302,15 @@ python3 tools/check_stage_ready.py            # which stage am I in, and what is
 
 ### 3.1 Setting up a clone — `a2mc-init`
 
-If you have just cloned A2MC and nothing is configured, this is the entry point. Ask your agent to run **`a2mc-init`** (in Claude Code, `/a2mc-init`). It greets you and gauges your experience with the model, confirms **which model you are calibrating and whether A2MC already supports it**, verifies your checkout against the RAG milestone registry, offers fork-safe remotes on that checkout, and writes the machine config — `a2mc_config.sh` for a CIME-configured model, `a2mc_noncime_config.sh` for a standalone one.
+If you have just cloned A2MC, this is the entry point. Ask your agent to run **`a2mc-init`** (in Claude Code, `/a2mc-init`). It greets you, records your name and gauges your experience with the model, then **wires the clone** (the per-clone settings git cannot carry; every user, first). It confirms **which model you are calibrating and whether A2MC already has it**. For a model it has, it gets the model **built and verified on this machine** from the model's build guide (`models/<model>/BUILD.md`), checks the checkout against A2MC's knowledge profiles (a commit other than the registered one is *drift*: you proceed, and the plan says so), offers fork-safe remotes, and writes the machine config — `a2mc_config.sh` for a CIME-configured model, `a2mc_noncime_config.sh` for a standalone one.
 
-It then **routes onward** rather than doing everything itself: to `onboard-model` if your model has no adapter and no registered milestone yet, or to `onboard-case` to build the case. It will not invent a value you did not give — gaps are marked `TODO` — and confirms before writing any config.
+It then **routes onward** rather than doing everything itself: to `onboard-model` if your model has no adapter yet (after the wiring and the machine config), or to `onboard-case` to build the case. It will not invent a value you did not give, and it confirms before writing any config.
 
 ### 3.2 Teaching A2MC a new model — `onboard-model`
 
 This is the adapter kit's whole premise. **`onboard-model`** builds everything A2MC needs to reason about a model it has never seen: the `models/<name>/` adapter (how a case is built, run, extracted and scored), the source-grounded knowledge chain (codebase wiki → curated seed → RAG profile), and a registered entry in `rag/milestones.json` pinned to the model's source commit. Its acceptance gates are build-and-run validators, not a checklist — the model has to actually run through A2MC before the stage is done.
 
-Skip this stage if `ls models/` already shows your model.
+Skip this stage if `python3 tools/check_stage_ready.py --model <model>` shows no ✗ (ELM-FATES is the built-in path and needs no adapter). A model whose adapter exists but shows a ✗ (ATS on this line) is half-onboarded: resume `onboard-model` at the first ✗.
 
 ### 3.3 Adding a case — `onboard-case`
 

@@ -14,6 +14,16 @@ A2MC ("Agentic Adaptive Multi-target Calibration") is an AI-driven calibration f
 
 Both agents share the same brain and hands — operating rules (this file), the skills catalog (`.claude/skills/`), persistent memory, episodic logs (`use_cases/{Model}_{Case}/memory/logs/` — phase + session logs), RAG/GraphRAG knowledge, and the shared tools in `tools/`. Findings flow between the two agents through that shared substrate (see §"The knowledge loop").
 
+## First: is setup finished?
+
+Before anything else in a session, ask the repo which setup step it is at. The command needs nothing sourced:
+
+```bash
+python3 tools/check_stage_ready.py     # per-clone wiring, the setup stage, and a NEXT: line naming the skill
+```
+
+It prints the per-clone rows git cannot carry (commit hooks, author name, …), the stage, the cases still in setup, and the skill to run next: `a2mc-init` (wire the clone; build and verify the model on this machine), `onboard-model` (a model A2MC does not have), `onboard-case` (a case to create or finish), or `onboard-session` (resume a running case). Under Claude Code the SessionStart hook prints the same answer; any other harness runs this command itself. `setup-discipline` holds each stage's definition of done.
+
 ## Resolve your mode first
 
 A2MC is **mode-aware**: the same repo runs different model configurations — ELM with or without FATES, different FATES API versions/milestones (which even change the parameter-file format), and different nutrient schemes (ECA vs RD), among others. Guidance, parameters, and mechanisms that are true in one mode are false in another.
@@ -50,7 +60,7 @@ These are the site- and framework-agnostic rules. Follow them on every task.
 1. **Verify, don't assume.** Never state what a parameter, flag, file, or mechanism does based on its name. Read the source of truth first — the relevant config, script, doc, or the model knowledge base. When uncertain, check before claiming.
 2. **Query the knowledge base before describing model behavior.** A2MC ships a three-tier knowledge system (static docs in `docs/fates-knowledge-base/`, RAG/GraphRAG in `rag/`, Adaptive Memory in `memory/gained_knowledge/`). Consult it — **for the active milestone's profile** (`$A2MC_RAG_ACTIVE`) — before writing comments, docs, or code that assert how the model (FATES/ELM) works.
 3. **Keep code and docs generic.** A2MC is meant to be reused for many sites and model configurations. Code must be site- and mode-agnostic; site-specific content belongs in `use_cases/{Model}_{Case}/`. Don't hardcode site paths, parameters, or values — use the config files.
-4. **No hardcoded paths.** Machine settings live in `a2mc_config.sh`; site settings in `use_cases/{Model}_{Case}/config/<site>_config.sh`. Access them in Python via `tools/config.py`. Source the SITE config before running anything; since v2.306 it auto-sources the machine config its model needs, so one command is enough and the explicit machine-config-first form is a no-op.
+4. **No hardcoded paths.** Machine settings live in the machine config for the model's family (`a2mc_config.sh` for ELM/ELM-FATES, `a2mc_noncime_config.sh` for EcoSIM, PFLOTRAN and ATS); site settings in `use_cases/{Model}_{Case}/config/<site>_config.sh`, which for a non-CIME model also holds the model checkout, binary, HPC account and output root. Access them in Python via `tools/config.py`. Source the SITE config before running anything; since v2.306 it auto-sources the machine config its model needs, so one command is enough and the explicit machine-config-first form is a no-op.
 5. **Read the phase folder's context doc when working in a phase folder.** Each `phases/phaseN_*/` carries its own README (and a `CLAUDE.md` in the dev repo); read it before editing there.
 6. **Keep `orchestrator.py` lean.** It owns state transitions and human-review checkpoints only. Add new logic to `phases/` or `tools/` and call it from the orchestrator via thin wrappers — never grow the state machine with new logic.
 7. **No AI attribution in commits.** Never add `Co-Authored-By` or any AI-attribution trailer to git commit messages. Use the project's author convention for authored files.
@@ -85,8 +95,9 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 
 | Skill | Modes | Invoke when the user wants to… |
 |---|---|---|
+| `create-project-agent` | any | Stand up a PROJECT AGENT: an `A2MC-<Name>` repo whose framework half arrives by sync and whose one top-level project folder holds everything the project authors. For a project with calibration as one step, or none at all |
 | `calibration-log` | any | Log interactive calibration/exploration work for a site (PhaseLogger + session logs) |
-| `a2mc-init` | any | First run in a CLONE — verify checkout + milestone, fork-safe remotes, machine config, then route to `onboard-model` / `onboard-case` |
+| `a2mc-init` | any | First run in a CLONE — wire the clone (commit hooks, your name), get + build + verify the model on this machine, fork-safe remotes, machine config, then route to `onboard-model` / `onboard-case` |
 | `onboard-case` | any | Create a NEW case for an already-onboarded model — interview → research plan → `use_cases/{Model}_{Case}/` → param list → Phase 0 (repeatable) |
 | `onboard-session` | any | Cold-start: orient at session start or after a compaction/reset |
 | `calibration-goal` | any | Run-to-convergence driver — the conductor above the phase skills; advances the offline 7-phase loop to CONVERGED, pausing only at the 4 human gates (harness-neutral) |
@@ -102,7 +113,6 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | `scientific-analysis` | any | Run an investigation → figure → ana_log |
 | `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |
 | `literature-review` | any | Cited literature review via `paper-search-mcp` (search→triage→extract→synthesis) — PARAMETER-BOUNDS (published ranges → refine a param-list's `lower`/`upper`) or MANUSCRIPT topic review. Validated DOIs, no fabrication. NOT a single-citation lookup |
-| `cherrypick-from-main` | any | Land work INTO adapter-kit: main by audited SELECTIVE cherry-pick (full merge = rare fallback), a FEATURE branch by full merge unless contaminated (Step 7): audit by path, no-FATES-rewrite invariant, conflict-prone files, verify gate |
 | `onboard-model` | any | Onboard a NEW model end-to-end — adapter package + knowledge chain + V1–V5 + milestone + smoke test (top-level adapter-kit orchestrator) |
 | `ecosim-version-drift` | EcoSIM | Get usable calibration data from a drifted EcoSIM checkout: (A) input drift (binary newer → ENDRUN, no tape) → evolve input from a newer donor table; (B) missing outputs (target var inactive-by-default) → activate via hist_fincl1. EcoSIM-specific |
 | `ecosim-trait-check-refine` | EcoSIM | Check + refine EcoSIM per-PFT trait VALUES via the ecosim-agent skills (referenced, not ported): sanity-check a run's plant_trait.*.desc → map flagged codes back to NC vars → refine → re-verify. Diagnostic, not a guaranteed fix. EcoSIM-specific |
@@ -114,7 +124,7 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | `generate-codebase-wiki` | any | Produce a source-grounded codebase wiki for a model |
 | `validate-rag-chain` | any | Validate the source → wiki → curated-YAML → RAG chain before shipping |
 | `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
-| `port-param-file` | any | Port a calibrated param file across model/API versions (remap PFT identity by functional type, transfer tuned values) |
+| `port-param-file` | FATES | Port a calibrated param file across model/API versions (remap PFT identity by functional type, transfer tuned values) |
 | `add-skill` | any | Scaffold + register a new skill (4-way registry parity) |
 | `refine-skill` | any | Refine an existing skill from accumulated evidence (human-gated) |
 | `summarize-calibration-round` | any | Summarize one round: whole-ensemble figures, evaluation, sensitivity, and what the round established about the system |

@@ -174,8 +174,13 @@ claims:
       moment anyone changes the value. Quote the variable. (A CLI EXAMPLE passing an explicit
       override is fine and is not what this matches.)
     patterns:
-      - "max cycles:? +10\\b"
-      - "max skip[- ]testing:? +10\\b"
-      - "max experiments:? +10\\b"
-      - "capped at 10\\b"
+      # `(?![\\d,])` not `\\b`: a COMMA is a word boundary, so `capped at 10\\b` matched the `10`
+      # in "capped at 10,000 characters" -- a true, sourced statement about a hook's context
+      # budget, flagged as a loop limit quoted as a literal. Pinned by
+      # tests/test_check_doc_claims.py::test_loop_limit_rule_does_not_fire_on_a_larger_number
+      # and its control, which asserts the rule still catches the defect it exists for.
+      - "max cycles:? +10(?![\\d,])"
+      - "max skip[- ]testing:? +10(?![\\d,])"
+      - "max experiments:? +10(?![\\d,])"
+      - "capped at 10(?![\\d,])"
       - "confidence threshold:? +0\\.9[05]\\b"

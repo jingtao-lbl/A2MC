@@ -8,7 +8,7 @@ A/B/AB cross-sampling structure, so ``sobol.analyze`` cannot read it, and ``morr
 cannot either because there are no trajectories. Feeding a space-filling matrix to either
 analyzer does not error; it returns numbers computed from a structure that is not there.
 
-The architecture this implements instead (PI, 2026-08-27):
+The architecture this implements instead:
 
     space-filling ensemble on the EXPENSIVE simulator   ->  train a surrogate
     an independent ensemble                             ->  validate it
@@ -23,12 +23,10 @@ surrogate are precise numbers about the wrong function, and nothing downstream c
 from good ones -- the estimator's own confidence intervals narrow with N regardless, so they
 describe sampling error in the surrogate, never the surrogate's error against the simulator.
 So accuracy is a GATE, not a footnote: without ``--accuracy-report`` (or an explicit
-``--no-accuracy-gate``) this script exits non-zero before sampling anything. See
-[[feedback_answerability_before_computation]].
+``--no-accuracy-gate``) this script exits non-zero before sampling anything.
 
-GENERIC BY DESIGN. This is A2MC's own machinery, so it is generic across models
-([[feedback_per_model_scripts_not_generic]]); everything model-specific reaches it through the
-``SurrogateSpec`` and the saved surrogate.
+GENERIC BY DESIGN. This is A2MC's own machinery, so it is generic across models; everything
+model-specific reaches it through the ``SurrogateSpec`` and the saved surrogate.
 
 Usage::
 
@@ -81,13 +79,31 @@ def load_accuracy_gate(path: Optional[str], allow_missing: bool) -> Dict[str, An
             "  Run models.surrogate.validate.run_acceptance first, or pass --no-accuracy-gate\n"
             "  if you are deliberately producing a throwaway diagnostic.")
     rep = json.loads(Path(path).read_text())
-    passed = rep.get("passed")
+    # ONE derivation of the verdict, shared with tools/promote_surrogate.py. Reading `passed`
+    # directly was wrong twice over: it is a PROPERTY of AcceptanceReport rather than a field, so a
+    # report serialized from the dataclass has `verdicts` and no `passed`, and this gate then fell
+    # through to the promotion check having read no verdict at all. Measured 2026-09-22: 8 of 21
+    # tracked acceptance.json files, three of which record a FAIL in their verdicts.
+    from models.surrogate.validate import report_passed                # noqa: E402
+    passed = report_passed(rep)
     if passed is False:
         raise SystemExit(
             f"REFUSING: the acceptance report at {path} records passed=False.\n"
             f"  {rep.get('summary', '')}\n"
             "  Fix the surrogate (more training points, a different learner family, or a\n"
             "  restricted input box) before asking it for sensitivity indices.")
+    if passed is None:
+        # FAIL CLOSED. No verdict is not a pass: an emulator fit script that writes its own
+        # summary dict produces a file that looks like an acceptance report and rules nothing
+        # in or out, and treating that as permission is how an unvalidated surrogate reaches a
+        # published sensitivity table.
+        raise SystemExit(
+            f"REFUSING: the acceptance report at {path} records NO VERDICT.\n"
+            "  It has neither a `passed` field nor a non-empty `verdicts` block, so nothing in\n"
+            "  it says the surrogate was accepted. This is what an ad-hoc summary written by a\n"
+            "  fit script looks like.\n"
+            "  Produce a real report with models.surrogate.validate.run_acceptance, or pass\n"
+            "  --no-accuracy-gate if you are deliberately producing a throwaway diagnostic.")
 
     # PASSING METRICS ARE NECESSARY AND NOT SUFFICIENT. Using a surrogate to steer a search is a
     # decision, and the checks that should decide it -- is the training region the one that

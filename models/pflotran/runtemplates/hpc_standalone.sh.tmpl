@@ -51,21 +51,17 @@ export SLURM_CPUS_PER_TASK={{CPUS_PER_TASK}}
 
 # ---- Toolchain (runtime) ----
 # PFLOTRAN links PETSc, MPI and HDF5, so the RUNTIME modules must match the ones
-# the binary was BUILT against. RESOLVED 2026-08-07: PFLOTRAN at 157a26f7
-# hard-requires PETSc >= 3.21.4 (a #error in pflotran_constants.F90:19-29), and
-# NERSC has a prebuilt 3.21.4 in the PFLOTRAN developers' shared tree at
-# /global/common/software/pflotran -- so the "does v6 source compile against
-# 3.24.3?" question never had to be answered.
+# the binary was BUILT against. PFLOTRAN at 157a26f7 hard-requires PETSc 3.21.x:
+# >= 3.21.4 (a #error in pflotran_constants.F90:19-29), and < 3.23, which needs
+# `use petscsys` this commit predates (3.24 was tested: 279 errors).
 #
-# The binding constraint turned out to be the COMPILER, not PETSc: that PETSc
-# was built with gfortran 12.3 / cray-mpich 8.1.28 / cray-hdf5-parallel
-# 1.12.2.9 / cray-libsci 23.12.5, and gfortran .mod files are not readable
-# across compiler major versions. All four are CPE 23.12, so one module load
-# pins them. Perlmutter's default is CPE 25.09 (gfortran 14) and does NOT work.
+# The Cray PE release is the other half of the pairing, and NERSC retires them:
+# cpe/23.12, which the first build (2026-08-07) and NERSC's shared PETSc 3.21
+# linked, was removed by 2026-09-22 and both stopped running. The current
+# recipe rebuilds PETSc 3.21.4 on cpe/25.09 (models/pflotran/BUILD.md).
 #
-# NEVER `module load PrgEnv-gnu` after cpe/23.12 -- it silently reverts the swap.
+# NEVER `module load PrgEnv-gnu` after `cpe/<release>` -- it silently reverts the swap.
 # NEVER `module purge` on Perlmutter -- it leaves MODULEPATH broken.
-# cpe/23.12 is DEPRECATED: when NERSC removes it, PETSc must be rebuilt.
 #
 # Rendered from A2MC_PFLOTRAN_MODULES in the site config; the full derivation lives in the
 # per-build environment script beside the PFLOTRAN checkout (pflotran_env_<commit>.sh), on

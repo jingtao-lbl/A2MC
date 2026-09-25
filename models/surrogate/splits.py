@@ -25,7 +25,7 @@ WHAT EACH ONE ACTUALLY TESTS
                 only one that asks about conditions the model never saw.
 
 A CAVEAT ON `shell` THAT IS EASY TO MISS AND WOULD MAKE IT MEANINGLESS. The natural definition of
-an outer shell is the Chebyshev radius, max_j |x_j - 1/2|. In 54 dimensions essentially every point
+an outer shell is the Chebyshev radius, max_j |x_j - 1/2|. In tens of dimensions essentially every point
 has one coordinate near an edge, so that radius is about 1/2 for the entire ensemble and the split
 degenerates into a random one while LOOKING like an extrapolation test. `shell` therefore uses the
 MEAN absolute deviation across coordinates, which still concentrates (its spread falls as
@@ -109,14 +109,10 @@ def block_split(n: int, test_fraction: float = 0.2, position: str = "tail") -> S
     about the same as a random hold-out and to serve as the control that shows the harder splits are
     measuring a real shift.
 
-    MEASURED on EcoSIM_Lusignan R1b (4,096 points, 54 parameters, RF, seed 20260912), Spearman rho
-    of predicted against true distance-to-observation, random against tail block:
-
-        GPP   0.582 -> 0.655        Reco  0.584 -> 0.634        ET  0.491 -> 0.518
-
-    The tail block is EASIER on all three targets, by 0.03 to 0.07. The explanation is the same
-    property that makes the sequence extensible: each new point fills a gap between existing ones,
-    so the LAST 20% of a Sobol' sequence is the subset most thoroughly surrounded by the first 80%.
+    In practice a tail block scores HIGHER rank correlation than a random hold-out on the same
+    ensemble. The explanation is the same property that makes the sequence extensible: each new point
+    fills a gap between existing ones, so the LAST 20% of a Sobol' sequence is the subset most
+    thoroughly surrounded by the first 80%.
     Holding it out is close to the easiest hold-out available, not a neutral one.
 
     So do not read a good block score as reassurance, and do not use this as the control it was
@@ -135,10 +131,9 @@ def block_split(n: int, test_fraction: float = 0.2, position: str = "tail") -> S
                               f"sequence"),
                  optimistic_about=("MORE than a random split, not the same: a Sobol' sequence's "
                                    "later points fill gaps between its earlier ones, so a tail "
-                                   "block is the subset most surrounded by training data. Measured "
-                                   "0.03-0.07 HIGHER rank correlation than random on "
-                                   "EcoSIM_Lusignan R1b. Not an extrapolation test and not a "
-                                   "neutral control"))
+                                   "block is the subset most surrounded by training data, so it "
+                                   "scores HIGHER rank correlation than a random split. Not an "
+                                   "extrapolation test and not a neutral control"))
 
 
 def axis_split(X: np.ndarray, axis: int, test_fraction: float = 0.2,
@@ -197,8 +192,9 @@ def levels_split(labels: Sequence[Any], held: Sequence[Any]) -> Split:
     """Withhold whole values of a label: years, sites, treatments.
 
     For a driver-conditioned emulator this is the test that matches its claim. An emulator says it
-    has learned the model's response to weather rather than one weather history; holding out entire
-    YEARS of the driver series and predicting them is the only split that asks that directly.
+    has learned the model's response to its drivers rather than one driver history; holding out
+    entire periods of the driver series (years, for example) and predicting them is the only split
+    that asks that directly.
     """
     labels = np.asarray(labels)
     held_arr = np.asarray(list(held))

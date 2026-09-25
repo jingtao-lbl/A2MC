@@ -73,6 +73,18 @@ def _promotion(d: Path) -> Optional[Dict[str, Any]]:
     return json.loads(p.read_text()) if p.is_file() else None
 
 
+def _verdict(rep: Dict[str, Any]) -> Optional[bool]:
+    """True / False / None (no verdict at all), from THE one derivation.
+
+    Delegates to `models.surrogate.validate.report_passed` rather than reading `rep["passed"]`,
+    which is a property of `AcceptanceReport` and therefore absent from any report serialized
+    straight from the dataclass. Imported lazily so this tool still answers `--help` without the
+    model package importable.
+    """
+    from models.surrogate.validate import report_passed
+    return report_passed(rep)
+
+
 def check_promotion(surrogate_dir) -> Tuple[bool, str]:
     """(is_promoted, human-readable reason). The API a consumer should call before USING a surrogate.
 
@@ -126,7 +138,7 @@ def cmd_review(d: Path, _a) -> int:
             verdict = ("STABLE" if rate >= 0.9 else
                        "MARGINAL" if rate >= 0.5 else "NOT STABLE")
             print(f"  the verdict holds on {100*rate:.0f}% of resamples   [{verdict}]")
-            if rep.get("passed") and rate < 0.9:
+            if _verdict(rep) and rate < 0.9:
                 print("  ** the headline says PASS but it does not survive resampling. A pass this\n"
                       "     close to the bar is a coin flip on which split you happened to draw. **")
         for k, q in sorted((boot.get("quantiles") or {}).items()):
@@ -156,10 +168,19 @@ To approve:
 
 def cmd_promote(d: Path, a) -> int:
     rep, digest = _acceptance(d)
-    if not rep.get("passed") and not a.force:
+    # THE VERDICT IS DERIVED, NOT READ. `passed` is a property of AcceptanceReport, so a report
+    # serialized from the dataclass carries `verdicts` and no `passed` key: `rep.get("passed")`
+    # returned None for 8 of 21 tracked reports, which refused three that record a genuine PASS in
+    # their verdicts and, in the sibling Sobol gate, waved through three that record a FAIL. One
+    # derivation now serves both (models.surrogate.validate.report_passed, via _verdict below).
+    verdict = _verdict(rep)
+    if verdict is not True and not a.force:
         raise SystemExit(
-            "REFUSING: acceptance.json records passed=false.\n"
-            f"  {str(rep.get('summary', ''))[:300]}\n"
+            ("REFUSING: acceptance.json records passed=false.\n"
+             if verdict is False else
+             "REFUSING: acceptance.json records NO VERDICT -- neither a `passed` field nor a\n"
+             "  non-empty `verdicts` block. Nothing in it says this surrogate was accepted.\n")
+            + f"  {str(rep.get('summary', ''))[:300]}\n"
             "  Fix the surrogate rather than approving around it. --force exists for a deliberate\n"
             "  exception and stamps the promotion as forced.")
     if not (a.basis or "").strip():
@@ -172,7 +193,7 @@ def cmd_promote(d: Path, a) -> int:
           "reviewed_by": a.reviewed_by or "",
           "basis": a.basis.strip(),
           "acceptance_sha": digest,
-          "metrics_passed": bool(rep.get("passed")),
+          "metrics_passed": bool(_verdict(rep)),
           "forced": bool(a.force),
           "use_mode": (rep.get("overall") or {}).get("use_mode")}
     (d / PROMOTION_FILE).write_text(json.dumps(pr, indent=2))

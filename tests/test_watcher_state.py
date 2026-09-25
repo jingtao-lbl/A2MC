@@ -412,3 +412,137 @@ def test_the_harness_ACTUALLY_reproduces_the_death_without_the_fix(tmp_path):
     assert "syntax error" in low or "unexpected token" in low, \
         ("the harness did not reproduce the 2026-09-03 death, so the test above proves nothing:\n"
          + out[-800:])
+
+
+# =================================================================================================
+# HARDENING 3 (2026-09-23) -- "finished" is a FINISHED STATUS in the accounting record, never an
+# inference from the queue.
+#
+# The watcher used to declare ENDED on two consecutive EMPTY squeue polls. squeue forgets every
+# finished job after MinJobAge (300 s on Perlmutter) and then answers "Invalid job id", so whenever
+# those two polls straddled the purge the watcher held for ever. Measured on V0 job 58788324: ended
+# 08:36:07, purged ~08:41:07, second poll 08:41:38, held until stopped by hand. The fix is NOT to
+# read "Invalid job id" as finished -- a job's absence is not a status -- but to decide on sacct,
+# which keeps each task's final state after the queue has let it go (PI, 2026-09-23).
+# =================================================================================================
+_SQUEUE_PURGED = ('#!/bin/bash\necho "slurm_load_jobs error: Invalid job id specified" >&2\n'
+                  'exit 1\n')
+
+
+def _run_watcher_with(tmp_path, squeue_body, sacct_body, ntasks=1, seconds=25):
+    """Run the watcher against arbitrary squeue/sacct shims; return (final state, log text).
+
+    Stops at the first terminal status or after `seconds`, whichever comes first, so a watcher
+    that correctly HOLDS is observed holding rather than hanging the test.
+    """
+    import os, time as _t
+    state = tmp_path / "s.json"
+    shim = tmp_path / "shim"
+    shim.mkdir(exist_ok=True)
+    (shim / "squeue").write_text(squeue_body)
+    (shim / "sacct").write_text(sacct_body)
+    for f in ("squeue", "sacct"):
+        (shim / f).chmod(0o755)
+    env = dict(os.environ, PATH=f"{shim}:{os.environ['PATH']}")
+    log = tmp_path / "watch.log"
+    with open(log, "w") as fh:
+        proc = subprocess.Popen(["bash", str(WATCHER), "-j", "7", "-n", str(ntasks),
+                                 "-s", str(state), "-i", "1"],
+                                stdout=fh, stderr=subprocess.STDOUT, env=env)
+    observed = None
+    try:
+        deadline = _t.time() + seconds
+        while _t.time() < deadline and proc.poll() is None:
+            _t.sleep(0.3)
+        # READ BEFORE STOPPING: terminating a still-holding watcher makes its signal handler stamp
+        # DIED, which would hide the very status (a correct hold) the caller is asking about.
+        observed = json.loads(state.read_text())
+    finally:
+        if proc.poll() is None:
+            proc.terminate()
+            proc.wait(timeout=10)
+    return observed, log.read_text()
+
+
+@requires_gnu_timeout
+def test_a_job_purged_from_the_queue_still_ends_on_its_final_status(tmp_path):
+    """The 2026-09-23 case: squeue has forgotten the job, sacct records it COMPLETED."""
+    st, log = _run_watcher_with(tmp_path, _SQUEUE_PURGED, "#!/bin/bash\necho COMPLETED\n")
+    assert st["status"] == "ENDED", f"a COMPLETED job must end even after its purge:\n{log}"
+    assert "final status from sacct" in log, log
+
+
+@requires_gnu_timeout
+def test_CONTROL_a_purged_job_without_a_final_status_does_not_end(tmp_path):
+    """CONTROL for the test above. If sacct does not say the task finished, the watcher holds:
+    the queue having forgotten the job is not, by itself, evidence of anything."""
+    st, log = _run_watcher_with(tmp_path, _SQUEUE_PURGED, "#!/bin/bash\necho RUNNING\n", seconds=8)
+    assert st["status"] == "RUNNING", f"no final status, so no finish:\n{log}"
+    assert "ARRAY ENDED" not in log, log
+
+
+@requires_gnu_timeout
+def test_a_failed_sacct_read_never_counts_as_finished(tmp_path):
+    """An empty queue plus an UNREADABLE accounting record is two absences, not a status."""
+    st, log = _run_watcher_with(tmp_path, "#!/bin/bash\nexit 0\n",
+                                "#!/bin/bash\necho 'sacct: error: slurmdbd down' >&2\nexit 1\n",
+                                seconds=8)
+    assert st["status"] == "RUNNING", f"a failed sacct must hold, not end:\n{log}"
+    assert "sacct read FAILED" in log, log
+
+
+@requires_gnu_timeout
+def test_final_statuses_while_the_queue_still_lists_live_tasks_hold(tmp_path):
+    """sacct says all final, squeue SUCCESSFULLY lists a running task: they disagree, so hold."""
+    st, log = _run_watcher_with(
+        tmp_path, '#!/bin/bash\nif [[ "$*" == *"-t RUNNING"* ]]; then echo "7_1"; fi\nexit 0\n',
+        "#!/bin/bash\necho COMPLETED\n", seconds=8)
+    assert st["status"] == "RUNNING", f"a live task in the queue must block the finish:\n{log}"
+    assert "holding until they agree" in log, log
+
+
+@requires_gnu_timeout
+def test_failed_tasks_are_final_and_the_array_still_ends(tmp_path):
+    """A FAILED or TIMEOUT task has finished (badly). The array ends, and the failures are counted."""
+    st, log = _run_watcher_with(tmp_path, "#!/bin/bash\nexit 0\n",
+                                "#!/bin/bash\nprintf 'COMPLETED\\nTIMEOUT\\nCANCELLED by 42\\n'\n",
+                                ntasks=3)
+    assert st["status"] == "ENDED", log
+    assert (st["complete"], st["failed"]) == (1, 2), st
+
+
+# ---- the checker's cross-check reads the same record -----------------------------------------------
+def _check_with_sacct(tmp_path, sacct_body, **state_kw):
+    import os
+    shim = tmp_path / "cshim"
+    shim.mkdir(exist_ok=True)
+    (shim / "sacct").write_text(sacct_body)
+    (shim / "sacct").chmod(0o755)
+    (shim / "squeue").write_text(_SQUEUE_PURGED)      # present, and deliberately unhelpful
+    (shim / "squeue").chmod(0o755)
+    env = dict(os.environ, PATH=f"{shim}:{os.environ['PATH']}")
+    r = subprocess.run([sys.executable, str(CHECKER), str(_state(tmp_path, **state_kw))],
+                       capture_output=True, text=True, env=env)
+    return r.returncode, r.stdout
+
+
+def test_checker_confirms_a_finish_from_the_accounting_record(tmp_path):
+    rc, out = _check_with_sacct(tmp_path, "#!/bin/bash\necho '7|COMPLETED'\n",
+                                status="ENDED", job="7", complete=1, failed=0, total=1)
+    assert rc == 0, out
+    assert "FALSE-TERMINAL" not in out and "UNKNOWN" not in out, out
+
+
+def test_checker_rejects_a_terminal_claim_the_record_contradicts(tmp_path):
+    """CONTROL: the same ENDED claim, but sacct shows a task still RUNNING."""
+    rc, out = _check_with_sacct(tmp_path, "#!/bin/bash\nprintf '7_1|COMPLETED\\n7_2|RUNNING\\n'\n",
+                                status="ENDED", job="7", complete=2, failed=0, total=2)
+    assert rc == 1, out
+    assert "FALSE-TERMINAL" in out and "accounting record DISAGREES" in out, out
+
+
+def test_checker_says_UNKNOWN_when_the_record_cannot_be_read(tmp_path):
+    rc, out = _check_with_sacct(tmp_path, "#!/bin/bash\nexit 1\n",
+                                status="ENDED", job="7", complete=1, failed=0, total=1)
+    assert rc == 0, out
+    assert "UNKNOWN" in out, out

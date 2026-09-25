@@ -36,6 +36,7 @@ Exit 0 = clean, 1 = any problem. Run from the repo root:
 
 Author: Jing Tao with Claude
 """
+import os
 import re
 import sys
 from pathlib import Path
@@ -80,13 +81,28 @@ def catalog_names():
     return set(re.findall(r"^###\s+`([a-z0-9-]+)`", CATALOG.read_text(encoding="utf-8"), re.M))
 
 
+# Returned when AGENTS.md EXISTS but is not this tree's skill registry -- distinct from None,
+# which means the file is missing and is a real failure anywhere.
+NOT_A_REGISTRY = object()
+
+
 def agents_table_names():
     """Skill names from the 'At a glance' capability table(s) in AGENTS.md — the first
     backticked token of each table row (`| `name` | … |`). Header/separator rows have no
     backticks, so they don't match."""
     if not AGENTS.is_file():
         return None
-    return set(re.findall(r"^\|\s*`([a-z0-9-]+)`", AGENTS.read_text(encoding="utf-8"), re.M))
+    names = set(re.findall(r"^\|\s*`([a-z0-9-]+)`", AGENTS.read_text(encoding="utf-8"), re.M))
+    # A DOWNSTREAM copy may own its AGENTS.md for another purpose -- in a project repo it is the
+    # project's operating contract, not a skill registry, and carries no capability table at all.
+    # Checking parity against a registry that is not there reports every skill on disk as DRIFT,
+    # which is 50 findings saying one thing: this file is not the registry here.
+    #
+    # Distinguished by the marker rather than by taste: no table AND downstream means "not a
+    # registry", while no table in a DEVELOPMENT tree is a real regression and still fails.
+    if not names and downstream_state()[0]:
+        return NOT_A_REGISTRY
+    return names
 
 
 def _frontmatter_block(text):
@@ -174,6 +190,49 @@ def user_skills():
     (policy: ALL skills live in the repo; a user-level one should be moved in)."""
     d = Path.home() / ".claude" / "skills"
     return {p.name for p in d.iterdir() if (p / "SKILL.md").is_file()} if d.is_dir() else set()
+
+
+# Problem classes that are ABOUT SOMETHING THE TREE DELIBERATELY DOES NOT CARRY. In a shipped
+# copy of the framework they are the expected state rather than drift, so they report as warnings
+# there and stay blocking errors in the development repo.
+#
+#   CHANGELOG       the sync strips every shipped skill's `## Changelog` (development history)
+#   DEAD-REF        case studies and internal `docs/NN_` plans do not ship
+#   DEAD-SKILL-REF  `visibility: private` skills are removed on copy
+#   RECIPROCITY     ...so a reciprocal pointer at one of them cannot resolve
+#   MODES DRIFT     a destination may own its own CLAUDE.md, whose skills table is not ours to sync
+#
+# What stays blocking EVERYWHERE is everything about what IS here: DRIFT (4-way registry parity),
+# FRONTMATTER, FRONTMATTER-YAML, MARKER, GLOBAL-SKILL-REF and PHASE-SECTIONS. So the check keeps
+# teeth in a filtered tree instead of being switched off in one.
+FILTERED_SOFT = ("CHANGELOG", "DEAD-REF", "DEAD-SKILL-REF", "RECIPROCITY", "MODES DRIFT")
+
+
+# The file a sync leg writes into a destination to identify it as a downstream copy. It exists
+# ONLY in a synced tree: no leg copies it, each leg WRITES it, so it cannot travel upstream.
+# The downstream predicate lives in tools/downstream.py so every checker shares ONE definition;
+# two copies would drift, and each would keep working while disagreeing about which tree it is in.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from downstream import MARKER as DOWNSTREAM_MARKER, state as _downstream_state   # noqa: E402
+
+
+def downstream_state():
+    return _downstream_state(ROOT)
+
+
+def is_filtered_tree():
+    """Back-compatible shim: True only for a positively marked downstream copy."""
+    return downstream_state()[0]
+
+
+def partition(problems, filtered):
+    """Split problems into (blocking, advisory). Nothing is advisory outside a filtered tree."""
+    if not filtered:
+        return list(problems), []
+    hard, soft = [], []
+    for item in problems:
+        (soft if item.startswith(FILTERED_SOFT) else hard).append(item)
+    return hard, soft
 
 
 def contract_check(disk):
@@ -491,6 +550,9 @@ def main():
         print(f"ERROR: {CATALOG} not found"); return 1
     if agents is None:
         print(f"ERROR: {AGENTS} not found"); return 1
+    agents_is_registry = agents is not NOT_A_REGISTRY
+    if not agents_is_registry:
+        agents = set()
 
     disk_names = set(disk)
     problems = []
@@ -502,10 +564,11 @@ def main():
         problems.append(f"DRIFT: '{n}' on disk but missing from docs/a2mc_reference/skills_catalog.md")
     for n in sorted(catalog - disk_names):
         problems.append(f"DRIFT: catalog lists '{n}' but no skill dir exists")
-    for n in sorted(disk_names - agents):
-        problems.append(f"DRIFT: '{n}' on disk but missing from the AGENTS.md 'At a glance' table")
-    for n in sorted(agents - disk_names):
-        problems.append(f"DRIFT: AGENTS.md table lists '{n}' but no skill dir exists")
+    if agents_is_registry:
+        for n in sorted(disk_names - agents):
+            problems.append(f"DRIFT: '{n}' on disk but missing from the AGENTS.md 'At a glance' table")
+        for n in sorted(agents - disk_names):
+            problems.append(f"DRIFT: AGENTS.md table lists '{n}' but no skill dir exists")
 
     for name, text in disk.items():
         # Strict YAML parse of the frontmatter block. The field-reads below are regex-based
@@ -571,13 +634,48 @@ def main():
     print(f"Skills on disk : {len(disk_names)}")
     print(f"README table   : {len(readme)}")
     print(f"Catalog        : {len(catalog)}")
-    print(f"AGENTS.md table: {len(agents)}")
+    if agents_is_registry:
+        print(f"AGENTS.md table: {len(agents)}")
+    else:
+        print("AGENTS.md table: n/a — this copy owns AGENTS.md for its own purpose, so it is not "
+              "a skill registry here (3-way parity checked, not 4)")
     print()
+    filtered, complaint = downstream_state()
+    if complaint:
+        problems.append(complaint)
+    problems, advisory = partition(problems, filtered)
+
+    print(f"Tree           : {'DOWNSTREAM COPY (.a2mc-downstream) — classes about content this tree does not carry report as advisory' if filtered else 'DEVELOPMENT (strict — every class blocks)'}")
+    print()
+
     if problems:
         print(f"✘ {len(problems)} problem(s):")
         for p in problems:
             print(f"  - {p}")
+        if advisory:
+            print()
+            print(f"  ({len(advisory)} advisory, expected in a shipped copy — run with "
+                  f"A2MC_SKILL_REGISTRY_VERBOSE=1 to list them)")
+            if os.environ.get("A2MC_SKILL_REGISTRY_VERBOSE"):
+                for a in advisory:
+                    print(f"  ~ {a}")
         return 1
+
+    if advisory:
+        print(f"⚠ {len(advisory)} advisory — expected in a shipped copy, not drift:")
+        by_class = {}
+        for a in advisory:
+            by_class[a.split(":", 1)[0]] = by_class.get(a.split(":", 1)[0], 0) + 1
+        for k in sorted(by_class):
+            print(f"  ~ {by_class[k]:3d}  {k}")
+        if os.environ.get("A2MC_SKILL_REGISTRY_VERBOSE"):
+            print()
+            for a in advisory:
+                print(f"  ~ {a}")
+        else:
+            print("  (A2MC_SKILL_REGISTRY_VERBOSE=1 to list them individually)")
+        print()
+
     print("✔ registry + contracts clean — in sync, names match, versioned, cited paths/skills exist, private markers balanced")
     return 0
 

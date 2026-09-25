@@ -9,13 +9,13 @@ Typical use::
     from models.surrogate.validate import run_acceptance
 
     spec = SurrogateSpec(
-        name="ecosim_biocon_r3", use_mode="offline_search", tier="S1",
-        input_names=("VRNXI", "PPI"), input_lower=(45.0, 250.0),
+        name="model_case_r1", use_mode="offline_search", tier="S1",
+        input_names=("param_a", "param_b"), input_lower=(45.0, 250.0),
         input_upper=(60.0, 420.0),
-        targets=(TargetSpec("plant_C", observed=430.0, lower=424.0),
-                 TargetSpec("NPP", observed=500.0, upper=529.0)),
-        provenance=Provenance(model="ecosim",
-                              scoring_convention="leap-calendar-v2.213"))
+        targets=(TargetSpec("target_1", observed=430.0, lower=424.0),
+                 TargetSpec("target_2", observed=500.0, upper=529.0)),
+        provenance=Provenance(model="my_model",
+                              scoring_convention="reduction-convention-v1"))
     model = S1Surrogate(spec).fit(X, Y, viable)
     report = run_acceptance(model, X_test, Y_test, Y_train=Y)
     print(report.summary())
@@ -46,6 +46,7 @@ from .learners import (
     MLPEnsembleLearner,
     RFLearner,
     RidgeLearner,
+    XGBLearner,
     explain_recommendation,
     make_classifier,
     make_learner,
@@ -79,6 +80,14 @@ from .tiers import S0Surrogate, S1Surrogate, S2Surrogate, S3Surrogate, load
 # `sequence` imports torch lazily inside its own methods, but importing the MODULE
 # is still free, so the package keeps importing with no torch installed.
 from .sequence import KGMLEmulator, load_kgml
+# The structured-output families. Like `sequence`, each imports torch inside its methods only.
+from .multioutput import (MULTI_OUTPUT_LEARNERS, MultiOutputGPLearner, MultiOutputMLPLearner,
+                          VectorSurrogate, load_vector, make_multi_output_learner)
+from .fields import FieldEmulator, load_field
+from .spatiotemporal import SpatioTemporalEmulator, load_spatiotemporal
+from .graphs import GraphEmulator, build_adjacency, load_graph
+from .operators import DeepONetEmulator, load_deeponet
+from ._nn import per_case_channel_r2
 
 __all__ = [
     "BatchPrediction",
@@ -100,6 +109,23 @@ __all__ = [
     "S3Surrogate",
     "KGMLEmulator",
     "load_kgml",
+    "MULTI_OUTPUT_LEARNERS",
+    "MultiOutputGPLearner",
+    "MultiOutputMLPLearner",
+    "VectorSurrogate",
+    "load_vector",
+    "make_multi_output_learner",
+    "FieldEmulator",
+    "load_field",
+    "SpatioTemporalEmulator",
+    "load_spatiotemporal",
+    "GraphEmulator",
+    "build_adjacency",
+    "load_graph",
+    "DeepONetEmulator",
+    "load_deeponet",
+    "per_case_channel_r2",
+    "XGBLearner",
     "SurrogateModel",
     "SurrogateSpec",
     "TargetSpec",

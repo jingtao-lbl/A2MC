@@ -35,13 +35,15 @@ So a terminal claim now has to survive two tests before it passes:
       so it can no longer exit 0 -- the old code printed "inspect the logs before treating this as
       a clean finish" and then returned 0, which is a warning nothing reads.
 
-  SCHEDULER CROSS-CHECK (best-effort; adds errors, never removes them)
-      If the job id still has tasks in the queue, the terminal claim is FALSE regardless of what
-      the arithmetic says. Reports UNKNOWN honestly when squeue is unavailable rather than
+  ACCOUNTING CROSS-CHECK (best-effort; adds errors, never removes them)
+      The job's own record in sacct: if any task still has a non-final status (PENDING, RUNNING,
+      REQUEUED, ...), the terminal claim is FALSE regardless of what the arithmetic says. The
+      QUEUE is deliberately not asked. A job's absence from squeue is not a status, and squeue
+      forgets every finished job after MinJobAge, so "the queue no longer knows it" would read a
+      purged job as agreement. Reports UNKNOWN honestly when sacct cannot be read, rather than
       treating "cannot tell" as "fine" -- the whole failure class this tool exists for is a check
       that passes because it could not see anything.
 """
-from __future__ import annotations
 
 import argparse
 import json
@@ -58,32 +60,41 @@ STALE_INTERVALS = 2.0
 TERMINAL = {"ENDED", "ENDED_UNACCOUNTED", "DIED"}
 
 
-def _scheduler_still_has_tasks(job: str):
-    """(has_tasks, note) — True / False / None when it genuinely cannot be determined.
+# A task in any of these has finished. Anything else (PENDING, RUNNING, REQUEUED, SUSPENDED,
+# COMPLETING, ...) has not. Kept identical to the watcher's allow-list.
+FINAL_STATES = ("COMPLETED", "FAILED", "TIMEOUT", "CANCELLED", "NODE_FAIL", "OUT_OF_MEMORY",
+                "BOOT_FAIL", "DEADLINE")
 
-    `-r` expands an array: without it a pending array folds to ONE line, which is the same
-    convenience-formatting trap that makes a scheduler CLI unsafe to read as data.
 
-    A non-zero exit is ambiguous: a purged/unknown job id and a controller outage both fail. They
-    are told apart on the error text, and the ambiguity is resolved toward UNKNOWN rather than
-    toward "fine", because a checker that treats "cannot tell" as a pass is the exact defect this
-    function was added to close.
+def _accounting_still_has_live_tasks(job: str):
+    """(has_live, note) from the job's sacct record — True / False / None when undeterminable.
+
+    Reads each task's STATUS, which the accounting database keeps after the job has left the
+    queue. `-P` because the default output truncates states (CANCELLED+) and is not data. A
+    pending array range folds to one line (`123_[5-99]  PENDING`), which is still correctly
+    counted as live. An empty or failed read is UNKNOWN, never "no live tasks".
     """
     if not job:
         return None, "the state file names no job id"
-    if shutil.which("squeue") is None:
-        return None, "squeue is not on PATH (off-cluster?)"
+    if shutil.which("sacct") is None:
+        return None, "sacct is not on PATH (off-cluster?)"
     try:
-        r = subprocess.run(["squeue", "-j", str(job), "-r", "-h", "-o", "%T"],
-                           capture_output=True, text=True, timeout=30)
+        # stdout/stderr=PIPE + universal_newlines, not capture_output/text: those are Python 3.7+.
+        r = subprocess.run(["sacct", "-j", str(job), "-P", "-n", "-X", "--format=JobID,State"],
+                           stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                           universal_newlines=True, timeout=30)
     except Exception as e:                                   # pragma: no cover - env-dependent
-        return None, f"squeue could not be run ({e})"
+        return None, f"sacct could not be run ({e})"
     if r.returncode != 0:
-        if "invalid job id" in (r.stderr or "").lower():
-            return False, "the scheduler no longer knows this job id, consistent with terminal"
-        return None, f"squeue failed: {(r.stderr or '').strip()[:120]}"
-    n = len([ln for ln in r.stdout.splitlines() if ln.strip()])
-    return (n > 0), f"{n} task(s) still in the queue"
+        return None, f"sacct failed: {(r.stderr or '').strip()[:120]}"
+    rows = [ln.split("|") for ln in r.stdout.splitlines() if ln.strip()]
+    if not rows:
+        return None, "sacct returned no record for this job id"
+    live = [(jid, st) for jid, st, *_ in rows if not st.startswith(FINAL_STATES)]
+    if live:
+        shown = ", ".join(f"{j} {s}" for j, s in live[:3])
+        return True, f"{len(live)} record(s) in sacct are not final ({shown})"
+    return False, f"all {len(rows)} record(s) in sacct carry a final status"
 
 
 def main() -> int:
@@ -141,10 +152,10 @@ def main() -> int:
         if done + bad != total:
             problems.append(f"the numbers do not add up: complete+failed = {done + bad}, not "
                             f"{total}. A terminal state with unaccounted tasks is not a finish.")
-        has_tasks, note = _scheduler_still_has_tasks(str(st.get("job", "")))
+        has_tasks, note = _accounting_still_has_live_tasks(str(st.get("job", "")))
         if has_tasks:
-            problems.append(f"the scheduler DISAGREES: {note}. The watcher wrote a terminal state "
-                            f"while the array is still live -- this is a FALSE TERMINAL.")
+            problems.append(f"the job's accounting record DISAGREES: {note}. The watcher wrote a "
+                            f"terminal state while the array is still live -- this is a FALSE TERMINAL.")
 
         if problems:
             if not a.quiet:
@@ -155,7 +166,7 @@ def main() -> int:
                       "query sacct directly.")
             return 1
         if not a.quiet and has_tasks is None:
-            print(f"  cross-check: scheduler state UNKNOWN ({note}); the arithmetic check passed "
+            print(f"  cross-check: accounting state UNKNOWN ({note}); the arithmetic check passed "
                   f"({done + bad} of {total} accounted).")
         return 0
 

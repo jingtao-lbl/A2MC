@@ -32,6 +32,7 @@ def run(root: Path, *args, env_extra: dict | None = None):
         f"spec=importlib.util.spec_from_file_location('csr',r'{TOOL}');"
         "m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m);"
         f"m.ROOT=pathlib.Path(r'{root}');"
+        "import check_clone_setup as _c; _c.clone_rows=lambda: [];"
         f"sys.argv=['csr']+{list(args)!r};"
         "sys.exit(m.main())"
     )
@@ -53,6 +54,7 @@ def make_clone(tmp: Path, *, models=(), cases=(), offline_state=False, milestone
             (d / f).write_text("# stub\n")
         (d / "runtemplates").mkdir(exist_ok=True)
         (d / "runtemplates" / "run.tmpl").write_text("x\n")
+        (d / "BUILD.md").write_text("# build\n")
         gk = tmp / "memory" / m / "gained_knowledge"
         gk.mkdir(parents=True, exist_ok=True)
         (gk / "discoveries.json").write_text(json.dumps({"discoveries": [{"id": "x"}]}))
@@ -69,6 +71,7 @@ def make_clone(tmp: Path, *, models=(), cases=(), offline_state=False, milestone
         (d / "parameters").mkdir(exist_ok=True)
         (d / "parameters" / "list.csv").write_text("name,lower_bound,upper_bound\n")
         (d / "memory").mkdir(exist_ok=True)
+        (d / "research_plan.md").write_text("# plan\n")
         if offline_state:
             (d / "memory" / "workflow_state_offline_r01.json").write_text("{}")
     (tmp / "rag").mkdir(parents=True, exist_ok=True)
@@ -111,6 +114,16 @@ def test_template_dirs_are_not_counted_as_cases(tmp_path):
     """`TEMPLATE/` and `<Model>_template/` are scaffolding. Counting either would route a fresh
     clone to stage 3 and skip a2mc-init entirely."""
     rc, out = run(make_clone(tmp_path, models=("ecosim",)))
+    assert "stage: 1" in out, out
+    assert "real cases:     (none)" in out, out
+
+
+def test_hidden_dirs_are_not_counted_as_cases(tmp_path):
+    """A Jupyter `.ipynb_checkpoints/` appears under use_cases/ as soon as someone opens a file
+    there in JupyterLab. It was listed as a real case and routed a fresh clone to stage 3."""
+    root = make_clone(tmp_path, models=("ecosim",))
+    (root / "use_cases" / ".ipynb_checkpoints").mkdir()
+    rc, out = run(root)
     assert "stage: 1" in out, out
     assert "real cases:     (none)" in out, out
 
@@ -309,3 +322,105 @@ def test_hook_names_the_skill_for_an_unconfigured_clone(tmp_path):
 def test_hook_never_breaks_a_session(tmp_path):
     """A hook that raises costs every session. Missing tool -> silent, not an exception."""
     assert _hook_lines(tmp_path) == []               # no tools/ at all
+
+
+# --------------------------------------------------------------------- 20260923b routing fixes
+def _write_case(root: Path, case: str, *, placeholders: bool, state: str | None = None):
+    d = root / "use_cases" / case
+    (d / "config").mkdir(parents=True, exist_ok=True)
+    (d / "config" / "site_config.sh").write_text(
+        'export A2MC_MODEL_PATH="<PATH_TO_ECOSIM_CHECKOUT>"\n' if placeholders
+        else 'export A2MC_MODEL_PATH="/real/path"   # was <PATH_TO_ECOSIM_CHECKOUT>\n')
+    (d / "config" / "calibration_rounds.yaml").write_text("rounds: []\n")
+    (d / "validation").mkdir(exist_ok=True)
+    (d / "validation" / "targets.yaml").write_text(
+        "site: MySite\ntargets:\n  - observed: X.X\n" if placeholders else "targets:\n  - observed: 1.2\n")
+    (d / "parameters").mkdir(exist_ok=True)
+    (d / "parameters" / "list.csv").write_text("name,lower_bound,upper_bound\n")
+    (d / "memory").mkdir(exist_ok=True)
+    (d / "research_plan.md").write_text("# plan\n")
+    if state == "offline":
+        (d / "memory" / "workflow_state_offline_r01.json").write_text("{}")
+    elif state == "online":
+        (d / "memory" / "workflow_state.json").write_text("{}")
+
+
+def test_an_unedited_template_copy_fails_stage3(tmp_path):
+    """Every stage-3 row used to be an existence check, so a verbatim template copy passed them
+    all (audit 20260923b, F32). Placeholders on the VALUE side of a line are a FAIL; a placeholder
+    inside a comment is not."""
+    root = make_clone(tmp_path, models=("ecosim",))
+    _write_case(root, "EcoSIM_Foo", placeholders=True)
+    rc, out = run(root, "--case", "EcoSIM_Foo")
+    assert rc == 1 and "template placeholders replaced" in out and "✗" in out, out
+    _write_case(root, "EcoSIM_Bar", placeholders=False)
+    rc, out = run(root, "--case", "EcoSIM_Bar")
+    assert "✓ template placeholders replaced" in out, out
+
+
+def test_online_agent_state_counts_as_a_running_case(tmp_path):
+    """A case the orchestrator runs keeps memory/workflow_state.json; it must not be routed back to
+    case creation for ever (F84)."""
+    root = make_clone(tmp_path, models=("ecosim",))
+    _write_case(root, "EcoSIM_Online", placeholders=False, state="online")
+    rc, out = run(root)
+    assert "stage: 4" in out, out
+
+
+def test_stage4_lists_a_second_case_still_in_setup(tmp_path):
+    """Stage 4 is repo-wide; a second case with no state was invisible (F93)."""
+    root = make_clone(tmp_path, models=("ecosim",))
+    _write_case(root, "EcoSIM_Running", placeholders=False, state="offline")
+    _write_case(root, "EcoSIM_New", placeholders=True)
+    rc, out = run(root)
+    assert "stage: 4" in out and "EcoSIM_New" in out and "still in setup" in out, out
+
+
+def test_a_wired_clone_at_stage1_is_sent_onward_not_back_to_a2mc_init(tmp_path):
+    """Stage 1 had no completion signal: a finished a2mc-init looked unstarted (F88)."""
+    rc, out = run(make_clone(tmp_path, models=("ecosim",)))
+    assert "stage: 1" in out, out
+    assert "NEXT: `onboard-case`" in out, out
+
+
+def test_model_path_unset_is_not_a_stage1_failure(tmp_path):
+    """For a non-CIME model the site config sets A2MC_MODEL_PATH, in stage 3 (F31)."""
+    rc, out = run(make_clone(tmp_path, models=("ecosim",)), "--stage", "1")
+    assert "A2MC_MODEL_PATH set" not in out and "model checkout" in out, out
+    assert rc == 0, out
+
+
+def test_a_missing_research_plan_is_the_first_failing_row(tmp_path):
+    """Resume at the first failing row must stop at GATE 1, not skip to the parameter list (P6)."""
+    root = make_clone(tmp_path, models=("ecosim",), cases=("EcoSIM_Foo",))
+    (root / "use_cases" / "EcoSIM_Foo" / "research_plan.md").unlink()
+    rc, out = run(root, "--case", "EcoSIM_Foo")
+    stage3 = out.split("Stage 3")[1]
+    first_fail = next(l for l in stage3.splitlines() if l.strip().startswith("✗"))
+    assert "research_plan.md drafted" in first_fail, out
+
+
+def test_lowercase_template_placeholders_are_caught(tmp_path):
+    """The EcoSIM template writes `<case>` in its file paths (P4)."""
+    root = make_clone(tmp_path, models=("ecosim",), cases=("EcoSIM_Foo",))
+    (root / "use_cases" / "EcoSIM_Foo" / "config" / "site_config.sh").write_text(
+        'export A2MC_PARAM_LIST_FILE="parameters/<case>_params.csv"\n')
+    rc, out = run(root, "--case", "EcoSIM_Foo")
+    assert "✗ template placeholders replaced" in out, out
+
+
+def test_a_model_without_a_build_guide_is_not_onboarded(tmp_path):
+    """The next user of the model is sent to models/<m>/BUILD.md; without it they cannot build (P3)."""
+    root = make_clone(tmp_path, models=("ecosim",))
+    (root / "models" / "ecosim" / "BUILD.md").unlink()
+    rc, out = run(root, "--model", "ecosim")
+    assert rc == 1 and "✗ build guide" in out, out
+
+
+def test_the_fates_template_placeholder_forms_are_caught(tmp_path):
+    """The ELM-FATES template uses "MySite" and /path/to/your/ rather than <UPPER> tokens (P7)."""
+    root = make_clone(tmp_path, models=("ecosim",), cases=("ELM-FATES_Foo",))
+    (root / "use_cases" / "ELM-FATES_Foo" / "config" / "site_config.sh").write_text(
+        'export A2MC_SURFDATA="/path/to/your/surfdata.nc"\n')
+    rc, out = run(root, "--case", "ELM-FATES_Foo")
+    assert "✗ template placeholders replaced" in out, out

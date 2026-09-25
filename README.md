@@ -3,7 +3,7 @@
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 **Status:** Implementation Complete <br>
-**Version:** 2.429 <br>
+**Version:** 2.474 <br>
 **Purpose:** Fully autonomous multi-target calibration of process-based environmental models using AI API + HPC + RAG/GraphRAG + Adaptive Memory. This repo is the **non-CIME line** (EcoSIM, PFLOTRAN, ATS); for a CIME-configured Earth system model see **Which A2MC do you want?** below.
 
 > **New here?** This README is the front door. For the full operational detail — configuration reference, per-phase behavior, module APIs, knowledge-system internals, state persistence, cost, and reporting — see the [**A2MC User Guide**](docs/a2mc_reference/user_guide.md).
@@ -115,22 +115,26 @@ Full per-phase behavior, diagnostic-tool inventory, and the three-level iteratio
 ## Quick Start (online agent)
 
 ```bash
-# 1. Create a use case (copy the Kougarok example or the minimal template)
-cp -r use_cases/ELM-FATES_Kougarok use_cases/YourSite      # or use_cases/TEMPLATE
+# 0. Wire the clone once (things git cannot carry: commit hooks, author name, ...)
+scripts/setup_clone.sh && python3 tools/whoami.py --set "Your Name" && python3 tools/check_clone_setup.py
 
-# 2. Configure site + machine settings
-vim use_cases/YourSite/config/yoursite_config.sh # PFTs, parameters, validation, HPC paths
-vim a2mc_config.sh                               # HPC project, A2MC_MODEL_PATH, AI provider
+# 1. Create a case from your model's template (never cp -r: it keeps the template's config name)
+python tools/create_use_case.py --list
+python tools/create_use_case.py --model <model> --case YourSite
+
+# 2. Fill in the case's site config, targets and parameter list (every <PLACEHOLDER>).
+#    EcoSIM/PFLOTRAN/ATS: the model checkout, binary, HPC account and output root go in the SITE config.
+#    ELM-FATES: the E3SM checkout (A2MC_E3SM_ROOT) and HPC project go in a2mc_config.sh.
 
 # 3. Set the API key for your provider (one-time)
 echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.bashrc && source ~/.bashrc
 
-# 4. Source the site config and run (it auto-sources a2mc_config.sh when not already loaded)
-source use_cases/YourSite/config/yoursite_config.sh
+# 4. Source the site config (it loads the right machine config itself), check, and run
+source use_cases/<Prefix>_YourSite/config/<model>_yoursite_config.sh && python tools/check_setup_ready.py
 python orchestrator.py --run                     # add --no-review for fully autonomous
 ```
 
-`A2MC_MODEL_PATH` (your E3SM/ELM-FATES checkout root) is **required** — A2MC reads the FATES + ELM commits and selects the matching RAG profile. AI reasoning (phases 2, 3, 4, 6) needs the API key for your chosen provider (`anthropic`, `openai`, or `cborg`).
+`A2MC_MODEL_PATH` (your model checkout root) is **required**: A2MC reads its commit and selects the matching knowledge profile. For ELM-FATES it defaults to `A2MC_E3SM_ROOT`; for the other models the site config sets it. AI reasoning (phases 2, 3, 4, 6) needs the API key for your chosen provider (`anthropic`, `openai`, or `cborg`). The offline quick start below does all of this with you.
 
 Full setup — every config field, provider/model table, installation on NERSC Perlmutter, and all run/resume options — is in the [User Guide → Installation](docs/a2mc_reference/user_guide.md#1-installation-and-setup-nersc-perlmutter), [Configuration](docs/a2mc_reference/user_guide.md#2-configuration-reference), and [Running the workflow](docs/a2mc_reference/user_guide.md#3-running-the-workflow).
 
@@ -144,16 +148,26 @@ The offline agent is any coding-agent harness (e.g. Claude Code) opened in a clo
 # 1. Clone and open the repo in a coding agent that reads AGENTS.md
 git clone https://github.com/jingtao-lbl/A2MC.git && cd A2MC   # CIME model? clone A2MC-elm instead
 
-# 2. (For calibration work) point at your checkout so mode-aware skills resolve
-export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES_checkout"
+# 2. Ask the repo which setup step you are at (needs nothing sourced)
+python3 tools/check_stage_ready.py
 ```
 
-**First time?** Just tell the agent **"set up A2MC"** (or "help me get started"). That runs the [`a2mc-init`](.claude/skills/a2mc-init/SKILL.md) skill, which interviews you (checkout location, FATES on/off, carbon-only vs nutrient-enabled, site, PFTs, calibration targets), verifies your checkout against the RAG milestone, creates and populates your use case, and hands off to Phase 0.
+**First time?** Just tell the agent **"set up A2MC"** (or "help me get started"). Setup is three skills, each with one job:
+
+| skill | runs | does |
+|---|---|---|
+| [`a2mc-init`](.claude/skills/a2mc-init/SKILL.md) | once per clone | wires the clone (commit hooks, your name), gets your model built and verified on this machine, writes the machine config, and routes you on |
+| [`onboard-model`](.claude/skills/onboard-model/SKILL.md) | once per new model | teaches A2MC a model it does not have yet |
+| [`onboard-case`](.claude/skills/onboard-case/SKILL.md) | once per case | interviews you from your science goal, drafts the research plan, builds your case and parameter list, and hands off to Phase 0 |
+
+After that, every session starts with `onboard-session`.
 
 On startup the harness auto-loads the operating contract ([`AGENTS.md`](AGENTS.md)) and the capability catalog of skills in `.claude/skills/`. Then drive it by conversation — the agent resolves the active mode (`python tools/describe_mode.py`), matches your request to an applicable skill, or reasons from the shared tools, memory, and RAG knowledge:
 
 ```text
 "Set up A2MC" (first-time setup)                -> a2mc-init
+"Set up a new case / calibrate <model> at <site>" -> onboard-case
+"Add a new model to A2MC"                       -> onboard-model
 "Catch up — where did we leave off?"           -> onboard-session
 "Screen the ensemble and diagnose the misses"  -> phase2-screening / phase3-diagnosis
 "Run a parameter-sweep experiment for X"        -> offline-testing-workflow   (ELM/FATES)

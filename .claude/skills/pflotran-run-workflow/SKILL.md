@@ -89,7 +89,7 @@ Three findings that have already changed a result:
 
 1. **The observation window carries an 806-hour offset.** Measured hour 0 is MODEL hour 806, source-verified against the team's own `Figures/update_remaining_figures.py:31`. A window written as `[0, 768]` in model time contains **zero** observations and **does** contain spin-up. miniLEO's `targets.yaml` already applies the offset (`window: [806, 1574]`) — **do not apply it twice.**
 2. **An aggregate score can hide a factor-of-two per-species error.** Correcting that window moved the mean `|1 − ratio|` by 0.184 → 0.180 while **Mn inverted**, from 19% over to 39% under. That is why the error survived review, and it generalises to any campaign scoring several targets into one aggregate. **Report per-species beside the aggregate.**
-3. **The V0 gate licenses less than it appears to.** It passed for **time-mean targets only**, on the **base case only**, and is **toolchain-specific to a deprecated `cpe/23.12`**. It does not license point-wise or peak-timing scoring.
+3. **The V0 gate licenses less than it appears to.** It passed for **time-mean targets only**, on the **base case only**, and is **toolchain-specific**: it was run for the `cpe/23.12` build, a rebuild on a new Cray PE has to re-run it rather than inherit it (the `cpe/25.09` rebuild's re-run is recorded in `models/pflotran/BUILD.md`). It does not license point-wise or peak-timing scoring.
 
 ## Step 7 — the Phase-6 figure this model owns
 
@@ -103,7 +103,7 @@ Score through the target's own `reduce` (`outflow_concentration`, `outflow_flux`
 
 The PFLOTRAN source and docs are **separate Bitbucket repos**; the GitHub mirror is dead. The private mirror is the `fork` remote and `origin` push is **disabled** — push model source to `fork`, never upstream ([[reference_pflotran_repos_and_clones]]). PFLOTRAN builds into a **shared CMake tree**, so `model-evolution` step 3.5 applies in full: archive the binary *before* building the change, record it with `tools/binary_archive_manifest.py --generate`, and bind runs to the archive rather than the live path.
 
-`petsc-3.24` has been **tested and fails** on our pin — it is not an escape hatch from the deprecated `cpe/23.12`.
+`petsc-3.24` has been **tested and fails** on our pin, so a retired Cray PE is met by rebuilding PETSc 3.21.4 on a current one, not by moving to a newer PETSc. `cpe/23.12` was retired in 2026-09 and the current build is on `cpe/25.09`; getting and building it is `models/pflotran/BUILD.md`.
 
 ## Footguns, collected
 

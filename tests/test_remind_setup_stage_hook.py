@@ -30,6 +30,8 @@ def clone(tmp: Path, *, model=True, case=False, offline=False) -> Path:
     (tmp / "tools").mkdir(exist_ok=True)
     shutil.copy(HOOK, tmp / ".claude" / "hooks")
     shutil.copy(REPO / "tools" / "check_stage_ready.py", tmp / "tools")
+    # stage2_rows() loads the knowledge-store resolver by file path from tools/
+    shutil.copy(REPO / "tools" / "model_knowledge_store.py", tmp / "tools")
     (tmp / "use_cases" / "TEMPLATE").mkdir(parents=True, exist_ok=True)
     (tmp / "rag").mkdir(exist_ok=True)
     (tmp / "rag" / "milestones.json").write_text('{"milestones":{}}')
@@ -63,12 +65,33 @@ RUN_SCAFFOLD = {"tool_name": "Bash",
 
 
 # ------------------------------------------------------------------ it fires
-def test_fires_naming_the_skill_and_the_specific_gaps(tmp_path):
+def test_fires_naming_the_next_skill_at_stage1(tmp_path):
+    """A wired clone with no case is sent onward. Until 20260923b the stage-1 'gap' was
+    A2MC_MODEL_PATH, which a non-CIME user sets only in a case's site config, so it could never
+    clear (audit F31); the next skill is what the reader needs."""
     out = fire(clone(tmp_path), WRITE_CFG)
-    assert "SETUP STAGE 1" in out and "a2mc-init" in out, out
-    assert "outstanding" in out, out
-    assert "A2MC_MODEL_PATH" in out, "must name the SPECIFIC item, not nudge generically: " + out
+    assert "SETUP STAGE 1" in out and "onboard-case" in out, out
     assert "setup-discipline" in out and "check_stage_ready.py" in out, out
+
+
+def test_fires_naming_the_specific_gaps_and_whose_they_are(tmp_path):
+    """At stage 3 the gaps are the case's own, labelled with the case (F108), and an unedited
+    template copy is a gap rather than 'nothing outstanding' (F32)."""
+    root = clone(tmp_path, case=True)
+    cfg = root / "use_cases" / "EcoSIM_BioCON" / "config" / "site.sh"
+    cfg.write_text('export A2MC_MODEL_PATH="<PATH_TO_ECOSIM_CHECKOUT>"\n')
+    out = fire(root, WRITE_CFG)
+    assert "SETUP STAGE 3" in out and "outstanding" in out, out
+    assert "case EcoSIM_BioCON" in out and "template placeholders" in out, out
+
+
+def test_an_onboard_model_action_audits_that_model_not_stage1(tmp_path):
+    """Stage 2 is never auto-detected on a line that ships registered adapters, so mid-onboarding
+    the hook used to announce stage 1 / a2mc-init (F33)."""
+    p = {"tool_name": "Bash", "tool_input": {"command": "python scripts/build_ecosim_rag.py --rebuild"},
+         "tool_response": {"success": True}}
+    out = fire(clone(tmp_path), p)
+    assert "SETUP STAGE 2" in out and "model ecosim" in out, out
 
 
 def test_a_scaffold_command_also_crosses_the_boundary(tmp_path):

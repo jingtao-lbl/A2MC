@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Decide the surrogate gate's CONDITION 2 on a completed ensemble, by a bar fixed in advance.
 
-THE GATE (PI, 2026-07-31; `docs/41`, handoff `20260731d`). The surrogate build is paused until
-BOTH hold:
+THE GATE (`docs/41`). A surrogate of the calibration objective is worth building only when BOTH
+hold:
 
   1. the round is sampled space-filling (Sobol' sequence / LHS), AND
   2. **the completed ensemble contains configurations inside the observational bands.**
@@ -13,17 +13,14 @@ never reaches the target region carries no information about the only region wor
 
 WHY THIS IS A SCRIPT AND NOT A JUDGEMENT MADE LATER. Condition 2 is a property of data that does
 not exist yet. Deciding "was it close enough" after seeing the numbers is how a gate becomes a
-rationalisation -- the same failure the withdrawn A4 assessment already cost once. So the bar is
-written down, committed, and executed unchanged.
+rationalisation. So the bar is written down, committed, and executed unchanged.
 
 THE BAR
 -------
 **In band, per target:** ``|sim/obs - 1| <= uncertainty_i``, using each target's OWN relative
-``uncertainty`` from ``targets.yaml`` (0.25-0.60 for miniLEO), NOT the global ``cost_config``
-tolerance. This matches the definition the EcoSIM R3 feasibility assessment used, so the two
-rounds' verdicts are comparable. The hydrograph's ``observed: 1.0`` is a SENTINEL and its reduce
-returns ``1 + NRMSE``, so the same formula reduces to ``NRMSE <= 0.25`` for it -- one rule covers
-all targets and no special case is needed.
+``uncertainty`` from ``targets.yaml``, NOT the global ``cost_config`` tolerance. A target whose
+``observed: 1.0`` is a SENTINEL and whose reduce returns ``1 + NRMSE`` reduces under the same formula
+to ``NRMSE <= uncertainty`` -- one rule covers all targets and no special case is needed.
 
 **GATE OPENS** when at least one completed case has **every scored target in band**
 simultaneously. That is the gate's literal reading: a configuration inside the bands.
@@ -75,12 +72,26 @@ def load_bands(targets_yaml: Path) -> Dict[str, Dict[str, float]]:
     d = yaml.safe_load(Path(targets_yaml).read_text())
     out: Dict[str, Dict[str, float]] = {}
     missing: List[str] = []
+    zero_obs: List[str] = []
     for name, t in (d.get("targets") or {}).items():
         obs, unc = t.get("observed"), t.get("uncertainty")
         if obs is None or unc is None:
             missing.append(name)
             continue
+        if float(obs) == 0.0:
+            # A RELATIVE band is undefined at zero, and the in-band test below divides by this
+            # value. Refusing here names the target; leaving it produced a bare ZeroDivisionError
+            # from the middle of the scoring loop, which reads as a broken script rather than as
+            # a target that cannot be banded this way.
+            zero_obs.append(name)
+            continue
         out[name] = {"observed": float(obs), "uncertainty": float(unc)}
+    if zero_obs:
+        raise SystemExit(
+            f"REFUSING: {len(zero_obs)} target(s) declare observed: 0 and are scored with a "
+            f"RELATIVE band: {zero_obs}\n"
+            f"  |sim/observed - 1| is undefined at zero. Give these targets an absolute "
+            f"tolerance, or a non-zero reference, before running the gate.")
     if missing:
         # Refuse rather than silently scoring a subset: a gate evaluated on 9 of 11 targets is
         # not the gate, and would read as a pass on an easier question.

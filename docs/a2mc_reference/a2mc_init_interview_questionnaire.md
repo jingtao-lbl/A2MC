@@ -13,9 +13,11 @@ Legend: **[novice]** = explain the concept when asking; **[expert]** = just capt
 
 ## Section 0 — Greeting, experience & orientation (ask first; sets the depth for everything below)
 
-**Q0.0 — Greeting + name (open here).**
+**Q0.0 — Greeting + name (open here, word for word).**
 
-> "Hi! I'm your A2MC agent — I'll work with you as your science assistant to calibrate your model. What's your name, and how should I address you?"
+> Hi! I'm your A2MC agent, and I'll work with you as your science assistant to calibrate your model. What's your name, and how should I address you?
+
+Unlike the rest of this script, this line is not adapted. It is the opening of `a2mc-init` Step 0, said exactly as written, because the setup tutorial shows it to new users as the first thing the agent says; `tests/test_greet_on_setup.py` holds this copy to the one in `.claude/hooks/greet-on-setup.py`. It is said once per clone, at the user's first contact, and never again: skip it if `.greeted` exists at the clone root (it was said already) or `.me` already names the user.
 
 Record the answer with **`python3 tools/whoami.py --set "<name>"`**, which writes the per-clone, gitignored `.me`; the machine configs resolve `A2MC_USER_NAME` from it rather than carrying a name, since they are tracked and ship downstream. Beyond personalizing the session, it sets the **Author field** for every log written during the user's work: **`{A2MC_USER_NAME} with {coding-agent name}`** — e.g. *"Jing Tao with Claude Code"*. The coding-agent name is whatever harness the offline agent runs in. If the user declines to give a name, fall back to a neutral author (`A2MC user with {coding-agent name}`). `[→ A2MC_USER_NAME]`
 
@@ -125,4 +127,4 @@ Record the answer with **`python3 tools/whoami.py --set "<name>"`**, which write
 
 ## After the interview
 
-The answers feed a **`research_plan.md`** the user confirms (the build gate) — *not* the config files directly. On confirmation, the agent records the case memory and propagates the plan into the site config, `targets.yaml`, the parameter list, and the generated `calibration_rounds.yaml`, then runs the Step-5 gate (`tools/check_setup_ready.py`). See the `a2mc-init` skill for the full flow.
+The answers feed a **`research_plan.md`** the user confirms (the build gate) — *not* the config files directly. On confirmation, the agent records the case memory and propagates the plan into the site config, `targets.yaml`, the parameter list, and the generated `calibration_rounds.yaml`, then runs the Step-5 gate (`tools/check_setup_ready.py`). See the `onboard-case` skill for the full flow.

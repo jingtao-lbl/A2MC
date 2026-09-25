@@ -212,6 +212,26 @@ def test_seed_from_a_filled_case_renames_its_config(fake_repo):
     assert not (dest / "config/fates_kougarok_config.sh").exists()
 
 
+def test_a_case_seed_does_not_carry_its_history_or_state(fake_repo):
+    """A seeded case must not start life 'running': the seed's workflow state, logs, results,
+    reports, knowledge and plan belong to the seed site (audit 20260923b, persona P4)."""
+    src = create("fates", "Kougarok", root=fake_repo)
+    (src / "config/fates_kougarok_config.sh").write_text("# 3-PFT arctic\n")
+    (src / "memory/logs").mkdir(parents=True)
+    (src / "memory/workflow_state_offline_r01.json").write_text("{}")
+    (src / "memory/logs/r1.md").write_text("# a round of Kougarok\n")
+    (src / "reports/r1").mkdir(parents=True)
+    (src / "reports/r1/summary.md").write_text("# Kougarok R1\n")
+    (src / "research_plan.md").write_text("# Kougarok's plan\n")
+
+    dest = create("fates", "Toolik", seed=f"{case_prefix('fates')}_Kougarok", root=fake_repo)
+    assert "3-PFT arctic" in (dest / "config/fates_toolik_config.sh").read_text()  # values kept
+    assert not (dest / "memory/workflow_state_offline_r01.json").exists()
+    assert not (dest / "memory/logs/r1.md").exists()
+    assert not (dest / "reports/r1").exists()
+    assert not (dest / "research_plan.md").exists()
+
+
 def test_failed_scaffold_leaves_nothing_behind(fake_repo):
     """A half-built case is worse than none: it looks scaffolded and is not."""
     (fake_repo / "use_cases/TEMPLATE/config/ecosim_template_config.sh").unlink()

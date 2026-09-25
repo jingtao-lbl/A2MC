@@ -17,7 +17,8 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from scripts.fit_ensemble_surrogate import (align_to_matrix,  # noqa: E402
-                                            load_y_csv)
+                                            load_y_csv,
+                                            resolve_bakeoff_learners)
 
 
 def _write_y(path: Path, rows, targets=("t1", "t2")):
@@ -101,3 +102,65 @@ def test_empty_y_file_is_refused(tmp_path):
     p = _write_y(tmp_path / "y.csv", [])
     with pytest.raises(SystemExit):
         load_y_csv(p)
+
+
+# =============================================================================
+# --bakeoff-learners — what the bake-off's verdict is quantified over
+# =============================================================================
+#
+# The failure these guard against is not a crash. On 2026-09-24 a bake-off was reported as covering
+# six learner families and had fitted four: the count was read off `learners.LEARNERS`, which
+# registers six, while `validate.compare_learners` was called with its own default of
+# ("rf", "gbm", "gp", "mlp"). Nothing errored, and the tier-level rule -- a failure counts only if
+# it reproduces across every available family -- was silently quantified over a smaller set than
+# the report claimed. ([[feedback_a_check_that_cannot_fail]], [[feedback_exact_strings_are_contracts]])
+
+
+def test_all_means_every_registered_family_including_the_optional_one():
+    """`all` must not quietly drop a family, and xgb is the one that was unreachable."""
+    from models.surrogate.learners import LEARNERS
+    fams = resolve_bakeoff_learners("all", LEARNERS)
+    assert set(fams) == set(LEARNERS)
+    assert "xgb" in fams, "xgb is registered; `all` that omits it reintroduces the 2026-09-24 gap"
+    assert "ridge" in fams
+
+
+def test_an_explicit_list_is_honoured_and_keeps_its_order():
+    fams = resolve_bakeoff_learners(" ridge , xgb ", {"ridge": 1, "xgb": 2, "rf": 3})
+    assert fams == ("ridge", "xgb")
+
+
+def test_duplicates_are_collapsed_so_a_family_is_not_scored_twice():
+    fams = resolve_bakeoff_learners("rf,rf,gbm", {"rf": 1, "gbm": 2})
+    assert fams == ("rf", "gbm")
+
+
+def test_refuses_an_unknown_family_and_names_it():
+    """Silently dropping an unknown name is how a roster shrinks without anyone noticing."""
+    with pytest.raises(SystemExit) as e:
+        resolve_bakeoff_learners("rf,nope", {"rf": 1})
+    assert "nope" in str(e.value)
+
+
+def test_refuses_an_empty_roster():
+    with pytest.raises(SystemExit):
+        resolve_bakeoff_learners("  ,  ", {"rf": 1})
+    with pytest.raises(SystemExit):
+        resolve_bakeoff_learners("", {"rf": 1})
+
+
+def test_compare_learners_still_accepts_the_learners_keyword():
+    """A CONTRACT test: the driver threads the roster through this keyword.
+
+    If `compare_learners` ever renames or drops it, the driver would fall back to that function's
+    own narrower default and the roster it printed would stop matching what it fitted, which is
+    exactly the 2026-09-24 failure with the report and the code swapped.
+    """
+    import inspect
+
+    from models.surrogate.validate import compare_learners
+    sig = inspect.signature(compare_learners)
+    assert "learners" in sig.parameters
+    assert sig.parameters["learners"].default == ("rf", "gbm", "gp", "mlp"), (
+        "compare_learners' own default changed; the driver overrides it, but the tests and the "
+        "docstrings that describe the difference need updating with it")

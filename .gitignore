@@ -40,6 +40,12 @@ use_cases/*/memory/
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
+# Local scratch, matching the source repo. A generated .gitignore NARROWER than the source repo's
+# own is a defect even where it looks harmless: the paths it fails to ignore surface as a dirty
+# destination, and a leg with a dirty-destination guard then deadlocks against its own output.
+tmp/
+downloads/
+Downloads/
 use_cases/*/config/*_config.sh
 # A negation must repeat the FILE pattern. A trailing slash matches DIRECTORIES only, so
 # `!use_cases/TEMPLATE/config/` did not re-include the *_config.sh files the line above

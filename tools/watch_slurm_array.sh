@@ -91,6 +91,7 @@ if [ -z "${A2MC_WATCHER_SNAPSHOT:-}" ]; then
 fi
 
 EMPTY_STREAK=0
+FINAL_STREAK=0
 LAST_DECILE=-1
 FINISHED=0
 
@@ -189,12 +190,19 @@ while true; do
   PEND=$(printf '%s' "$_pend_raw" | grep -c .)
   RUN=$(printf '%s' "$_run_raw"  | grep -c .)
   SQUEUE_OK=1; { [ $_pend_rc -ne 0 ] || [ $_run_rc -ne 0 ]; } && SQUEUE_OK=0
-  # Completion from sacct: O(1) and authoritative. Do NOT count output files (a model that
-  # creates its tape at init makes "file exists" mean STARTED, not finished), and do NOT grep
-  # multi-GB stdout (the scan cannot finish and returns a partial count that looks like a total).
-  ST=$(timeout 30 sacct -j "$JOB" --format=State -n -X 2>/dev/null </dev/null)
-  OK=$(echo "$ST" | grep -c COMPLETED)
-  BAD=$(echo "$ST" | grep -cE "FAILED|TIMEOUT|CANCELLED|NODE_FAIL|OUT_OF_ME")
+  # Completion from sacct: the accounting record of each task's FINAL STATUS, and the only
+  # authority on "finished". It keeps that status after squeue has forgotten the job (squeue drops
+  # a job MinJobAge after it ends, 300 s on Perlmutter), so it is the question to ask; the queue is
+  # not. Do NOT count output files (a model that creates its tape at init makes "file exists" mean
+  # STARTED, not finished), and do NOT grep multi-GB stdout (the scan cannot finish and returns a
+  # partial count that looks like a total). `-P` because the default output truncates states to ten
+  # characters (CANCELLED+, OUT_OF_ME+) and is not data ([[feedback_never_parse_a_cli_default_output]]).
+  # The exit status is captured for the same reason squeue's is: a failed read yields nothing,
+  # and "nothing" must never be scored.
+  ST=$(timeout 30 sacct -j "$JOB" -P -n -X --format=State 2>/dev/null </dev/null); _sacct_rc=$?
+  SACCT_OK=1; [ $_sacct_rc -ne 0 ] && SACCT_OK=0
+  OK=$(printf '%s\n' "$ST" | grep -c '^COMPLETED')
+  BAD=$(printf '%s\n' "$ST" | grep -cE '^(FAILED|TIMEOUT|CANCELLED|NODE_FAIL|OUT_OF_MEMORY|BOOT_FAIL|DEADLINE)')
 
   echo "[$(date '+%F %T')] PROGRESS pending=$PEND running=$RUN complete=$OK failed=$BAD of $NTASKS"
   # Heartbeat written BEFORE the hook runs, so a long refresh never makes the watcher look dead.
@@ -209,27 +217,52 @@ while true; do
   fi
   [ "$BAD" -gt 0 ] && echo "[$(date '+%F %T')] TASK FAILURES detected: $BAD -- inspect ${LOGS:-<logs>}"
 
-  # Terminal is an allow-list: absence from squeue alone is not "finished", because a slurmdbd
-  # outage reads identically. Require the accounted count to reach the task total.
-  # TERMINAL REQUIRES: a SUCCESSFUL squeue, and TWO CONSECUTIVE empty polls. One empty poll is
-  # not evidence -- see the note at the poll above. `EMPTY_STREAK` is the confirmation.
+  # ---- Is it finished? Only a FINISHED STATUS says so. -----------------------------------------
+  # ENDED requires every task to carry a final state in the accounting record (the allow-list
+  # above), read successfully, on TWO CONSECUTIVE polls (so a task requeued between them is seen).
+  # The queue is NOT asked whether the job is finished: a job's absence from squeue is not a status,
+  # and squeue forgets every finished job after MinJobAge. Deciding ENDED on "two empty squeue
+  # polls" made the watcher hold for ever whenever those polls straddled that purge (measured
+  # 2026-09-23: V0 job 58788324 ended 08:36:07, purged ~08:41:07, second poll 08:41:38; the watcher
+  # then held until stopped by hand). squeue still serves one purpose here: if it SUCCESSFULLY lists
+  # live tasks while sacct says all are final, the two disagree and the watcher holds.
+  if [ "$SACCT_OK" -eq 1 ] && [ "$((OK + BAD))" -ge "$NTASKS" ]; then
+    FINAL_STREAK=$((FINAL_STREAK+1))
+  else
+    FINAL_STREAK=0
+  fi
+  # The queue's view, used only for the UNACCOUNTED branch below and the contradiction guard. A
+  # failed squeue is logged and simply contributes nothing; it no longer blocks a finish.
   if [ "$SQUEUE_OK" -eq 0 ]; then
-    echo "[$(date '+%F %T')] WARN squeue poll FAILED (pend rc=$_pend_rc run rc=$_run_rc) -- holding, not concluding terminal"
+    echo "[$(date '+%F %T')] WARN squeue poll FAILED (pend rc=$_pend_rc run rc=$_run_rc) --" \
+         "pending/running unknown this poll; completion is read from sacct"
     EMPTY_STREAK=0
   elif [ "$PEND" -eq 0 ] && [ "$RUN" -eq 0 ]; then
     EMPTY_STREAK=$((EMPTY_STREAK+1))
   else
     EMPTY_STREAK=0
   fi
-  if [ "$SQUEUE_OK" -eq 1 ] && [ "$EMPTY_STREAK" -ge 2 ]; then
-    if [ "$((OK + BAD))" -ge "$NTASKS" ]; then
-      FINISHED=1; write_state "ENDED" "$PEND" "$RUN" "$OK" "$BAD"
-      echo "[$(date '+%F %T')] ARRAY ENDED complete=$OK failed=$BAD of $NTASKS"
-    else
-      FINISHED=1; write_state "ENDED_UNACCOUNTED" "$PEND" "$RUN" "$OK" "$BAD"
-      echo "[$(date '+%F %T')] ARRAY ENDED UNACCOUNTED complete=$OK failed=$BAD of $NTASKS --" \
-           "$((NTASKS - OK - BAD)) tasks left no terminal line; inspect ${LOGS:-<logs>}"
-    fi
+  [ "$SACCT_OK" -eq 0 ] && echo "[$(date '+%F %T')] WARN sacct read FAILED (rc=$_sacct_rc) -- no task status this poll; holding"
+  QUEUE_LISTS_LIVE=0
+  { [ "$SQUEUE_OK" -eq 1 ] && [ "$((PEND + RUN))" -gt 0 ]; } && QUEUE_LISTS_LIVE=1
+
+  if [ "$FINAL_STREAK" -ge 2 ] && [ "$QUEUE_LISTS_LIVE" -eq 1 ]; then
+    echo "[$(date '+%F %T')] WARN sacct records all $NTASKS tasks final but squeue still lists" \
+         "$((PEND + RUN)) live -- holding until they agree"
+  fi
+  if [ "$FINAL_STREAK" -ge 2 ] && [ "$QUEUE_LISTS_LIVE" -eq 0 ]; then
+    FINISHED=1; write_state "ENDED" "$PEND" "$RUN" "$OK" "$BAD"
+    echo "[$(date '+%F %T')] ARRAY ENDED complete=$OK failed=$BAD of $NTASKS (final status from sacct)"
+  elif [ "$SQUEUE_OK" -eq 1 ] && [ "$EMPTY_STREAK" -ge 2 ] && [ "$SACCT_OK" -eq 1 ] \
+       && [ "$((OK + BAD))" -lt "$NTASKS" ]; then
+    # The queue is confirmed empty by two SUCCESSFUL polls, and a SUCCESSFUL sacct read shows some
+    # tasks with no final status. That is not a finish, and it is published as one that is not: the
+    # checker fails it. A FAILED sacct read proves nothing either way, so it holds instead.
+    FINISHED=1; write_state "ENDED_UNACCOUNTED" "$PEND" "$RUN" "$OK" "$BAD"
+    echo "[$(date '+%F %T')] ARRAY ENDED UNACCOUNTED complete=$OK failed=$BAD of $NTASKS --" \
+         "$((NTASKS - OK - BAD)) tasks have no final status in sacct; inspect ${LOGS:-<logs>}"
+  fi
+  if [ "$FINISHED" -eq 1 ]; then
     # NOTE: a task can exit 0 having written a PARTIAL output (an early-terminating run still
     # reports COMPLETED). "ENDED" means the scheduler is done, never that the science is valid --
     # the scoring path's window-coverage check is what catches truncated runs.
