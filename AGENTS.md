@@ -124,7 +124,7 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | `generate-codebase-wiki` | any | Produce a source-grounded codebase wiki for a model |
 | `validate-rag-chain` | any | Validate the source → wiki → curated-YAML → RAG chain before shipping |
 | `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
-| `port-param-file` | FATES | Port a calibrated param file across model/API versions (remap PFT identity by functional type, transfer tuned values) |
+| `port-param-file` | any | Port a calibrated param file across model/API versions (remap PFT identity by functional type, transfer tuned values) |
 | `add-skill` | any | Scaffold + register a new skill (4-way registry parity) |
 | `refine-skill` | any | Refine an existing skill from accumulated evidence (human-gated) |
 | `summarize-calibration-round` | any | Summarize one round: whole-ensemble figures, evaluation, sensitivity, and what the round established about the system |

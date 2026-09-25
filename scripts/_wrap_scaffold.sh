@@ -150,10 +150,12 @@ cat > "$D/PROJECT_STATE.json" <<EOF
   "tasks": [
     {
       "id": "T1",
-      "title": "Fill in RESEARCH_PLAN.md",
-      "status": "open",
+      "subject": "Fill in RESEARCH_PLAN.md",
+      "detail": "Everything else on this board should be justifiable by the plan.",
+      "status": "pending",
       "owner": null,
-      "note": "Everything else on this board should be justifiable by the plan."
+      "blockedBy": [],
+      "notes": []
     }
   ]
 }
@@ -208,7 +210,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 BOARD = ROOT / "PROJECT_STATE.json"
-OPEN = ("open", "in_progress")
+# The five statuses, and they are a CONTRACT rather than this script's preference: the realised
+# project boards use exactly these, `create-project-agent` Step 6 specifies them, and a board that
+# invents its own cannot be moved between the two. `done` is the word people reach for and is NOT a
+# status. Neither is `open` -- a task nobody has started is `pending`.
+STATUSES = ("pending", "in_progress", "completed", "blocked", "abandoned")
+UNFINISHED = ("pending", "in_progress", "blocked")
+
+
+def ready(t, idx):
+    """Ready means pending AND every blocker completed.
+
+    This is the whole point of `blockedBy`: without it `next` can only answer "what is open", which
+    is a weaker question and pushes the real dependency into prose inside a note, where nothing can
+    read it.
+    """
+    return t.get("status") == "pending" and all(
+        idx.get(b, {}).get("status") == "completed" for b in t.get("blockedBy", []))
 
 
 def load():
@@ -233,8 +251,34 @@ def check(d):
         elif tid in seen:
             problems.append("duplicate task id %r" % tid)
         seen.add(tid)
-        if t.get("status") not in ("open", "in_progress", "completed", "abandoned"):
-            problems.append("task %s has status %r" % (tid, t.get("status")))
+        if t.get("status") not in STATUSES:
+            problems.append("task %s has status %r -- must be one of %s"
+                            % (tid, t.get("status"), ", ".join(STATUSES)))
+    idx = {t.get("id"): t for t in d.get("tasks", [])}
+    for t in d.get("tasks", []):
+        tid = t.get("id")
+        for b in t.get("blockedBy", []):
+            if b not in idx:
+                problems.append("task %s is blockedBy %r, which is not a task" % (tid, b))
+            elif t.get("status") == "completed" and idx[b].get("status") != "completed":
+                problems.append("task %s is completed but still blockedBy %s, which is not" % (tid, b))
+    # dependency cycles: a board that can deadlock itself should say so rather than hang `next`
+    colour = {}
+
+    def walk(tid, trail):
+        if colour.get(tid) == "done":
+            return
+        if colour.get(tid) == "open":
+            problems.append("dependency cycle: %s" % " -> ".join(trail + [tid]))
+            return
+        colour[tid] = "open"
+        for b in idx.get(tid, {}).get("blockedBy", []):
+            if b in idx:
+                walk(b, trail + [tid])
+        colour[tid] = "done"
+
+    for t in d.get("tasks", []):
+        walk(t.get("id"), [])
     return problems
 
 
@@ -248,12 +292,21 @@ def main():
         print("board ok: %d task(s), project %s" % (len(d.get("tasks", [])), d.get("project")))
         return 0
     if cmd == "next":
-        nxt = [t for t in d.get("tasks", []) if t.get("status") in OPEN]
+        idx = {t.get("id"): t for t in d.get("tasks", [])}
+        running = [t for t in d.get("tasks", []) if t.get("status") == "in_progress"]
+        nxt = running + [t for t in d.get("tasks", []) if ready(t, idx)]
         if not nxt:
+            stuck = [t for t in d.get("tasks", []) if t.get("status") in UNFINISHED]
+            if stuck:
+                print("nothing READY -- %d unfinished task(s), each waiting on a blocker." % len(stuck))
+                for t in stuck[:5]:
+                    print("   %s  %s   blockedBy: %s"
+                          % (t.get("id"), t.get("subject", ""), ", ".join(t.get("blockedBy", [])) or "-"))
+                return 0
             print("nothing open. Add a task to %s." % BOARD.name); return 0
         t = nxt[0]
-        print("%s  %s" % (t["id"], t.get("title", "")))
-        if t.get("note"): print("   %s" % t["note"])
+        print("%s  %s" % (t["id"], t.get("subject", "")))
+        if t.get("detail"): print("   %s" % t["detail"])
         return 0
     sys.exit("usage: state.py [next|check]")
 
@@ -282,8 +335,9 @@ def render(d):
          "# %s — TODO" % d.get("project", "project"), ""]
     by = {}
     for t in d.get("tasks", []):
-        by.setdefault(t.get("status", "open"), []).append(t)
-    for status, head in (("in_progress", "In progress"), ("open", "Open"), ("completed", "Done")):
+        by.setdefault(t.get("status", "pending"), []).append(t)
+    for status, head in (("in_progress", "In progress"), ("blocked", "Blocked"),
+                         ("pending", "Open"), ("completed", "Done"), ("abandoned", "Abandoned")):
         rows = by.get(status, [])
         if not rows:
             continue
@@ -291,7 +345,10 @@ def render(d):
         for t in rows:
             mark = "x" if status == "completed" else " "
             owner = (" — %s" % t["owner"]) if t.get("owner") else ""
-            L.append("- [%s] **%s** %s%s" % (mark, t.get("id", "?"), t.get("title", ""), owner))
+            blockers = t.get("blockedBy", [])
+            waits = ("  *(waits on %s)*" % ", ".join(blockers)) if blockers else ""
+            L.append("- [%s] **%s** %s%s%s"
+                     % (mark, t.get("id", "?"), t.get("subject", ""), owner, waits))
         L.append("")
     return "\n".join(L).rstrip() + "\n"
 
@@ -475,11 +532,16 @@ def main():
     if d.get("models") and d["models"] != "none":
         lines.append("  models wrapped: %s" % d["models"])
     tasks = d.get("tasks", [])
-    nxt = [t for t in tasks if t.get("status") in ("open", "in_progress")]
-    lines.append("  %d task(s), %d open" % (len(tasks), len(nxt)))
+    idx = {t.get("id"): t for t in tasks}
+    unfinished = [t for t in tasks if t.get("status") in ("pending", "in_progress", "blocked")]
+    nxt = [t for t in tasks if t.get("status") == "in_progress"] + [
+        t for t in tasks
+        if t.get("status") == "pending"
+        and all(idx.get(b, {}).get("status") == "completed" for b in t.get("blockedBy", []))]
+    lines.append("  %d task(s), %d unfinished, %d ready" % (len(tasks), len(unfinished), len(nxt)))
     if nxt:
         t = nxt[0]
-        lines.append("  NEXT: %s  %s" % (t.get("id", "?"), t.get("title", "")))
+        lines.append("  NEXT: %s  %s" % (t.get("id", "?"), t.get("subject", "")))
     lines.append("  plan: %s   loop: %s/CLAUDE.md" % (d.get("plan", "RESEARCH_PLAN.md"), ROOT.name))
     print("\n".join(lines))
     return 0

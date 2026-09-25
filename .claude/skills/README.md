@@ -80,7 +80,7 @@ docs that an adapter model could run them.
 | [generate-codebase-wiki](generate-codebase-wiki/SKILL.md) | any | Generate a source-grounded codebase wiki for a model. |
 | [validate-rag-chain](validate-rag-chain/SKILL.md) | any | Validate the RAG chain with the three validators, in order. |
 | [inject-knowledge](inject-knowledge/SKILL.md) | any | Inject curated domain knowledge into the KB via the curated-YAML overlay. |
-| [port-param-file](port-param-file/SKILL.md) | FATES | Port a calibrated/tuned param file across model/API versions (e.g. api-31 `.nc` → api-43 `.json`) — remap PFT identity by functional type, transfer overlapping tuned values. Invoke on "port/migrate/convert params to api-XX". |
+| [port-param-file](port-param-file/SKILL.md) | any | Port a calibrated/tuned param file across model/API versions (e.g. api-31 `.nc` → api-43 `.json`) — remap PFT identity by functional type, transfer overlapping tuned values. Invoke on "port/migrate/convert params to api-XX". |
 | [add-skill](add-skill/SKILL.md) | any | Scaffold + register a new skill (frontmatter + ## Changelog + both registries + drift check). |
 | [refine-skill](refine-skill/SKILL.md) | any | Refine an existing skill from accumulated evidence, human-gated (propose → approve → apply). |
 | [summarize-calibration-round](summarize-calibration-round/SKILL.md) | any | One-round summary: ensemble figures + evaluation + sensitivity + the round's MECHANISM inventory → markdown/PDF. |

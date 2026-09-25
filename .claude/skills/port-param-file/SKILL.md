@@ -8,7 +8,8 @@ description: >
 visibility: public
 category: calibration
 modes:
-  requires_fates: true       # the underlying tool is parameterized, but every worked path here is FATES
+  requires_fates: false      # NOT a runtime-mode gate: the tool runs anywhere. `scope` below is what
+                             # withholds it from a non-FATES project, which is the distribution question
   nutrient_pathway: any
   scope: [fates, calibration]
   summary: "Port a tuned FATES parameter file across API versions (PFT identity remap + tuned-value transfer). The tool takes --pft-dim/--id-var, so it CAN serve another model; this skill does not yet show how, which is why it declares FATES."

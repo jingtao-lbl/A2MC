@@ -339,7 +339,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Invoke when:** "port/migrate/convert the param file to api-XX", "map parameters to the new version", "build the new-API base file from the tuned prior one".
 - **Backing tools:** `tools/port_param_file.py` (`identity`/`port`/`verify` subcommands; version/format/param-list agnostic).
 - **Key discipline:** run `identity` FIRST and resolve any `NAME MISMATCH` slot by functional intent (`--map`); port ONTO the target template so no registered param is missing (avoids the `check_var … not on dataset` runtime abort). Doctrine (why/which-values) lives in the memories it cites — thin by design.
-- **Modes:** `FATES` — the port TOOL is parameterized (`--pft-dim`/`--id-var`) and ships everywhere, but every worked path in this skill is FATES, so it does not travel to a project without it.
+- **Modes:** `any` — the port TOOL is parameterized (`--pft-dim`/`--id-var`) and runs against any model, so there is no runtime gate. Its **distribution** is narrower: `scope: [fates, calibration]` withholds it from a project that did not ask for FATES, because every worked path written here is FATES. Modes and scope answer different questions and this skill is the case that separates them.
 
 ### `add-skill`
 - **Purpose:** Scaffold + register a new skill (correct frontmatter + `## Changelog`, both
