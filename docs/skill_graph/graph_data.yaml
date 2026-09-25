@@ -1,0 +1,189 @@
+# Curated half of the skill graph. The NODE SET and each node's group are DERIVED from
+# .claude/skills/*/SKILL.md and are not listed here -- adding a skill puts it on the graph
+# automatically. What cannot be derived is below: a one-line editorial gloss per skill, and
+# the routes between them with their labels.
+#
+# Regenerate the HTML:  python3 tools/generate_skill_graph.py
+
+# Skills deliberately kept OFF the graph, each with its reason. This is a visible decision,
+# not a filter: the generator prints every exclusion it applies.
+exclude:
+  cherrypick-from-main: >-
+    Repository plumbing rather than an A2MC capability: it moves commits between branches of
+    the private development repo. It routes to no skill and no skill routes to it, so on a
+    capability network it is an isolated node. (PI, 2026-09-25)
+
+# One line per skill. A skill with no gloss still appears, using its frontmatter summary and a
+# warning -- silence must not drop a node, which is how this graph fell 8 skills behind.
+glosses:
+  arm-local-monitoring: Watches an ensemble on a workstation, where there is no scheduler.
+  build-surrogate: Builds, scores and hands over a learned surrogate from a finished ensemble.
+  create-project-agent: Stands up a project repository whose framework half arrives by sync.
+  log: Writes a development, analysis or session log in the right stream.
+  manage-auto-memory: Adds or wires a cross-session memory in the tracked bucket.
+  manuscript-writing-style: Drafts and polishes a manuscript section to journal register.
+  memory-checkup: Periodic staleness audit of the memory bucket and the skill surface.
+  sync-downstream: Runs a sync leg and reviews it before publishing becomes irreversible.
+  a2mc-init: First-run per-clone setup and routing.
+  add-fates-parameter: Adds a tunable FATES parameter through source and files.
+  add-skill: Creates or retires a skill and synchronizes its registries.
+  arm-hpc-monitoring: Monitors active HPC ensembles and experiments.
+  ats-run-workflow: Runs and evaluates ATS experiments.
+  build-rag-from-scratch: Orchestrates construction of a model knowledge layer.
+  calibration-discipline: Definition-of-done rules for each cycle and round.
+  calibration-goal: Drives the seven-phase workflow to convergence.
+  calibration-log: Writes shared phase and session evidence logs.
+  cherrypick-from-main: Audited transfer of generic improvements into adapter-kit.
+  compare-calibration-rounds: Builds cross-round parameter and mechanism ledgers.
+  curate-knowledge: Reviews and promotes or rejects staged discoveries.
+  diagnose-forensics: Determines whether one anomaly is real or an artifact.
+  ecosim-run-workflow: Runs and evaluates EcoSIM experiments.
+  ecosim-trait-check-refine: Checks and refines EcoSIM per-PFT trait values.
+  ecosim-version-drift: Repairs EcoSIM input and output contract drift.
+  generate-codebase-wiki: Builds a source-grounded, commit-pinned model wiki.
+  inject-knowledge: Adds verified human-originated knowledge to curated YAML.
+  literature-review: Produces DOI-validated reviews or parameter bounds.
+  markdown-to-pdf: Converts Markdown reports to PDF or Word.
+  model-evolution: Controls reproducible, fork-safe changes to model source.
+  offline-testing-workflow: Runs FATES parameter-sweep experiments.
+  onboard-case: Creates a new case for an already-onboarded model.
+  onboard-model: Onboards a new process-based model and its adapter.
+  onboard-session: Restores context and resumes an existing campaign.
+  pflotran-run-workflow: Runs and evaluates PFLOTRAN experiments.
+  phase0-design: Designs, samples, and submits the ensemble.
+  phase1-exploration: Extracts outputs and performs sensitivity exploration.
+  phase2-screening: Ranks ensemble members against observational targets.
+  phase3-diagnosis: Diagnoses the mechanisms behind target failures.
+  phase4-hypothesis: Generates and skip-tests mechanistic hypotheses.
+  phase5-testing: Executes new simulation experiments.
+  phase6-refinement: Evaluates evidence and decides converge, rethink, or redesign.
+  plotting: Creates and visually verifies publication-quality figures.
+  port-param-file: Transfers tuned values across model or API versions.
+  rebuild-rag: Rebuilds or repairs a model vector and graph index.
+  refine-skill: Improves a skill from verified evidence with human approval.
+  restart-adapter-ensemble: Recovers failed standalone-model cases.
+  restart-failed-jobs: Recovers failed CIME and ELM-family jobs.
+  round-housekeeping: Closes a round and carries verified lessons forward.
+  scientific-analysis: Runs an open-ended investigation ending in a figure and log.
+  setup-discipline: Definition-of-done gates for clone, model, and case setup.
+  summarize-calibration-round: Produces the standardized one-round evidence package.
+  validate-rag-chain: Validates source to wiki to YAML to RAG.
+  wire-knowledge-graph: Audits whether curated relations become graph edges.
+  write-report: Writes integrated reports for zero-context readers.
+
+# source -> target, a route type, and what the route MEANS.
+edges:
+  - [a2mc-init, onboard-model, route, new model]
+  - [a2mc-init, onboard-case, route, supported model]
+  - [a2mc-init, onboard-session, route, resume partial setup]
+  - [setup-discipline, a2mc-init, support, completion gate]
+  - [setup-discipline, onboard-model, support, completion gate]
+  - [setup-discipline, onboard-case, support, completion gate]
+  - [onboard-model, build-rag-from-scratch, route, delegates knowledge chain]
+  - [onboard-model, onboard-case, route, first case]
+  - [onboard-case, literature-review, support, parameter bounds]
+  - [onboard-case, phase0-design, route, start calibration]
+  - [onboard-case, calibration-goal, route, driven run]
+  - [onboard-session, arm-hpc-monitoring, route, in-flight work]
+  - [onboard-session, curate-knowledge, route, pending proposals]
+  - [onboard-session, calibration-goal, route, resume goal]
+  - [build-rag-from-scratch, generate-codebase-wiki, route, delegates wiki]
+  - [build-rag-from-scratch, rebuild-rag, route, delegates index build]
+  - [build-rag-from-scratch, inject-knowledge, route, delegates curated seed]
+  - [build-rag-from-scratch, validate-rag-chain, route, delegates validation]
+  - [generate-codebase-wiki, validate-rag-chain, support, wiki verification]
+  - [inject-knowledge, rebuild-rag, route, reindex additions]
+  - [inject-knowledge, validate-rag-chain, support, validate relations]
+  - [rebuild-rag, validate-rag-chain, route, post-build gate]
+  - [wire-knowledge-graph, rebuild-rag, route, rebuild graph]
+  - [wire-knowledge-graph, validate-rag-chain, support, verify additive wiring]
+  - [calibration-goal, calibration-discipline, support, must honor]
+  - [calibration-goal, phase0-design, route, dispatches next phase]
+  - [calibration-goal, phase1-exploration, route, dispatches next phase]
+  - [calibration-goal, phase2-screening, route, dispatches next phase]
+  - [calibration-goal, phase3-diagnosis, route, dispatches next phase]
+  - [calibration-goal, phase4-hypothesis, route, dispatches next phase]
+  - [calibration-goal, phase5-testing, route, dispatches next phase]
+  - [calibration-goal, phase6-refinement, route, dispatches next phase]
+  - [phase0-design, phase1-exploration, route, handoff]
+  - [phase1-exploration, phase2-screening, route, handoff]
+  - [phase2-screening, phase3-diagnosis, route, handoff]
+  - [phase3-diagnosis, phase4-hypothesis, route, handoff]
+  - [phase4-hypothesis, phase3-diagnosis, route, skip-test loop]
+  - [phase4-hypothesis, phase5-testing, route, new simulation required]
+  - [phase5-testing, phase6-refinement, route, results]
+  - [phase6-refinement, phase3-diagnosis, route, rethink cycle]
+  - [phase6-refinement, phase0-design, route, redesign round]
+  - [phase6-refinement, summarize-calibration-round, route, round close]
+  - [summarize-calibration-round, compare-calibration-rounds, route, round close order]
+  - [compare-calibration-rounds, write-report, route, round close order]
+  - [write-report, round-housekeeping, route, after human gate]
+  - [round-housekeeping, phase0-design, route, next round]
+  - [calibration-discipline, phase0-design, support, definition of done]
+  - [calibration-discipline, phase1-exploration, support, definition of done]
+  - [calibration-discipline, phase2-screening, support, definition of done]
+  - [calibration-discipline, phase3-diagnosis, support, definition of done]
+  - [calibration-discipline, phase4-hypothesis, support, definition of done]
+  - [calibration-discipline, phase5-testing, support, definition of done]
+  - [calibration-discipline, phase6-refinement, support, definition of done]
+  - [phase0-design, calibration-log, support, phase evidence]
+  - [phase1-exploration, calibration-log, support, phase evidence]
+  - [phase2-screening, calibration-log, support, phase evidence]
+  - [phase3-diagnosis, calibration-log, support, phase evidence]
+  - [phase4-hypothesis, calibration-log, support, phase evidence]
+  - [phase5-testing, calibration-log, support, phase evidence]
+  - [phase6-refinement, calibration-log, support, phase evidence]
+  - [phase0-design, offline-testing-workflow, route, FATES execution]
+  - [phase0-design, ecosim-run-workflow, route, EcoSIM execution]
+  - [phase0-design, pflotran-run-workflow, route, PFLOTRAN execution]
+  - [phase0-design, ats-run-workflow, route, ATS execution]
+  - [phase5-testing, offline-testing-workflow, route, FATES execution]
+  - [phase5-testing, ecosim-run-workflow, route, EcoSIM execution]
+  - [phase5-testing, pflotran-run-workflow, route, PFLOTRAN execution]
+  - [phase5-testing, ats-run-workflow, route, ATS execution]
+  - [offline-testing-workflow, arm-hpc-monitoring, route, monitor launch]
+  - [ecosim-run-workflow, arm-hpc-monitoring, route, monitor launch]
+  - [pflotran-run-workflow, arm-hpc-monitoring, route, monitor launch]
+  - [ats-run-workflow, arm-hpc-monitoring, route, monitor launch]
+  - [offline-testing-workflow, restart-failed-jobs, route, CIME recovery]
+  - [ecosim-run-workflow, restart-adapter-ensemble, route, standalone recovery]
+  - [pflotran-run-workflow, restart-adapter-ensemble, route, standalone recovery]
+  - [ats-run-workflow, restart-adapter-ensemble, route, standalone recovery]
+  - [restart-failed-jobs, arm-hpc-monitoring, route, monitor relaunch]
+  - [restart-adapter-ensemble, arm-hpc-monitoring, route, monitor relaunch]
+  - [ecosim-version-drift, ecosim-run-workflow, route, reverify by run]
+  - [ecosim-trait-check-refine, ecosim-run-workflow, route, reverify by run]
+  - [port-param-file, phase0-design, support, ported starting values]
+  - [phase3-diagnosis, diagnose-forensics, support, single-anomaly branch]
+  - [phase3-diagnosis, wire-knowledge-graph, support, missing graph path]
+  - [phase4-hypothesis, wire-knowledge-graph, support, missing graph path]
+  - [phase1-exploration, scientific-analysis, support, targeted investigation]
+  - [scientific-analysis, plotting, route, figure]
+  - [scientific-analysis, calibration-log, route, analysis record]
+  - [scientific-analysis, markdown-to-pdf, support, shareable output]
+  - [summarize-calibration-round, plotting, route, round figures]
+  - [summarize-calibration-round, markdown-to-pdf, route, round PDF]
+  - [compare-calibration-rounds, plotting, route, comparison figures]
+  - [write-report, plotting, support, embedded figures]
+  - [write-report, markdown-to-pdf, route, render report]
+  - [literature-review, markdown-to-pdf, support, render review]
+  - [round-housekeeping, curate-knowledge, route, pending proposals]
+  - [round-housekeeping, inject-knowledge, route, verified findings]
+  - [calibration-log, refine-skill, support, evidence for refinement]
+  - [model-evolution, add-fates-parameter, route, FATES knob sub-recipe]
+  - [model-evolution, offline-testing-workflow, support, paired-run pilot]
+  - [model-evolution, generate-codebase-wiki, route, refresh after landing]
+  - [create-project-agent, sync-downstream, route, every sync after the first]
+  - [create-project-agent, onboard-model, route, if it needs a model]
+  - [create-project-agent, onboard-case, route, if it calibrates]
+  - [create-project-agent, add-skill, route, framework skills only]
+  - [log, refine-skill, support, a skill that misled]
+  - [log, memory-checkup, support, a memory gone stale]
+  - [log, manage-auto-memory, route, a memory write]
+  - [onboard-session, arm-local-monitoring, route, in-flight local work]
+  - [ecosim-run-workflow, arm-local-monitoring, route, workstation launch]
+  - [phase6-refinement, build-surrogate, route, surrogate from the ensemble]
+  - [phase1-exploration, build-surrogate, route, the Y matrix trains it]
+  - [phase0-design, build-surrogate, support, hold-out decided once]
+  - [plotting, build-surrogate, support, consumes figures]
+  - [literature-review, manuscript-writing-style, route, manuscript prose]

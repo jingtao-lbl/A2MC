@@ -302,28 +302,46 @@ def phase_section_check():
 
 
 def marker_check():
-    """Private-comment blocks in every filtered/shipped file must be balanced, and each
-    marker must be on its own line (an inline marker is a filter landmine)."""
+    """Private-comment blocks in every filtered/shipped file must be balanced AND correctly
+    ordered, and each marker must be on its own line (an inline marker is a filter landmine).
+
+    ORDER matters as much as the count, and counting alone is what let a real truncation ship.
+    On 2026-09-25 a registry edit left a stray CLOSE marker ahead of its opener; the totals still
+    matched 5 and 5, this check passed, and `filter_private` then stripped from the preceding
+    opener to that closer -- deleting 22 catalogue entries, which reached the public repository.
+    A running depth that dips below zero catches it; the totals never can.
+    """
     problems = []
     for f in FILTERED_FILES:
         if not f.exists():
             continue
         rel = f.relative_to(ROOT)
-        opens = closes = 0
+        opens = closes = depth = 0
+        stray_at = None
         for i, line in enumerate(f.read_text().splitlines(), 1):
             s = line.strip()
             if OPEN_MARK in line:
                 if s == OPEN_MARK:
                     opens += 1
+                    depth += 1
                 else:
                     problems.append(f"MARKER: {rel}:{i} inline '{OPEN_MARK}' (filter landmine — own line or rephrase)")
             if CLOSE_MARK in line:
                 if s == CLOSE_MARK:
                     closes += 1
+                    depth -= 1
+                    if depth < 0 and stray_at is None:
+                        stray_at = i
+                        depth = 0        # keep scanning; report the FIRST stray only
                 else:
                     problems.append(f"MARKER: {rel}:{i} inline '{CLOSE_MARK}' (filter landmine)")
         if opens != closes:
             problems.append(f"MARKER: {rel} unbalanced private blocks ({opens} open != {closes} close)")
+        if stray_at is not None:
+            problems.append(
+                f"MARKER: {rel}:{stray_at} '{CLOSE_MARK}' with no open block before it. "
+                f"The totals may still match, and filter_private will strip from the PRECEDING "
+                f"opener to here — silently deleting everything between.")
     return problems
 
 

@@ -304,7 +304,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Modes:** `any` — model-agnostic. See `docs/a2mc_reference/rag_build_roadmap.md`.
 
 ### `build-surrogate`
-- **Purpose:** *(private — A2MC-development-only; excluded from public sync, not ready to ship.)* Build, score and hand over a learned surrogate of a process model from a finished calibration ensemble: the S0/S1/S2/S3 tier ladder in `models/surrogate/`, its gated ascent, the hold-out design, and the acceptance and promotion gates.
+- **Purpose:** Build, score and hand over a learned surrogate of a process model from a finished calibration ensemble: the S0/S1/S2/S3 tier ladder in `models/surrogate/`, its gated ascent, the hold-out design, and the acceptance and promotion gates.
 - **Resolve the USE MODE first** — `offline_search` (a calibration accelerator, gated on RANKING against distance to the observation) and `online_inference` (an emulator, gated on pointwise daily R2 >= 0.9) are not interchangeable and a wrong choice yields a verdict about the wrong question.
 - **The hold-out design is a PHASE 0 decision.** An independent validation lattice cannot be recovered by re-splitting one Sobol' sequence; it must be drawn with a different scramble seed and RUN. `A2MC_SOBOL_SEQ_VALID_SAMPLES` / `_SEED` / `A2MC_VALID_MATRIX_FILE` configure it.
 - **Carries the measured traps:** a Sobol' tail block is the EASIEST hold-out and not a control; a Chebyshev "outer shell" degenerates to random past a few dimensions; a conservation law must be verified in the model's own output before a loss is built on it; and a case hold-out cannot establish an emulator claim (measured: three of five fluxes met the bar on held-out cases, zero of five on withheld YEARS).
@@ -312,3 +312,176 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Invoke when:** "build a surrogate", "train an emulator", "can we emulate this model", "speed up the search with a surrogate", or when asked whether a finished ensemble can support one.
 - **Modes:** `any` — model-agnostic; `models/surrogate/` exists only on `adapter-kit`.
 
+### `rebuild-rag`
+- **Purpose:** Rebuild/refresh a model's RAG/GraphRAG index (wiki bump, or a `--graph-only` refresh after a curated-YAML injection), and **commit it successfully**.
+- **One build script per model, with DIFFERENT flags** — FATES `scripts/build_rag_index.py`, EcoSIM `scripts/build_ecosim_rag.py`, PFLOTRAN `scripts/build_pflotran_rag.py`. Step 0 routes; do not copy a command between them (PFLOTRAN has no `--graph-only`, EcoSIM no `--test`, only FATES takes `--profile`).
+- **Carries the commit trap:** `chroma.sqlite3` is tracked but `--skip-worktree` in every clone, so `git add` stages **nothing** and a rebuild is silently lost — how the 2026-08-01 PFLOTRAN rebuild vanished.
+- **Invoke when:** "rebuild/refresh the RAG", "rebuild the EcoSIM/PFLOTRAN index", "the index is stale".
+- **Modes:** `any` — the workflow is model-agnostic; the scripts are not.
+
+### `wire-knowledge-graph`
+- **Purpose:** Audit and fix **which relations** a model's knowledge graph actually carries from its curated seed, and prove a graph rebuild is purely additive.
+- **The failure it owns is SILENT.** A seed field no builder pass reads produces no error, no `skipped edge` line and no count change, since counts do not fall when an edge is never created. It also passes `validate_curated_yaml.py`, which checks that names RESOLVE and never that anything consumes them. Measured on EcoSIM 2026-09-08: two relation blocks unread, 95 edges absent, among them the driver of a live round's binding target.
+- **One `build_graph()` per model, and node identity differs** — FATES `rag/graph_builder.py`, EcoSIM `scripts/build_ecosim_rag.py`, PFLOTRAN `scripts/build_pflotran_rag.py`; only `FATESKnowledgeGraph` is shared. EcoSIM keys by bare Fortran name, PFLOTRAN by deck-card leaf with addresses attached. Do not merge them; do not edit `graph_builder.py` to fix an adapter.
+- **Carries the additive-rebuild proof:** diff node by node and edge by edge, and require zero removals and zero pre-existing edge attribute changes — `networkx.add_edge` replaces attributes on a repeat, so a second pass silently relabels edges a count line cannot show.
+- **Invoke when:** "the graph cannot reach X from Y", "add this relation to the graph", "audit the graph wiring", or a Phase 3/4 traversal from a scored output returns nothing.
+- **Modes:** `any` — the workflow is model-agnostic; the builders and their seed field names are not.
+
+### `generate-codebase-wiki`
+- **Purpose:** Generate a source-grounded codebase wiki for a model (the substrate the RAG indexes).
+- **Invoke when:** "generate the codebase wiki", "make a wiki for <model>".
+- **Modes:** `any` — model-agnostic. See `docs/a2mc_reference/codebase_wiki_generation_roadmap.md`.
+
+### `validate-rag-chain`
+- **Purpose:** Validate the RAG chain with the three validators, in order, before shipping.
+- **Invoke when:** "validate the RAG", "is the RAG chain sound".
+- **Modes:** `any` — model-agnostic. See `docs/a2mc_reference/rag_validation_workflow.md`.
+
+### `inject-knowledge`
+- **Purpose:** Inject curated domain knowledge into the KB via the curated-YAML overlay (additive, evidence-backed).
+- **Invoke when:** "inject this knowledge", "add a curated relationship".
+- **Modes:** `any` — model-agnostic. See `docs/a2mc_reference/graphrag_curated_yaml_roadmap.md`.
+
+### `port-param-file`
+- **Purpose:** Port a calibrated/site-tuned parameter file across model/API versions — reads a source (tuned prior-version) file + the new-version default template, remaps PFT identity **by functional type** (not index/name), and transfers every overlapping tuned value into the new version's format+structure.
+- **Invoke when:** "port/migrate/convert the param file to api-XX", "map parameters to the new version", "build the new-API base file from the tuned prior one".
+- **Backing tools:** `tools/port_param_file.py` (`identity`/`port`/`verify` subcommands; version/format/param-list agnostic).
+- **Key discipline:** run `identity` FIRST and resolve any `NAME MISMATCH` slot by functional intent (`--map`); port ONTO the target template so no registered param is missing (avoids the `check_var … not on dataset` runtime abort). Doctrine (why/which-values) lives in the memories it cites — thin by design.
+- **Modes:** `any` — the port TOOL is parameterized (`--pft-dim`/`--id-var`) and runs against any model, so there is no runtime gate. Its **distribution** is narrower: `scope: [fates, calibration]` withholds it from a project that did not ask for FATES, because every worked path written here is FATES. Modes and scope answer different questions and this skill is the case that separates them.
+
+### `add-skill`
+- **Purpose:** Scaffold + register a new skill (correct frontmatter + `## Changelog`, both
+  registries, the drift check), stopping for human review before commit.
+- **Invoke when:** "add a skill", "scaffold a skill", "make this reusable as a skill".
+- **Modes:** `any` — meta machinery, model-agnostic.
+
+### `refine-skill`
+- **Purpose:** Refine an existing skill from accumulated evidence, human-gated — gather signal,
+  propose a SKILL.md diff with cited evidence, STOP for approval, then apply + append a `## Changelog` line.
+- **Invoke when:** "refine the X skill", "the X skill should have caught Y", "review the skills".
+- **Modes:** `any` — meta machinery, model-agnostic.
+
+---
+
+## FATES Morris-ensemble analysis (`requires_fates: true`)
+
+These consume the mode-aware machinery (the case `targets.yaml`, api-aware parameter-file
+handling, ECA/RD pathway) but assume a FATES Morris-ensemble calibration (PFT/SZPF outputs,
+ADSP/RGSP/TRANS spinup, Morris μ*). The `modes:` gate keeps them out of ELM-only mode.
+
+### `summarize-calibration-round`
+- **Purpose:** One-round summary — whole-ensemble figures + an evaluation report (best case,
+  targets met vs tolerance) + a sensitivity report + the round's **mechanism inventory** (what the
+  round established about the system, each finding with a citation) → markdown/PDF. Targets from
+  the case `targets.yaml`. A required step before the ROUND report, which does not derive them.
+- **Invoke when:** "summarize round N", "report for R<N>", "how did R<N> do", "what did this round
+  establish", "what did we learn this round".
+- **Modes:** `requires_fates: false` — generic since 2026-08-24; the CONTRACT is model-agnostic and
+  the figure/screen BACKEND is per model.
+
+### `compare-calibration-rounds`
+- **Purpose:** The cross-round **parameter ledger** (what every round did with each parameter) and
+  the cross-round **mechanism ledger** (what the campaign now knows about the system, one row per
+  established mechanism), plus performance and sensitivity across rounds. Required before EVERY
+  round report including the first, where only the cross-round figures are not applicable.
+- **Invoke when:** "compare rounds", "which round is best", "refresh the multi-round figure", "what
+  have we learned about the system across rounds", "why was parameter X refuted".
+- **Modes:** `requires_fates: false` — generic since 2026-08-24.
+
+### `ecosim-run-workflow`
+- **Purpose:** The EcoSIM (non-CIME) counterpart to `offline-testing-workflow` — design a probe or
+  ensemble, materialize cases across EcoSIM's three parameter-file surfaces, validate before
+  submitting, monitor, and score against each target's own `reduce`/`tape`.
+- **Invoke when:** "run an EcoSIM experiment/probe/ensemble", "set up EcoSIM cases", "submit the
+  EcoSIM array", "why did my EcoSIM cases fail", "score the EcoSIM run".
+- **Key discipline:** the non-CIME machine config; the 4096-byte namelist buffer (case-name length
+  costs bytes); a real Gregorian calendar; `sacct COMPLETED` is not usable output; a partially
+  covered scoring window is an error, not a smaller sample.
+- **Modes:** `any` — EcoSIM-specific, no FATES dependency.
+
+### `pflotran-run-workflow`
+- **Purpose:** The PFLOTRAN (deck-driven) counterpart to `ecosim-run-workflow` — design a probe or
+  ensemble, write perturbed input decks, assemble case directories around them, submit, and score
+  against `*-mas.dat` columns.
+- **Invoke when:** "run a PFLOTRAN experiment/probe/ensemble", "set up PFLOTRAN cases", "submit the
+  PFLOTRAN array", "why did my PFLOTRAN cases fail", "score the PFLOTRAN run".
+- **Key discipline:** the deck IS the parameter file (cards addressed by block path; the database is
+  fixed input, not a calibrated surface); `create_case` assembles around an ALREADY-WRITTEN
+  perturbed deck; outputs are `*-mas.dat` columns with no NetCDF history tape; the 806-hour
+  observation offset, already applied in `targets.yaml`; an aggregate score can hide a per-species
+  inversion; the V0 gate covers time-mean targets on the base case only.
+- **Modes:** `any` — PFLOTRAN-specific, no FATES dependency.
+
+### `ats-run-workflow`
+- **Purpose:** The ATS (XML-deck) counterpart to `ecosim-run-workflow` — write perturbed Teuchos
+  ParameterList decks, assemble cases, submit, and score against the deck's own observation `.dat`
+  files.
+- **Invoke when:** "run an ATS experiment/probe/ensemble", "set up ATS cases", "submit the ATS
+  array", "why did my ATS cases fail", "score the ATS run".
+- **Key discipline:** parameters are leaves addressed by PATH through a nested ParameterList; targets
+  are **injected into the deck's `observations` block**, not declared as history flags, and an
+  observation is already reduced over its region by the deck's `functional`; the `region` grouping
+  axis is a string; run ONE case end to end before designing an ensemble, because the adapter's own
+  docstring calls the run wiring v0.1.
+- **Modes:** `any` — ATS-specific, no FATES dependency.
+
+### `offline-testing-workflow`
+- **Purpose:** Design + launch + analyze an offline HPC parameter-sweep experiment on a Morris
+  base case — variant matrix, V0 reproducibility gate, dedicated output dirs (config-var paths),
+  decision tree → KB injection.
+- **Invoke when:** "test the X hypothesis", "parameter sweep", "<param> sensitivity experiment".
+- **Modes:** `requires_fates: true` — FATES parameter files + HPC submission.
+
+## Offline phase skills (per-phase, mirror online Phase 0–6)
+
+### `phase0-design`
+- **Purpose:** Offline analog of online Phase 0 — sample the parameter space, materialize per-case FATES param files, generate + build + submit the ensemble, arm monitoring.
+- **Invoke when:** "design a new round", "submit the ensemble", "sample the parameters", "expand/redesign the parameter space".
+- **Modes:** `any` — calibration-workflow phase skill (mode resolved at runtime).
+
+### `phase1-exploration`
+- **Purpose:** Offline analog of Phase 1 — extract the Y matrix, run Morris sensitivity, interpret μ*.
+- **Invoke when:** "run the sensitivity analysis", "which parameters matter", "run Phase 1".
+- **Modes:** `any`.
+
+### `phase2-screening`
+- **Purpose:** Offline analog of Phase 2 — rank the ensemble vs targets, find best/most-targets cases, read bias patterns, route to Phase 3.
+- **Invoke when:** "screen the ensemble", "which case is best", "how many targets met", "run Phase 2".
+- **Modes:** `any`.
+
+### `phase3-diagnosis`
+- **Purpose:** Offline analog of Phase 3 (`reasoning.diagnose`) — root-cause the failing targets via the phase3 tools + RAG + Adaptive Memory → structured diagnosis; hand off to Phase 4.
+- **Invoke when:** "diagnose the failing targets", "why aren't the targets calibrating", "run Phase 3".
+- **Modes:** `any`.
+
+### `phase4-hypothesis`
+- **Purpose:** Offline analog of Phase 4 — turn a diagnosis into testable hypotheses + skip-test against existing Morris data (3↔4, no HPC); route to Phase 5 if new sims needed.
+- **Invoke when:** "generate a hypothesis", "what should we test next", "can we test with existing data", "run Phase 4".
+- **Modes:** `any`.
+
+### `phase5-testing`
+- **Purpose:** Offline analog of Phase 5 — thin router to `offline-testing-workflow` for HPC experiment execution.
+- **Invoke when:** "run the experiment", "submit the test cases", "run Phase 5".
+- **Modes:** `any`.
+
+### `phase6-refinement`
+- **Purpose:** Offline analog of Phase 6 — evaluate results vs baseline/expected, extract lessons, update Adaptive Memory, decide converge / rethink (6→3) / redesign (6→0).
+- **Invoke when:** "evaluate the results", "what did we learn", "converge or iterate", "run Phase 6".
+- **Modes:** `any`.
+
+## Model development (ELM/FATES source-code changes — `requires_fates: true`)
+
+Skills for modifying the **ELM/FATES model source** (Fortran), not just its parameters. Model-evolution on the
+pinned checkout, governed by the reproducibility contract (`E3SM_FATES_api43/CLAUDE.md` §1): experiment
+branch, **push only to the `jingtao-lbl` fork (never upstream)**, switch-gated default-off, V0-at-equality.
+
+### `model-evolution`
+- **Purpose:** The general workflow for evolving **any onboarded model's** *source* — ELM/FATES, EcoSIM, PFLOTRAN, ATS — (mechanism fix, structural refactor, debug instrumentation, new parameter): branch-by-intent, mechanism-first gate, scope-from-source, **preserve the baseline binary before building the change**, switch-gate default-off, paired ON/OFF V0-at-equality verify, log both streams, fork-only push. Umbrella that `add-fates-parameter` routes up to for the FATES knob case.
+- **Invoke when:** "update/change the model code", "modify the FATES/ELM/EcoSIM/PFLOTRAN source", "add a mechanism/fix to the model", "promote a hardcoded constant to an input parameter", "refactor the phenology/allocation code", "instrument the model". NOT parameter-file tuning (that's calibration).
+- **Modes:** `requires_fates: false` (covers any onboarded model's source); model-dev.
+- **Per-model, not generic:** the *workflow* is shared; the **build system** (CIME builds per case, a shared CMake tree has one mutable binary), the **knob surface** (`EDParamsMod`/`EDPftvarcon` vs a guarded NetCDF read path), and the **fork remotes** differ by model.
+
+### `add-fates-parameter`
+- **Purpose:** Wire a new FATES parameter (an `EDParamsMod` entry read from the parameter file) into the model source — declare/register/retrieve in `EDParamsMod`, `use` it in the consuming module, and add the value to every parameter file (JSON on api-43, `.nc` on api-31/demo). A **per-PFT** knob goes in `EDPftvarcon`, not `EDParamsMod`.
+- **Invoke when:** "add a FATES parameter", "make X an EDParamsMod parameter", "promote this hardcoded constant to a FATES parameter", "switch-gate this model change".
+- **Modes:** `requires_fates: true`.
