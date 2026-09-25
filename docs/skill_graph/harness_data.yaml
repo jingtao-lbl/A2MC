@@ -1,0 +1,71 @@
+# Curated half of the HARNESS graph. What is DERIVED, and therefore absent here:
+#   - the checker nodes, from the numbered checks in .githooks/pre-commit
+#   - hook -> checker edges, from the same place
+#   - skill -> checker edges, from each SKILL.md that names a tools/check_*.py
+# What cannot be derived is below: the artifact a gate pattern stands for, the glosses, and
+# the reciprocal bindings, which are a property of two checkers agreeing rather than of either.
+#
+# Regenerate:  python3 tools/generate_harness_graph.py
+
+# Each numbered check in the hook is gated on a path pattern. The pattern is machine-readable;
+# what it MEANS is not. This maps one to the other, and the generator warns on a gate it cannot map.
+artifacts:
+  ? "^\\.claude/skills/|^docs/a2mc_reference/skills_catalog\\.md$|^AGENTS\\.md$|^tools/|^scripts/|^CLAUDE\\.md$|^README\\.md$"
+  : [skill, "A skill: the procedure for one kind of work."]
+  ? "^(rag/graphs/|rag/data/curated_relationships|rag/graph_builder\\.py|models/[^/]+/curated_seed\\.yaml|scripts/build_.*rag.*\\.py)"
+  : [rag-index, "The RAG/GraphRAG index and its curated overlay."]
+  "^(\\.claude/skills/|AGENTS\\.md$)": [agent-surface, "The shipped agent surface: the contract plus the skills."]
+  "(/memory/logs/|^memory/dev_logs)": [dev-log, "A development log. The engineering record, never synced."]
+  "^memory/dev_logs": [dev-log, "A development log. The engineering record, never synced."]
+  "^(use_cases/.+/memory/logs/|memory/dev_logs)": [dev-log, "A development log. The engineering record, never synced."]
+  "^use_cases/.+/memory/logs/[0-9]{8}[a-z]+_phase[0-9]+_.+\\.md$": [calibration-log, "A phase log under a case. That phase's own analysis."]
+  "/reports/": [report, "A report written for a zero-context human reader."]
+  "^use_cases/[^/]+/(config/calibration_rounds\\.yaml|memory/model_evolution/)": [model-evolution, "A record of changing a model's own source."]
+  "^memory/(dev_logs|ana_logs)": [dev-log, "A development log. The engineering record, never synced."]
+  "^use_cases/.+/memory/logs/.+\\.md$": [calibration-log, "A phase log under a case. That phase's own analysis."]
+  "^use_cases/[^/]+/reports/.+\\.md$": [report, "A report written for a zero-context human reader."]
+  "^\\.claude_memory/": [memory, "A cross-session memory in the git-tracked bucket."]
+  "^\\.claude/skills/[^/]+/SKILL\\.md$": [skill, "A skill: the procedure for one kind of work."]
+  "^(CLAUDE\\.md|memory/a2mc_development_history\\.md)$": [version, "The version header and its changelog entry."]
+  "^use_cases/.+/memory/model_evolution/.+\\.md$": [model-evolution, "A record of changing a model's own source."]
+  "^rag/": [rag-index, "The RAG/GraphRAG index and its curated overlay."]
+  "^(tools|tests)/.*\\.(py|sh)$": [tool-source, "A new checker or test, which ships the moment it is committed."]
+  "^use_cases/[^/]+/": [case-state, "A case's round state, board and cycle reports."]
+  "^(use_cases/[^/]+/parameters|models/[^/]+/reference_bounds)/.+\\.csv$": [param-bounds, "Parameter bounds and where each came from."]
+
+# The agent-side hooks. These fire while the agent WORKS rather than at commit, so they catch a
+# thing before it is written instead of refusing it afterwards. Derived list, curated meaning.
+agent_hooks:
+  block-ai-attribution: "Refuses an AI attribution line as it is being written."
+  block-forbidden-writes: "Refuses a write outside home, per the machine's hard rule."
+  block-recursive-traversal: "Refuses an unbounded search of a shared filesystem."
+  remind-memory-bucket: "Fires when a memory is written, not when it is committed."
+  remind-arm-monitoring: "Fires when an ensemble is launched and nothing is watching it."
+  remind-calibration-discipline: "Fires at the per-cycle definition of done."
+  remind-setup-stage: "Fires when a setup stage looks finished and is not."
+  session-start: "Prints the board, the state and what is not wired."
+  greet-on-setup: "First contact in a clone that has never been set up."
+
+# What each agent hook guards. Curated: a hook's subject is in its prose, not its path.
+agent_hook_edges:
+  - [block-ai-attribution, version, guards, "no attribution in a commit"]
+  - [remind-memory-bucket, memory, guards, "at write time, not commit time"]
+  - [remind-calibration-discipline, case-state, guards, "per-cycle done"]
+  - [remind-arm-monitoring, case-state, guards, "a launch with no watcher"]
+  - [session-start, case-state, guards, "orient before acting"]
+  - [block-forbidden-writes, tool-source, guards, "no write outside home"]
+  - [block-recursive-traversal, tool-source, guards, "no unbounded search"]
+  - [greet-on-setup, case-state, guards, "first contact in a new clone"]
+  - [remind-setup-stage, case-state, guards, "a stage that only looks finished"]
+
+# The part worth demonstrating: two checkers that verify ONE link from opposite ends. Neither
+# alone catches a pointer that resolves to a real file containing none of the content.
+reciprocal:
+  - [check_log_conformance, check_memory_bucket, binds,
+     "a log names the memory it wrote; the memory names the log back"]
+  - [check_skill_claims, skill, binds,
+     "a log claiming a skill is checked against the session transcript"]
+
+# Nodes that exist to make the picture readable, with no gate of their own.
+extra_nodes:
+  pre-commit: [calibration, "The git hook. 28 numbered checks; it refuses the commit."]

@@ -143,13 +143,38 @@ def build():
     return kept, live, problems, warnings, notes
 
 
+
+def _emit(fields):
+    """One node/link literal, with a guard that it cannot break the script.
+
+    The data arrays live in HTML-escaped JavaScript, so every string is delimited by `&#x27;`.
+    An apostrophe in a value escapes to that SAME sequence and terminates the string early,
+    killing the whole script -- the page then renders blank with no error visible in the file.
+    Values therefore use the typographic apostrophe, and this asserts the invariant rather than
+    trusting it: a literal must contain exactly two delimiters per field.
+    """
+    parts = []
+    for key, val in fields:
+        v = html.escape(str(val), quote=True).replace("&#x27;", "&#8217;")
+        # BOTH forms break the script: the escaped delimiter, and a raw quote that survives
+        # unescaping in the browser. Checking only the first passes a neutered escaper.
+        assert "&#x27;" not in v and "'" not in v, "quote leaked into a value: %r" % val
+        parts.append("%s:&#x27;%s&#x27;" % (key, v))
+    lit = "{%s}," % ",".join(parts)
+    assert lit.count("&#x27;") == 2 * len(fields), "malformed literal: %s" % lit
+    return "        " + lit
+
 def render(kept, live):
-    q = lambda s: html.escape(str(s), quote=True).replace("'", "&#x27;")
-    nodes = "\n".join("        {id:&#x27;%s&#x27;,g:&#x27;%s&#x27;,s:&#x27;%s&#x27;}," % (q(i), q(g), q(s))
-                      for i, g, s in kept)
-    links = "\n".join("        {source:&#x27;%s&#x27;,target:&#x27;%s&#x27;,t:&#x27;%s&#x27;,l:&#x27;%s&#x27;}," % (
-        q(a), q(b), q(t), q(l)) for a, b, t, l in live)
-    return TEMPLATE.read_text().replace("__NODES__", nodes).replace("__LINKS__", links)
+    nodes = "\n".join(_emit([("id", i), ("g", g), ("s", s)]) for i, g, s in kept)
+    links = "\n".join(_emit([("source", a), ("target", b), ("t", t), ("l", l)])
+                      for a, b, t, l in live)
+    # Heading and description are FILLED, never baked: the template carried "46 A2MC skills"
+    # long after there were 53, and a count written into prose has nothing deriving it.
+    desc = ("A directed network of %d A2MC skills. Solid arrows show workflow routing or "
+            "delegation. Dashed arrows show supporting, governing or evidence relationships."
+            % len(kept))
+    return (TEMPLATE.read_text().replace("__NODES__", nodes).replace("__LINKS__", links)
+            .replace("__HEADING__", "A2MC skill network").replace("__DESC__", desc))
 
 
 def main():

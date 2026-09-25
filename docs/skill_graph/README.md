@@ -47,3 +47,33 @@ Exclusions live in `graph_data.yaml` with a reason each, and the generator print
 The graph shows **the catalogue, not the shippable subset**: it carries every skill on disk minus the declared exclusions, and that includes the ones marked `visibility: private`, which a public reader does not have. That is deliberate. A reader who wants a map of the skills *they* have runs `tools/generate_skill_graph.py`, which ships too and derives its node set from their own `.claude/skills/`.
 
 Another leg carries it only if its own `INCLUDE_FILES` lists this directory, which is one line to add.
+
+---
+
+# Harness network
+
+`A2MC_Harness_Network.html` is the second graph, and it answers a different question: **what holds the discipline?** Not which skill routes to which, but which checker asserts a skill's result and which hook refuses the commit when the assertion fails.
+
+```bash
+python3 tools/generate_harness_graph.py            # rebuild
+python3 tools/generate_harness_graph.py --check    # exit 1 if the committed file is stale
+```
+
+**74 nodes, 114 edges**, in six kinds:
+
+| kind | count | what it is |
+|---|---|---|
+| ARTIFACTS | 12 | what the agent writes: a dev log, a phase log, a memory, a skill, a report, a case's round state |
+| SKILLS | 25 | the procedure for producing one of them |
+| CHECKERS | 24 | a `tools/check_*.py` that asserts the result |
+| RECIPROCAL | 3 | checkers that verify one link from **both** ends |
+| GIT HOOK | 1 | `pre-commit`, 28 numbered checks, refuses the commit |
+| AGENT HOOKS | 9 | fire while the agent works, not at commit |
+
+**The chain it draws is: skill → checker → hook.** A skill says how a thing is done, a checker asserts the result, a hook refuses the commit when the assertion fails. 25 of the skills name their own enforcing checker, and that edge is read out of the `SKILL.md`, not assigned here.
+
+**The RECIPROCAL group is the point of the picture.** `check_log_conformance` requires a log to name the memory it wrote; `check_memory_bucket` requires that memory to name the log back. Neither half alone catches a pointer that resolves to a real file containing none of the claimed content — only the pair does. `check_skill_claims` is the third: a log claiming it followed a skill is checked against the session transcript.
+
+**Derived, so it cannot go stale.** The checker nodes and the hook edges come from the numbered checks in `.githooks/commit`; the artifact each checker governs comes from the path pattern that gates it; the skill edges from each `SKILL.md`. Curated in `harness_data.yaml`: what a gate pattern *means*, the glosses, and the reciprocal pairs — none of which a parse yields.
+
+**An unmapped gate is reported, never dropped.** A checker whose subject nobody has named is exactly what this graph exists to surface, so the generator warns rather than omitting the node.

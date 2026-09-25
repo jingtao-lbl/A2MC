@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="referrer" content="no-referrer">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src 'unsafe-inline' blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-<title>A2MC Skill Network</title>
+<title>A2MC Harness Network</title>
 <style>:root{color-scheme:light dark;background:light-dark(rgb(255 255 255), rgb(24 24 24))}html,body{margin:0}body{box-sizing:border-box;padding:1rem;background:inherit}iframe{display:block;width:100%;height:calc(100vh - 2rem);margin:0 auto;border:0}</style>
 </head>
 <body>
-<iframe id="codex-visualization" sandbox="allow-scripts" referrerpolicy="no-referrer" title="A2MC Skill Network" data-srcdoc="&lt;!doctype html&gt;
+<iframe id="codex-visualization" sandbox="allow-scripts" referrerpolicy="no-referrer" title="A2MC Harness Network" data-srcdoc="&lt;!doctype html&gt;
 &lt;html lang=&quot;en&quot; data-visualize-standalone&gt;
 &lt;head&gt;
 &lt;meta charset=&quot;utf-8&quot;&gt;
 &lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1&quot;&gt;
 &lt;meta name=&quot;referrer&quot; content=&quot;no-referrer&quot;&gt;
 &lt;meta http-equiv=&quot;Content-Security-Policy&quot; content=&quot;default-src &#x27;none&#x27;; script-src &#x27;unsafe-inline&#x27; &#x27;unsafe-eval&#x27; &#x27;wasm-unsafe-eval&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; style-src &#x27;unsafe-inline&#x27; blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; img-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; font-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; media-src blob: data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://fonts.bunny.net https://fonts.googleapis.com https://fonts.gstatic.com https://unpkg.com; worker-src blob:; connect-src blob: data:; frame-src &#x27;none&#x27;; object-src &#x27;none&#x27;; base-uri &#x27;none&#x27;; form-action &#x27;none&#x27;&quot;&gt;
-&lt;title&gt;A2MC Skill Network&lt;/title&gt;
+&lt;title&gt;A2MC Harness Network&lt;/title&gt;
 &lt;style&gt;:root {
   color-scheme: light dark;
   background-color: var(
@@ -1331,35 +1331,35 @@ html&gt;body{padding:0}&lt;/style&gt;
   syncTheme();
 })();
 &lt;/script&gt;
-&lt;div id=&quot;a2mc-skill-network&quot;&gt;
+&lt;div id=&quot;a2mc-harness-network&quot;&gt;
   &lt;style&gt;
-    #a2mc-skill-network { width: 100%; color: var(--foreground); }
-    #a2mc-skill-network h2 { margin: 0 0 3px; font-weight: 500; }
-    #a2mc-skill-network .network-subtitle { margin: 0 0 8px; color: var(--muted-foreground); }
-    #a2mc-skill-network .network-legend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-bottom: 7px; }
-    #a2mc-skill-network .legend-item { display: inline-flex; align-items: center; gap: 5px; }
-    #a2mc-skill-network .legend-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-    #a2mc-skill-network .legend-line { width: 23px; height: 0; border-top: 2px solid var(--muted-foreground); display: inline-block; }
-    #a2mc-skill-network .legend-line.support { border-top-style: dashed; }
-    #a2mc-skill-network .network-stage { position: relative; width: 100%; }
-    #a2mc-skill-network svg { display: block; width: 100%; overflow: visible; }
-    #a2mc-skill-network .edge { fill: none; stroke: var(--muted-foreground); stroke-width: 1.25; opacity: 0.34; }
-    #a2mc-skill-network .edge.support { stroke-dasharray: 5 4; opacity: 0.24; }
-    #a2mc-skill-network .edge.is-active { stroke: var(--foreground); stroke-width: 2.2; opacity: 0.85; }
-    #a2mc-skill-network .node rect { stroke-width: 1.4; }
-    #a2mc-skill-network .node text { fill: var(--foreground); font-family: inherit; font-size: 11px; pointer-events: none; }
-    #a2mc-skill-network .node { cursor: pointer; }
-    #a2mc-skill-network .node.is-dim { opacity: 0.13; }
-    #a2mc-skill-network .edge.is-dim { opacity: 0.035; }
-    #a2mc-skill-network .node.is-selected rect { stroke-width: 3; }
-    #a2mc-skill-network .cluster-label { fill: var(--muted-foreground); font-family: inherit; font-size: 12px; font-weight: 500; }
-    #a2mc-skill-network .network-detail { min-height: 24px; margin-top: 4px; color: var(--foreground); }
-    #a2mc-skill-network .network-note { color: var(--muted-foreground); }
-    @media (max-width: 560px) { #a2mc-skill-network .node text { font-size: 11px; } }
+    #a2mc-harness-network { width: 100%; color: var(--foreground); }
+    #a2mc-harness-network h2 { margin: 0 0 3px; font-weight: 500; }
+    #a2mc-harness-network .network-subtitle { margin: 0 0 8px; color: var(--muted-foreground); }
+    #a2mc-harness-network .network-legend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-bottom: 7px; }
+    #a2mc-harness-network .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+    #a2mc-harness-network .legend-swatch { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    #a2mc-harness-network .legend-line { width: 23px; height: 0; border-top: 2px solid var(--muted-foreground); display: inline-block; }
+    #a2mc-harness-network .legend-line.support { border-top-style: dashed; }
+    #a2mc-harness-network .network-stage { position: relative; width: 100%; }
+    #a2mc-harness-network svg { display: block; width: 100%; overflow: visible; }
+    #a2mc-harness-network .edge { fill: none; stroke: var(--muted-foreground); stroke-width: 1.25; opacity: 0.34; }
+    #a2mc-harness-network .edge.support { stroke-dasharray: 5 4; opacity: 0.24; }
+    #a2mc-harness-network .edge.is-active { stroke: var(--foreground); stroke-width: 2.2; opacity: 0.85; }
+    #a2mc-harness-network .node rect { stroke-width: 1.4; }
+    #a2mc-harness-network .node text { fill: var(--foreground); font-family: inherit; font-size: 11px; pointer-events: none; }
+    #a2mc-harness-network .node { cursor: pointer; }
+    #a2mc-harness-network .node.is-dim { opacity: 0.13; }
+    #a2mc-harness-network .edge.is-dim { opacity: 0.035; }
+    #a2mc-harness-network .node.is-selected rect { stroke-width: 3; }
+    #a2mc-harness-network .cluster-label { fill: var(--muted-foreground); font-family: inherit; font-size: 12px; font-weight: 500; }
+    #a2mc-harness-network .network-detail { min-height: 24px; margin-top: 4px; color: var(--foreground); }
+    #a2mc-harness-network .network-note { color: var(--muted-foreground); }
+    @media (max-width: 560px) { #a2mc-harness-network .node text { font-size: 11px; } }
   &lt;/style&gt;
 
-  &lt;h2&gt;A2MC skill network&lt;/h2&gt;
-  &lt;p class=&quot;network-subtitle&quot;&gt;&lt;span id=&quot;skill-count&quot;&gt;&lt;/span&gt; skills, grouped by role. Select a skill to isolate its direct wiring.&lt;/p&gt;
+  &lt;h2&gt;__HEADING__&lt;/h2&gt;
+  &lt;p class=&quot;network-subtitle&quot;&gt;&lt;span id=&quot;skill-count&quot;&gt;&lt;/span&gt; nodes: what the agent writes, what governs it, and what refuses a commit. Select one to isolate its wiring.&lt;/p&gt;
   &lt;div class=&quot;network-legend&quot; aria-label=&quot;Skill categories and connection types&quot;&gt;
     &lt;span class=&quot;legend-item&quot;&gt;&lt;span class=&quot;legend-swatch&quot; style=&quot;background:var(--viz-series-1)&quot;&gt;&lt;/span&gt;Setup and meta&lt;/span&gt;
     &lt;span class=&quot;legend-item&quot;&gt;&lt;span class=&quot;legend-swatch&quot; style=&quot;background:var(--viz-series-2)&quot;&gt;&lt;/span&gt;Knowledge&lt;/span&gt;
@@ -1373,7 +1373,7 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;div class=&quot;network-stage&quot;&gt;
     &lt;svg id=&quot;skill-network-svg&quot; role=&quot;img&quot; aria-labelledby=&quot;skill-network-title skill-network-desc&quot;&gt;
       &lt;title id=&quot;skill-network-title&quot;&gt;A2MC skill network&lt;/title&gt;
-      &lt;desc id=&quot;skill-network-desc&quot;&gt;A directed network of 53 A2MC skills. Solid arrows show workflow routing or delegation. Dashed arrows show supporting, governing or evidence relationships.&lt;/desc&gt;
+      &lt;desc id=&quot;skill-network-desc&quot;&gt;__DESC__&lt;/desc&gt;
     &lt;/svg&gt;
   &lt;/div&gt;
   &lt;div id=&quot;skill-network-detail&quot; class=&quot;network-detail text-small&quot; aria-live=&quot;polite&quot;&gt;Select a node to see its purpose and direct connections. Select the background to reset.&lt;/div&gt;
@@ -1382,191 +1382,26 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;script src=&quot;https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js&quot;&gt;&lt;/script&gt;
   &lt;script&gt;
     (() =&gt; {
-      const root = document.getElementById(&#x27;a2mc-skill-network&#x27;);
+      const root = document.getElementById(&#x27;a2mc-harness-network&#x27;);
       const svg = d3.select(root.querySelector(&#x27;#skill-network-svg&#x27;));
       const detail = root.querySelector(&#x27;#skill-network-detail&#x27;);
       const stage = root.querySelector(&#x27;.network-stage&#x27;);
 
       const groups = {
-        meta: { label: &#x27;SETUP &amp; META&#x27;, color: &#x27;--viz-series-1&#x27; },
-        knowledge: { label: &#x27;KNOWLEDGE&#x27;, color: &#x27;--viz-series-2&#x27; },
-        phase: { label: &#x27;PHASE LOOP&#x27;, color: &#x27;--viz-series-3&#x27; },
-        calibration: { label: &#x27;CALIBRATION SUPPORT&#x27;, color: &#x27;--viz-series-4&#x27; },
-        modeldev: { label: &#x27;MODEL DEVELOPMENT&#x27;, color: &#x27;--viz-series-5&#x27; },
-        authoring: { label: &#x27;ANALYSIS &amp; AUTHORING&#x27;, color: &#x27;--viz-series-6&#x27; }
+        meta: { label: &#x27;ARTIFACTS — what gets written&#x27;, color: &#x27;--viz-series-1&#x27; },
+        knowledge: { label: &#x27;SKILLS — the procedure&#x27;, color: &#x27;--viz-series-2&#x27; },
+        phase: { label: &#x27;CHECKERS — tools/check_*.py&#x27;, color: &#x27;--viz-series-3&#x27; },
+        calibration: { label: &#x27;GIT HOOK — commit-time refusal&#x27;, color: &#x27;--viz-series-4&#x27; },
+        modeldev: { label: &#x27;AGENT HOOKS — write-time&#x27;, color: &#x27;--viz-series-5&#x27; },
+        authoring: { label: &#x27;RECIPROCAL — checked from both ends&#x27;, color: &#x27;--viz-series-6&#x27; }
       };
 
       const nodes = [
-        {id:&#x27;a2mc-init&#x27;,g:&#x27;meta&#x27;,s:&#x27;First-run per-clone setup and routing.&#x27;},
-        {id:&#x27;add-fates-parameter&#x27;,g:&#x27;modeldev&#x27;,s:&#x27;Adds a tunable FATES parameter through source and files.&#x27;},
-        {id:&#x27;add-skill&#x27;,g:&#x27;meta&#x27;,s:&#x27;Creates or retires a skill and synchronizes its registries.&#x27;},
-        {id:&#x27;arm-hpc-monitoring&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Monitors active HPC ensembles and experiments.&#x27;},
-        {id:&#x27;arm-local-monitoring&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Watches an ensemble on a workstation, where there is no scheduler.&#x27;},
-        {id:&#x27;ats-run-workflow&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Runs and evaluates ATS experiments.&#x27;},
-        {id:&#x27;build-rag-from-scratch&#x27;,g:&#x27;knowledge&#x27;,s:&#x27;Orchestrates construction of a model knowledge layer.&#x27;},
-        {id:&#x27;build-surrogate&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Builds, scores and hands over a learned surrogate from a finished ensemble.&#x27;},
-        {id:&#x27;calibration-discipline&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Definition-of-done rules for each cycle and round.&#x27;},
-        {id:&#x27;calibration-goal&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Drives the seven-phase workflow to convergence.&#x27;},
-        {id:&#x27;calibration-log&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Writes shared phase and session evidence logs.&#x27;},
-        {id:&#x27;compare-calibration-rounds&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Builds cross-round parameter and mechanism ledgers.&#x27;},
-        {id:&#x27;create-project-agent&#x27;,g:&#x27;meta&#x27;,s:&#x27;Stands up a project repository whose framework half arrives by sync.&#x27;},
-        {id:&#x27;curate-knowledge&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Reviews and promotes or rejects staged discoveries.&#x27;},
-        {id:&#x27;diagnose-forensics&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Determines whether one anomaly is real or an artifact.&#x27;},
-        {id:&#x27;ecosim-run-workflow&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Runs and evaluates EcoSIM experiments.&#x27;},
-        {id:&#x27;ecosim-trait-check-refine&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Checks and refines EcoSIM per-PFT trait values.&#x27;},
-        {id:&#x27;ecosim-version-drift&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Repairs EcoSIM input and output contract drift.&#x27;},
-        {id:&#x27;generate-codebase-wiki&#x27;,g:&#x27;knowledge&#x27;,s:&#x27;Builds a source-grounded, commit-pinned model wiki.&#x27;},
-        {id:&#x27;inject-knowledge&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Adds verified human-originated knowledge to curated YAML.&#x27;},
-        {id:&#x27;literature-review&#x27;,g:&#x27;authoring&#x27;,s:&#x27;Produces DOI-validated reviews or parameter bounds.&#x27;},
-        {id:&#x27;log&#x27;,g:&#x27;authoring&#x27;,s:&#x27;Writes a development, analysis or session log in the right stream.&#x27;},
-        {id:&#x27;manage-auto-memory&#x27;,g:&#x27;meta&#x27;,s:&#x27;Adds or wires a cross-session memory in the tracked bucket.&#x27;},
-        {id:&#x27;manuscript-writing-style&#x27;,g:&#x27;authoring&#x27;,s:&#x27;Drafts and polishes a manuscript section to journal register.&#x27;},
-        {id:&#x27;markdown-to-pdf&#x27;,g:&#x27;authoring&#x27;,s:&#x27;Converts Markdown reports to PDF or Word.&#x27;},
-        {id:&#x27;memory-checkup&#x27;,g:&#x27;meta&#x27;,s:&#x27;Periodic staleness audit of the memory bucket and the skill surface.&#x27;},
-        {id:&#x27;model-evolution&#x27;,g:&#x27;modeldev&#x27;,s:&#x27;Controls reproducible, fork-safe changes to model source.&#x27;},
-        {id:&#x27;offline-testing-workflow&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Runs FATES parameter-sweep experiments.&#x27;},
-        {id:&#x27;onboard-case&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Creates a new case for an already-onboarded model.&#x27;},
-        {id:&#x27;onboard-model&#x27;,g:&#x27;meta&#x27;,s:&#x27;Onboards a new process-based model and its adapter.&#x27;},
-        {id:&#x27;onboard-session&#x27;,g:&#x27;meta&#x27;,s:&#x27;Restores context and resumes an existing campaign.&#x27;},
-        {id:&#x27;pflotran-run-workflow&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Runs and evaluates PFLOTRAN experiments.&#x27;},
-        {id:&#x27;phase0-design&#x27;,g:&#x27;phase&#x27;,s:&#x27;Designs, samples, and submits the ensemble.&#x27;},
-        {id:&#x27;phase1-exploration&#x27;,g:&#x27;phase&#x27;,s:&#x27;Extracts outputs and performs sensitivity exploration.&#x27;},
-        {id:&#x27;phase2-screening&#x27;,g:&#x27;phase&#x27;,s:&#x27;Ranks ensemble members against observational targets.&#x27;},
-        {id:&#x27;phase3-diagnosis&#x27;,g:&#x27;phase&#x27;,s:&#x27;Diagnoses the mechanisms behind target failures.&#x27;},
-        {id:&#x27;phase4-hypothesis&#x27;,g:&#x27;phase&#x27;,s:&#x27;Generates and skip-tests mechanistic hypotheses.&#x27;},
-        {id:&#x27;phase5-testing&#x27;,g:&#x27;phase&#x27;,s:&#x27;Executes new simulation experiments.&#x27;},
-        {id:&#x27;phase6-refinement&#x27;,g:&#x27;phase&#x27;,s:&#x27;Evaluates evidence and decides converge, rethink, or redesign.&#x27;},
-        {id:&#x27;plotting&#x27;,g:&#x27;authoring&#x27;,s:&#x27;Creates and visually verifies publication-quality figures.&#x27;},
-        {id:&#x27;port-param-file&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Transfers tuned values across model or API versions.&#x27;},
-        {id:&#x27;rebuild-rag&#x27;,g:&#x27;knowledge&#x27;,s:&#x27;Rebuilds or repairs a model vector and graph index.&#x27;},
-        {id:&#x27;refine-skill&#x27;,g:&#x27;meta&#x27;,s:&#x27;Improves a skill from verified evidence with human approval.&#x27;},
-        {id:&#x27;restart-adapter-ensemble&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Recovers failed standalone-model cases.&#x27;},
-        {id:&#x27;restart-failed-jobs&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Recovers failed CIME and ELM-family jobs.&#x27;},
-        {id:&#x27;round-housekeeping&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Closes a round and carries verified lessons forward.&#x27;},
-        {id:&#x27;scientific-analysis&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Runs an open-ended investigation ending in a figure and log.&#x27;},
-        {id:&#x27;setup-discipline&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Definition-of-done gates for clone, model, and case setup.&#x27;},
-        {id:&#x27;summarize-calibration-round&#x27;,g:&#x27;calibration&#x27;,s:&#x27;Produces the standardized one-round evidence package.&#x27;},
-        {id:&#x27;sync-downstream&#x27;,g:&#x27;meta&#x27;,s:&#x27;Runs a sync leg and reviews it before publishing becomes irreversible.&#x27;},
-        {id:&#x27;validate-rag-chain&#x27;,g:&#x27;knowledge&#x27;,s:&#x27;Validates source to wiki to YAML to RAG.&#x27;},
-        {id:&#x27;wire-knowledge-graph&#x27;,g:&#x27;knowledge&#x27;,s:&#x27;Audits whether curated relations become graph edges.&#x27;},
-        {id:&#x27;write-report&#x27;,g:&#x27;authoring&#x27;,s:&#x27;Writes integrated reports for zero-context readers.&#x27;},
+__NODES__
       ];
 
       const links = [
-        {source:&#x27;a2mc-init&#x27;,target:&#x27;onboard-model&#x27;,t:&#x27;route&#x27;,l:&#x27;new model&#x27;},
-        {source:&#x27;a2mc-init&#x27;,target:&#x27;onboard-case&#x27;,t:&#x27;route&#x27;,l:&#x27;supported model&#x27;},
-        {source:&#x27;a2mc-init&#x27;,target:&#x27;onboard-session&#x27;,t:&#x27;route&#x27;,l:&#x27;resume partial setup&#x27;},
-        {source:&#x27;setup-discipline&#x27;,target:&#x27;a2mc-init&#x27;,t:&#x27;support&#x27;,l:&#x27;completion gate&#x27;},
-        {source:&#x27;setup-discipline&#x27;,target:&#x27;onboard-model&#x27;,t:&#x27;support&#x27;,l:&#x27;completion gate&#x27;},
-        {source:&#x27;setup-discipline&#x27;,target:&#x27;onboard-case&#x27;,t:&#x27;support&#x27;,l:&#x27;completion gate&#x27;},
-        {source:&#x27;onboard-model&#x27;,target:&#x27;build-rag-from-scratch&#x27;,t:&#x27;route&#x27;,l:&#x27;delegates knowledge chain&#x27;},
-        {source:&#x27;onboard-model&#x27;,target:&#x27;onboard-case&#x27;,t:&#x27;route&#x27;,l:&#x27;first case&#x27;},
-        {source:&#x27;onboard-case&#x27;,target:&#x27;literature-review&#x27;,t:&#x27;support&#x27;,l:&#x27;parameter bounds&#x27;},
-        {source:&#x27;onboard-case&#x27;,target:&#x27;phase0-design&#x27;,t:&#x27;route&#x27;,l:&#x27;start calibration&#x27;},
-        {source:&#x27;onboard-case&#x27;,target:&#x27;calibration-goal&#x27;,t:&#x27;route&#x27;,l:&#x27;driven run&#x27;},
-        {source:&#x27;onboard-session&#x27;,target:&#x27;arm-hpc-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;in-flight work&#x27;},
-        {source:&#x27;onboard-session&#x27;,target:&#x27;curate-knowledge&#x27;,t:&#x27;route&#x27;,l:&#x27;pending proposals&#x27;},
-        {source:&#x27;onboard-session&#x27;,target:&#x27;calibration-goal&#x27;,t:&#x27;route&#x27;,l:&#x27;resume goal&#x27;},
-        {source:&#x27;build-rag-from-scratch&#x27;,target:&#x27;generate-codebase-wiki&#x27;,t:&#x27;route&#x27;,l:&#x27;delegates wiki&#x27;},
-        {source:&#x27;build-rag-from-scratch&#x27;,target:&#x27;rebuild-rag&#x27;,t:&#x27;route&#x27;,l:&#x27;delegates index build&#x27;},
-        {source:&#x27;build-rag-from-scratch&#x27;,target:&#x27;inject-knowledge&#x27;,t:&#x27;route&#x27;,l:&#x27;delegates curated seed&#x27;},
-        {source:&#x27;build-rag-from-scratch&#x27;,target:&#x27;validate-rag-chain&#x27;,t:&#x27;route&#x27;,l:&#x27;delegates validation&#x27;},
-        {source:&#x27;generate-codebase-wiki&#x27;,target:&#x27;validate-rag-chain&#x27;,t:&#x27;support&#x27;,l:&#x27;wiki verification&#x27;},
-        {source:&#x27;inject-knowledge&#x27;,target:&#x27;rebuild-rag&#x27;,t:&#x27;route&#x27;,l:&#x27;reindex additions&#x27;},
-        {source:&#x27;inject-knowledge&#x27;,target:&#x27;validate-rag-chain&#x27;,t:&#x27;support&#x27;,l:&#x27;validate relations&#x27;},
-        {source:&#x27;rebuild-rag&#x27;,target:&#x27;validate-rag-chain&#x27;,t:&#x27;route&#x27;,l:&#x27;post-build gate&#x27;},
-        {source:&#x27;wire-knowledge-graph&#x27;,target:&#x27;rebuild-rag&#x27;,t:&#x27;route&#x27;,l:&#x27;rebuild graph&#x27;},
-        {source:&#x27;wire-knowledge-graph&#x27;,target:&#x27;validate-rag-chain&#x27;,t:&#x27;support&#x27;,l:&#x27;verify additive wiring&#x27;},
-        {source:&#x27;calibration-goal&#x27;,target:&#x27;calibration-discipline&#x27;,t:&#x27;support&#x27;,l:&#x27;must honor&#x27;},
-        {source:&#x27;calibration-goal&#x27;,target:&#x27;phase0-design&#x27;,t:&#x27;route&#x27;,l:&#x27;dispatches next phase&#x27;},
-        {source:&#x27;calibration-goal&#x27;,target:&#x27;phase1-exploration&#x27;,t:&#x27;route&#x27;,l:&#x27;dispatches next phase&#x27;},
-        {source:&#x27;calibration-goal&#x27;,target:&#x27;phase2-screening&#x27;,t:&#x27;route&#x27;,l:&#x27;dispatches next phase&#x27;},
-        {source:&#x27;calibration-goal&#x27;,target:&#x27;phase3-diagnosis&#x27;,t:&#x27;route&#x27;,l:&#x27;dispatches next phase&#x27;},
-        {source:&#x27;calibration-goal&#x27;,target:&#x27;phase4-hypothesis&#x27;,t:&#x27;route&#x27;,l:&#x27;dispatches next phase&#x27;},
-        {source:&#x27;calibration-goal&#x27;,target:&#x27;phase5-testing&#x27;,t:&#x27;route&#x27;,l:&#x27;dispatches next phase&#x27;},
-        {source:&#x27;calibration-goal&#x27;,target:&#x27;phase6-refinement&#x27;,t:&#x27;route&#x27;,l:&#x27;dispatches next phase&#x27;},
-        {source:&#x27;phase0-design&#x27;,target:&#x27;phase1-exploration&#x27;,t:&#x27;route&#x27;,l:&#x27;handoff&#x27;},
-        {source:&#x27;phase1-exploration&#x27;,target:&#x27;phase2-screening&#x27;,t:&#x27;route&#x27;,l:&#x27;handoff&#x27;},
-        {source:&#x27;phase2-screening&#x27;,target:&#x27;phase3-diagnosis&#x27;,t:&#x27;route&#x27;,l:&#x27;handoff&#x27;},
-        {source:&#x27;phase3-diagnosis&#x27;,target:&#x27;phase4-hypothesis&#x27;,t:&#x27;route&#x27;,l:&#x27;handoff&#x27;},
-        {source:&#x27;phase4-hypothesis&#x27;,target:&#x27;phase3-diagnosis&#x27;,t:&#x27;route&#x27;,l:&#x27;skip-test loop&#x27;},
-        {source:&#x27;phase4-hypothesis&#x27;,target:&#x27;phase5-testing&#x27;,t:&#x27;route&#x27;,l:&#x27;new simulation required&#x27;},
-        {source:&#x27;phase5-testing&#x27;,target:&#x27;phase6-refinement&#x27;,t:&#x27;route&#x27;,l:&#x27;results&#x27;},
-        {source:&#x27;phase6-refinement&#x27;,target:&#x27;phase3-diagnosis&#x27;,t:&#x27;route&#x27;,l:&#x27;rethink cycle&#x27;},
-        {source:&#x27;phase6-refinement&#x27;,target:&#x27;phase0-design&#x27;,t:&#x27;route&#x27;,l:&#x27;redesign round&#x27;},
-        {source:&#x27;phase6-refinement&#x27;,target:&#x27;summarize-calibration-round&#x27;,t:&#x27;route&#x27;,l:&#x27;round close&#x27;},
-        {source:&#x27;summarize-calibration-round&#x27;,target:&#x27;compare-calibration-rounds&#x27;,t:&#x27;route&#x27;,l:&#x27;round close order&#x27;},
-        {source:&#x27;compare-calibration-rounds&#x27;,target:&#x27;write-report&#x27;,t:&#x27;route&#x27;,l:&#x27;round close order&#x27;},
-        {source:&#x27;write-report&#x27;,target:&#x27;round-housekeeping&#x27;,t:&#x27;route&#x27;,l:&#x27;after human gate&#x27;},
-        {source:&#x27;round-housekeeping&#x27;,target:&#x27;phase0-design&#x27;,t:&#x27;route&#x27;,l:&#x27;next round&#x27;},
-        {source:&#x27;calibration-discipline&#x27;,target:&#x27;phase0-design&#x27;,t:&#x27;support&#x27;,l:&#x27;definition of done&#x27;},
-        {source:&#x27;calibration-discipline&#x27;,target:&#x27;phase1-exploration&#x27;,t:&#x27;support&#x27;,l:&#x27;definition of done&#x27;},
-        {source:&#x27;calibration-discipline&#x27;,target:&#x27;phase2-screening&#x27;,t:&#x27;support&#x27;,l:&#x27;definition of done&#x27;},
-        {source:&#x27;calibration-discipline&#x27;,target:&#x27;phase3-diagnosis&#x27;,t:&#x27;support&#x27;,l:&#x27;definition of done&#x27;},
-        {source:&#x27;calibration-discipline&#x27;,target:&#x27;phase4-hypothesis&#x27;,t:&#x27;support&#x27;,l:&#x27;definition of done&#x27;},
-        {source:&#x27;calibration-discipline&#x27;,target:&#x27;phase5-testing&#x27;,t:&#x27;support&#x27;,l:&#x27;definition of done&#x27;},
-        {source:&#x27;calibration-discipline&#x27;,target:&#x27;phase6-refinement&#x27;,t:&#x27;support&#x27;,l:&#x27;definition of done&#x27;},
-        {source:&#x27;phase0-design&#x27;,target:&#x27;calibration-log&#x27;,t:&#x27;support&#x27;,l:&#x27;phase evidence&#x27;},
-        {source:&#x27;phase1-exploration&#x27;,target:&#x27;calibration-log&#x27;,t:&#x27;support&#x27;,l:&#x27;phase evidence&#x27;},
-        {source:&#x27;phase2-screening&#x27;,target:&#x27;calibration-log&#x27;,t:&#x27;support&#x27;,l:&#x27;phase evidence&#x27;},
-        {source:&#x27;phase3-diagnosis&#x27;,target:&#x27;calibration-log&#x27;,t:&#x27;support&#x27;,l:&#x27;phase evidence&#x27;},
-        {source:&#x27;phase4-hypothesis&#x27;,target:&#x27;calibration-log&#x27;,t:&#x27;support&#x27;,l:&#x27;phase evidence&#x27;},
-        {source:&#x27;phase5-testing&#x27;,target:&#x27;calibration-log&#x27;,t:&#x27;support&#x27;,l:&#x27;phase evidence&#x27;},
-        {source:&#x27;phase6-refinement&#x27;,target:&#x27;calibration-log&#x27;,t:&#x27;support&#x27;,l:&#x27;phase evidence&#x27;},
-        {source:&#x27;phase0-design&#x27;,target:&#x27;offline-testing-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;FATES execution&#x27;},
-        {source:&#x27;phase0-design&#x27;,target:&#x27;ecosim-run-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;EcoSIM execution&#x27;},
-        {source:&#x27;phase0-design&#x27;,target:&#x27;pflotran-run-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;PFLOTRAN execution&#x27;},
-        {source:&#x27;phase0-design&#x27;,target:&#x27;ats-run-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;ATS execution&#x27;},
-        {source:&#x27;phase5-testing&#x27;,target:&#x27;offline-testing-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;FATES execution&#x27;},
-        {source:&#x27;phase5-testing&#x27;,target:&#x27;ecosim-run-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;EcoSIM execution&#x27;},
-        {source:&#x27;phase5-testing&#x27;,target:&#x27;pflotran-run-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;PFLOTRAN execution&#x27;},
-        {source:&#x27;phase5-testing&#x27;,target:&#x27;ats-run-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;ATS execution&#x27;},
-        {source:&#x27;offline-testing-workflow&#x27;,target:&#x27;arm-hpc-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;monitor launch&#x27;},
-        {source:&#x27;ecosim-run-workflow&#x27;,target:&#x27;arm-hpc-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;monitor launch&#x27;},
-        {source:&#x27;pflotran-run-workflow&#x27;,target:&#x27;arm-hpc-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;monitor launch&#x27;},
-        {source:&#x27;ats-run-workflow&#x27;,target:&#x27;arm-hpc-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;monitor launch&#x27;},
-        {source:&#x27;offline-testing-workflow&#x27;,target:&#x27;restart-failed-jobs&#x27;,t:&#x27;route&#x27;,l:&#x27;CIME recovery&#x27;},
-        {source:&#x27;ecosim-run-workflow&#x27;,target:&#x27;restart-adapter-ensemble&#x27;,t:&#x27;route&#x27;,l:&#x27;standalone recovery&#x27;},
-        {source:&#x27;pflotran-run-workflow&#x27;,target:&#x27;restart-adapter-ensemble&#x27;,t:&#x27;route&#x27;,l:&#x27;standalone recovery&#x27;},
-        {source:&#x27;ats-run-workflow&#x27;,target:&#x27;restart-adapter-ensemble&#x27;,t:&#x27;route&#x27;,l:&#x27;standalone recovery&#x27;},
-        {source:&#x27;restart-failed-jobs&#x27;,target:&#x27;arm-hpc-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;monitor relaunch&#x27;},
-        {source:&#x27;restart-adapter-ensemble&#x27;,target:&#x27;arm-hpc-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;monitor relaunch&#x27;},
-        {source:&#x27;ecosim-version-drift&#x27;,target:&#x27;ecosim-run-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;reverify by run&#x27;},
-        {source:&#x27;ecosim-trait-check-refine&#x27;,target:&#x27;ecosim-run-workflow&#x27;,t:&#x27;route&#x27;,l:&#x27;reverify by run&#x27;},
-        {source:&#x27;port-param-file&#x27;,target:&#x27;phase0-design&#x27;,t:&#x27;support&#x27;,l:&#x27;ported starting values&#x27;},
-        {source:&#x27;phase3-diagnosis&#x27;,target:&#x27;diagnose-forensics&#x27;,t:&#x27;support&#x27;,l:&#x27;single-anomaly branch&#x27;},
-        {source:&#x27;phase3-diagnosis&#x27;,target:&#x27;wire-knowledge-graph&#x27;,t:&#x27;support&#x27;,l:&#x27;missing graph path&#x27;},
-        {source:&#x27;phase4-hypothesis&#x27;,target:&#x27;wire-knowledge-graph&#x27;,t:&#x27;support&#x27;,l:&#x27;missing graph path&#x27;},
-        {source:&#x27;phase1-exploration&#x27;,target:&#x27;scientific-analysis&#x27;,t:&#x27;support&#x27;,l:&#x27;targeted investigation&#x27;},
-        {source:&#x27;scientific-analysis&#x27;,target:&#x27;plotting&#x27;,t:&#x27;route&#x27;,l:&#x27;figure&#x27;},
-        {source:&#x27;scientific-analysis&#x27;,target:&#x27;calibration-log&#x27;,t:&#x27;route&#x27;,l:&#x27;analysis record&#x27;},
-        {source:&#x27;scientific-analysis&#x27;,target:&#x27;markdown-to-pdf&#x27;,t:&#x27;support&#x27;,l:&#x27;shareable output&#x27;},
-        {source:&#x27;summarize-calibration-round&#x27;,target:&#x27;plotting&#x27;,t:&#x27;route&#x27;,l:&#x27;round figures&#x27;},
-        {source:&#x27;summarize-calibration-round&#x27;,target:&#x27;markdown-to-pdf&#x27;,t:&#x27;route&#x27;,l:&#x27;round PDF&#x27;},
-        {source:&#x27;compare-calibration-rounds&#x27;,target:&#x27;plotting&#x27;,t:&#x27;route&#x27;,l:&#x27;comparison figures&#x27;},
-        {source:&#x27;write-report&#x27;,target:&#x27;plotting&#x27;,t:&#x27;support&#x27;,l:&#x27;embedded figures&#x27;},
-        {source:&#x27;write-report&#x27;,target:&#x27;markdown-to-pdf&#x27;,t:&#x27;route&#x27;,l:&#x27;render report&#x27;},
-        {source:&#x27;literature-review&#x27;,target:&#x27;markdown-to-pdf&#x27;,t:&#x27;support&#x27;,l:&#x27;render review&#x27;},
-        {source:&#x27;round-housekeeping&#x27;,target:&#x27;curate-knowledge&#x27;,t:&#x27;route&#x27;,l:&#x27;pending proposals&#x27;},
-        {source:&#x27;round-housekeeping&#x27;,target:&#x27;inject-knowledge&#x27;,t:&#x27;route&#x27;,l:&#x27;verified findings&#x27;},
-        {source:&#x27;calibration-log&#x27;,target:&#x27;refine-skill&#x27;,t:&#x27;support&#x27;,l:&#x27;evidence for refinement&#x27;},
-        {source:&#x27;model-evolution&#x27;,target:&#x27;add-fates-parameter&#x27;,t:&#x27;route&#x27;,l:&#x27;FATES knob sub-recipe&#x27;},
-        {source:&#x27;model-evolution&#x27;,target:&#x27;offline-testing-workflow&#x27;,t:&#x27;support&#x27;,l:&#x27;paired-run pilot&#x27;},
-        {source:&#x27;model-evolution&#x27;,target:&#x27;generate-codebase-wiki&#x27;,t:&#x27;route&#x27;,l:&#x27;refresh after landing&#x27;},
-        {source:&#x27;create-project-agent&#x27;,target:&#x27;sync-downstream&#x27;,t:&#x27;route&#x27;,l:&#x27;every sync after the first&#x27;},
-        {source:&#x27;create-project-agent&#x27;,target:&#x27;onboard-model&#x27;,t:&#x27;route&#x27;,l:&#x27;if it needs a model&#x27;},
-        {source:&#x27;create-project-agent&#x27;,target:&#x27;onboard-case&#x27;,t:&#x27;route&#x27;,l:&#x27;if it calibrates&#x27;},
-        {source:&#x27;create-project-agent&#x27;,target:&#x27;add-skill&#x27;,t:&#x27;route&#x27;,l:&#x27;framework skills only&#x27;},
-        {source:&#x27;log&#x27;,target:&#x27;refine-skill&#x27;,t:&#x27;support&#x27;,l:&#x27;a skill that misled&#x27;},
-        {source:&#x27;log&#x27;,target:&#x27;memory-checkup&#x27;,t:&#x27;support&#x27;,l:&#x27;a memory gone stale&#x27;},
-        {source:&#x27;log&#x27;,target:&#x27;manage-auto-memory&#x27;,t:&#x27;route&#x27;,l:&#x27;a memory write&#x27;},
-        {source:&#x27;onboard-session&#x27;,target:&#x27;arm-local-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;in-flight local work&#x27;},
-        {source:&#x27;ecosim-run-workflow&#x27;,target:&#x27;arm-local-monitoring&#x27;,t:&#x27;route&#x27;,l:&#x27;workstation launch&#x27;},
-        {source:&#x27;phase6-refinement&#x27;,target:&#x27;build-surrogate&#x27;,t:&#x27;route&#x27;,l:&#x27;surrogate from the ensemble&#x27;},
-        {source:&#x27;phase1-exploration&#x27;,target:&#x27;build-surrogate&#x27;,t:&#x27;route&#x27;,l:&#x27;the Y matrix trains it&#x27;},
-        {source:&#x27;phase0-design&#x27;,target:&#x27;build-surrogate&#x27;,t:&#x27;support&#x27;,l:&#x27;hold-out decided once&#x27;},
-        {source:&#x27;plotting&#x27;,target:&#x27;build-surrogate&#x27;,t:&#x27;support&#x27;,l:&#x27;consumes figures&#x27;},
-        {source:&#x27;literature-review&#x27;,target:&#x27;manuscript-writing-style&#x27;,t:&#x27;route&#x27;,l:&#x27;manuscript prose&#x27;},
+__LINKS__
       ];
 
       root.querySelector(&#x27;#skill-count&#x27;).textContent = nodes.length;

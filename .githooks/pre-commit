@@ -899,15 +899,20 @@ fi
 # .claude/skills/; it went eight skills stale as a hand-built snapshot because nothing compared it
 # to the catalogue. It ships nowhere, so a stale one blocks nobody -- hence a warning rather than a
 # refusal. What it must not do is go unnoticed again.
-if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude/skills/[^/]+/SKILL\.md$'; then
+# Both graphs DERIVE from these: the skill catalogue, the hook itself, the agent hooks, and the
+# curated halves. A change to any of them can make a committed graph stale.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude/skills/[^/]+/SKILL\.md$|^\.githooks/pre-commit$|^\.claude/hooks/|^docs/skill_graph/.*\.yaml$'; then
     PY="$(pick_py)"
     if [[ -n "$PY" && -f "$ROOT/tools/generate_skill_graph.py" ]]; then
-        if ! "$PY" "$ROOT/tools/generate_skill_graph.py" --check >/dev/null 2>&1; then
-            echo "" >&2
-            echo "pre-commit: ADVISORY -- the skill graph is out of date with this change." >&2
-            echo "  python3 tools/generate_skill_graph.py    (then stage docs/skill_graph/)" >&2
-            echo "  Not blocking: the graph ships nowhere." >&2
-        fi
+        for _g in generate_skill_graph generate_harness_graph; do
+            [[ -f "$ROOT/tools/$_g.py" ]] || continue
+            if ! "$PY" "$ROOT/tools/$_g.py" --check >/dev/null 2>&1; then
+                echo "" >&2
+                echo "pre-commit: ADVISORY -- $_g is out of date with this change." >&2
+                echo "  python3 tools/$_g.py    (then stage docs/skill_graph/)" >&2
+                echo "  Not blocking." >&2
+            fi
+        done
     fi
 fi
 
