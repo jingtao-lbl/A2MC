@@ -38,6 +38,7 @@ When Claude Code starts in this repo, the skills are auto-discovered. The `descr
 
 (The schema mirrors the memory-bucket frontmatter idea — metadata worth adding because something reads it: `visibility` drives the sync, both are validated by the drift check.)
 
+
 ## Current skills
 
 Each skill declares a `modes:` block (see below) so the agent can check it against the active
@@ -75,6 +76,7 @@ docs that an adapter model could run them.
 | [plotting](plotting/SKILL.md) | any | Clean, readable, overlap-free matplotlib figures — verify by viewing the saved PNG. |
 | [write-report](write-report/SKILL.md) | any | Integrated, self-contained report for a zero-context human reader (facts-first, embedded figures, provenance). |
 | [build-rag-from-scratch](build-rag-from-scratch/SKILL.md) | any | Construct the RAG/GraphRAG knowledge layer from scratch (for a new model or a fresh build). |
+| [build-surrogate](build-surrogate/SKILL.md) | any | *(private — not ready to ship)* Build, score and hand over a learned surrogate of a process model from a finished ensemble — the S0-S3 tier ladder, the hold-out design that decides what the numbers MEAN (a Phase 0 decision), acceptance, promotion and packaging. Covers BOTH use modes, `offline_search` (calibration accelerator) and `online_inference` (emulator), which gate on different criteria. |
 | [rebuild-rag](rebuild-rag/SKILL.md) | any | Rebuild/repair a model's RAG index — **one build script per model** (FATES/EcoSIM/PFLOTRAN), reindex, wiki bump, and how to actually COMMIT it. |
 | [wire-knowledge-graph](wire-knowledge-graph/SKILL.md) | any | Audit/fix WHICH curated relations reach a model's knowledge graph — one `build_graph()` per model reading its own seed field names, and a field nothing reads fails silently. |
 | [generate-codebase-wiki](generate-codebase-wiki/SKILL.md) | any | Generate a source-grounded codebase wiki for a model. |

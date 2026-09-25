@@ -119,6 +119,7 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | `plotting` | any | Clean, readable, overlap-free matplotlib figures — verify by viewing the PNG |
 | `write-report` | any | Integrated, self-contained report for a zero-context human reader |
 | `build-rag-from-scratch` | any | Build the RAG/GraphRAG knowledge layer from scratch (new model or full reconstruction) |
+| `build-surrogate` | any | Build, score and hand over a learned surrogate of a process model from a finished ensemble — the S0-S3 tier ladder, the hold-out design that decides what the numbers MEAN (a Phase 0 decision), acceptance, promotion and packaging |
 | `rebuild-rag` | any | Rebuild/repair a model's RAG index — **one build script per model** (FATES/EcoSIM/PFLOTRAN), reindex, wiki bump, and how to actually COMMIT it |
 | `wire-knowledge-graph` | any | Audit/fix WHICH curated relations reach a model's knowledge graph — one `build_graph()` per model reading its own seed field names, and a field nothing reads fails silently |
 | `generate-codebase-wiki` | any | Produce a source-grounded codebase wiki for a model |

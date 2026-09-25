@@ -208,6 +208,16 @@ def resolve_bakeoff_learners(arg: str, registered) -> Tuple[str, ...]:
 
 
 def main() -> int:
+    # LINE-BUFFER STDOUT so a redirected log is LIVE. Python block-buffers stdout when it is not a
+    # terminal, so under `nohup ... > run.log` every print sits in a 4-8 KB buffer until the process
+    # exits while stderr, being unbuffered, streams throughout. A watcher tailing the log then sees
+    # warnings and no progress, and silence is indistinguishable from a hang. The episode that
+    # prompted this, and the negative control that proves the fix, are in
+    # memory/dev_logs_adapterkit/20260925j_A_Watched_Log_Is_Live_And_A_Scorer_Finds_Its_Dumps.md
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):                 # pragma: no cover - not a text stream
+        pass
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     env = os.environ.get

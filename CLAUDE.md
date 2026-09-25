@@ -2,7 +2,7 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of process-based environmental models using AI API + HPC + Adaptive Memory. **This line is the NON-CIME one** (EcoSIM · PFLOTRAN · ATS, via the `models/` adapter registry); the CIME-configured ESMs (ELM, ELM-FATES) are developed in the sibling **[`A2MC-elm`](https://github.com/jingtao-lbl/A2MC-elm/)**. See §"What is A2MC?" below.
-**Status:** Implementation Complete (v2.475)
+**Status:** Implementation Complete (v2.478)
 **Last Updated:** September 15, 2026
 ---
 
@@ -338,6 +338,7 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 | `pflotran-run-workflow` | any | Run + test PFLOTRAN (deck-driven) — deck-as-parameter-file, case assembly, `*-mas.dat` scoring, the 806-hour observation offset |
 | `ats-run-workflow` | any | Run + test ATS (XML-deck) — ParameterList-by-path, targets in the deck's `observations` block, honest about the v0.1 run wiring |
 | `build-rag-from-scratch` | any | Build the RAG/GraphRAG layer from scratch (new model or full reconstruction) |
+| `build-surrogate` | any | Build/score/hand over a learned surrogate from a finished ensemble — S0-S3 ladder, the Phase-0 hold-out design, acceptance + promotion + packaging |
 | `rebuild-rag` | any | Rebuild/repair a model's RAG index — **one build script per model** (FATES/EcoSIM/PFLOTRAN), reindex, wiki bump, and how to actually COMMIT it |
 | `wire-knowledge-graph` | any | Audit/fix WHICH curated relations reach a model's knowledge graph — one `build_graph()` per model reading its own seed field names, and a field nothing reads fails silently |
 | `generate-codebase-wiki` | any | Produce a source-grounded codebase wiki for a model |

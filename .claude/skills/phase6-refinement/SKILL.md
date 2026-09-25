@@ -441,6 +441,7 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
 - **Deeper investigation / figure** → `scientific-analysis`. **Round reports** →
   `summarize-calibration-round`, `compare-calibration-rounds`; an **integrated, cross-cutting write-up**
   for a human reader (an investigation synthesis beyond the standardized round summary) → `write-report`.
+- **A finished ensemble can also train a SURROGATE** → `build-surrogate`. By design this hangs off Phase 6 rather than off the loop: it is not a step toward convergence and nothing here waits on it, but once a round's ensemble is complete it is the corpus a learned emulator or ranking accelerator trains on. Whether the round drew an independent hold-out for that is a Phase-0 decision, so if the answer matters, check there before assuming the numbers can be interpreted.
 - **Next:** converged (Phase 7), or loop to `phase3-diagnosis` (rethink) / `phase0-design` (redesign).
 
 
