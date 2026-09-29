@@ -135,11 +135,13 @@ and a malformed message is accepted rather than refused; without the `skip-workt
 database file rewritten on every RAG read shows as permanently modified and gets swept into an
 unrelated commit; without the memory symlink the agent's memories go to a personal directory and
 reach nobody; without an author name A2MC stamps the wrong person onto every log it writes. The
-fifth applies on NERSC only: a temp directory inside `$HOME`, since NERSC forbids writes outside it;
-elsewhere it reports N/A. Its fix is one line in the shell profile, which reaches only a **new** shell: the
-running agent session keeps its old environment until it is restarted, so say so rather than re-running
-the checker in a loop. `setup_clone.sh` fixes the first three; the name is `whoami.py`, and the
-temp directory is one line in your shell profile, which the checker prints.
+fifth applies on NERSC only: a temp directory inside `$HOME`, since NERSC forbids writes outside it
+and its login profile sets `TMPDIR=/tmp`; elsewhere it reports N/A. Git carries this one: the
+SessionStart hook points the agent's `TMPDIR` at the clone's own `tmp/` for each session, so there is
+nothing to install unless the clone sits outside `$HOME`. A session that was already running when the
+hook arrived keeps its old environment until it is restarted, so say so rather than re-running the
+checker in a loop. **Never fix it in a shell profile**: that sends every repository on the account
+into one clone's `tmp/`. `setup_clone.sh` fixes the first three, and the name is `whoami.py`.
 
 **Which Python.** The setup checkers (`check_clone_setup.py`, `check_stage_ready.py`, `whoami.py`) run
 under any `python3`, including Perlmutter's system 3.6. Everything else (`model_preflight.py`,

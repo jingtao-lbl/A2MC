@@ -15,8 +15,9 @@ how badly they undercut the rule:
      matching the path the hook demanded a SHELL write verb (cp/mv/tee/...) and a Python
      `open(..., 'w')` is none of them.
 
-The real fix is not this hook. `TMPDIR` now points inside `$HOME` (see `~/.bashrc`), so a runtime
-temp write is legal by construction in any language that honours it; this hook is the backstop for
+The real fix is not this hook. `TMPDIR` points at the clone's own `tmp/` (the SessionStart hook
+exports it for the agent's shell, per session; see `tools/session_tmpdir.py`), so a runtime temp
+write is legal by construction in any language that honours it; this hook is the backstop for
 the literal forms. That is why the expectations below are parameterised on TMPDIR: with a SAFE
 TMPDIR the constructors are fine, and an explicit system-temp path is still refused, because
 pointing TMPDIR somewhere legal does not bless a write that names `/tmp` outright.
@@ -45,14 +46,19 @@ MKDTEMP = "mkd" + "temp"
 SAFE_TMPDIR = str(Path.home() / "A2MC-adapter" / "tmp")
 
 
-def _run(cmd: str, tmpdir: str) -> bool:
-    """True when the hook DENIES `cmd` with $TMPDIR set to `tmpdir`."""
+def _run(cmd: str, tmpdir: str, session_id: str = "", config_dir: str = "") -> bool:
+    """True when the hook DENIES `cmd` with $TMPDIR set to `tmpdir`. `config_dir` stands in for the
+    harness config dir, so a test controls which session exports exist rather than inheriting the
+    live session's."""
     if not HOOK.is_file():
         pytest.skip("block-forbidden-writes.py not present in this clone")
+    payload = {"tool_name": "Bash", "tool_input": {"command": cmd}}
+    if session_id:
+        payload["session_id"] = session_id
+    env = dict(os.environ, TMPDIR=tmpdir, CLAUDE_CONFIG_DIR=config_dir or "/nonexistent-config")
     r = subprocess.run(
         ["python3", str(HOOK)],
-        input=json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}}),
-        capture_output=True, text=True, env=dict(os.environ, TMPDIR=tmpdir),
+        input=json.dumps(payload), capture_output=True, text=True, env=env,
     )
     assert r.returncode == 0, f"hook crashed: {r.stderr}"
     return DENY in r.stdout
@@ -101,6 +107,46 @@ def test_the_same_commands_are_fine_once_TMPDIR_is_inside_home(label: str, cmd: 
     """The point of the TMPDIR fix: these become legal rather than merely tolerated. Without this
     the hook would refuse correct commands forever and train people to work around it."""
     assert not _run(cmd, SAFE_TMPDIR), f"refused a legal temp write: {label}"
+
+
+# --------------------------------------------------------------- the session export counts
+
+def _session_export(tmp_path, sid: str, value: str) -> str:
+    """Write a session env file the way the harness lays it out; return the config dir."""
+    d = tmp_path / "config" / "session-env" / sid
+    d.mkdir(parents=True)
+    (d / "sessionstart-hook-0.sh").write_text("export " + "TMP" + "DIR=" + value + "\n")
+    return str(tmp_path / "config")
+
+
+@pytest.mark.parametrize("label,cmd", RUNTIME_DERIVED, ids=[c[0] for c in RUNTIME_DERIVED])
+def test_a_safe_SESSION_export_makes_them_legal_though_the_hook_itself_sees_system_temp(
+        label: str, cmd: str, tmp_path):
+    """A SessionStart export reaches the agent's shell, never a hook process, so the hook's own
+    environment still says system temp. It must judge the value the command will run with."""
+    cfg = _session_export(tmp_path, "sid-1", SAFE_TMPDIR)
+    assert not _run(cmd, SYS_TMP, session_id="sid-1", config_dir=cfg), label
+
+
+@pytest.mark.parametrize("label,cmd", RUNTIME_DERIVED, ids=[c[0] for c in RUNTIME_DERIVED])
+def test_no_export_for_THIS_session_falls_back_to_refusing(label: str, cmd: str, tmp_path):
+    """Another session's export, or none, must not bless this one: the failure mode is refusal."""
+    cfg = _session_export(tmp_path, "sid-other", SAFE_TMPDIR)
+    assert _run(cmd, SYS_TMP, session_id="sid-1", config_dir=cfg), label
+    assert _run(cmd, SYS_TMP, session_id="", config_dir=cfg), label
+
+
+@pytest.mark.parametrize("label,cmd", RUNTIME_DERIVED, ids=[c[0] for c in RUNTIME_DERIVED])
+def test_an_UNSAFE_session_export_wins_over_a_safe_inherited_value(label: str, cmd: str, tmp_path):
+    """The shell sources the export before every command, so the export is what runs."""
+    cfg = _session_export(tmp_path, "sid-1", SYS_TMP)
+    assert _run(cmd, SAFE_TMPDIR, session_id="sid-1", config_dir=cfg), label
+
+
+@pytest.mark.parametrize("label,cmd", ALWAYS_DENIED, ids=[c[0] for c in ALWAYS_DENIED])
+def test_a_safe_session_export_does_not_bless_a_literal_system_path(label: str, cmd: str, tmp_path):
+    cfg = _session_export(tmp_path, "sid-1", SAFE_TMPDIR)
+    assert _run(cmd, SYS_TMP, session_id="sid-1", config_dir=cfg), label
 
 
 # --------------------------------------------------------------- never refused

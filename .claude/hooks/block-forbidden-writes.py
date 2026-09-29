@@ -23,12 +23,17 @@ was allowed even though the path IS in the text, because after matching a path t
 SHELL write verb (cp|mv|tee|...) and a Python `open(..., 'w')` is none of them.
 
 THE REAL FIX IS NOT THIS FILE. Pattern-matching command text is whack-a-mole: every language has
-its own temp API and its own way to build a path at runtime. TMPDIR is now pointed at a directory
-inside $HOME (see ~/.bashrc), so a runtime temp write lands somewhere legal BY CONSTRUCTION, in any
-language that honours it. This hook is the backstop for the literal forms, not the guarantee.
+its own temp API and its own way to build a path at runtime. TMPDIR is pointed at the clone's own
+tmp/ -- for the agent's shell by the SessionStart hook, for any other shell by sourcing a machine
+config -- so a runtime temp write lands somewhere legal BY CONSTRUCTION, in any language that
+honours it. This hook is the backstop for the literal forms, not the guarantee.
 
 Consequently $TMPDIR is no longer denied outright: it is denied only when it does NOT resolve
-inside $HOME, because pointing it at a safe directory is exactly the fix above.
+inside $HOME, because pointing it at a safe directory is exactly the fix above. "It" means the
+value the Bash command will actually run with, which is not this hook's own: a SessionStart export
+reaches the agent's shell but never a hook process, so the session's export is read back by
+session id (tools/session_tmpdir.py). If that read finds nothing, the hook falls back to its own
+environment, i.e. it refuses rather than allows.
 
 Schema: reads the tool-call JSON on stdin; denies via
 {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", ...}}.
@@ -56,9 +61,7 @@ INPROG_WRITE_RE = re.compile(
     r"""\b(?:write_text|write_bytes|savefig|to_csv|np\.save|json\.dump|shutil\.(?:copy\w*|move))\s*\(""")
 
 
-def _tmpdir_is_safe() -> bool:
-    """True when $TMPDIR points inside $HOME, which is the whole point of setting it."""
-    td = os.environ.get("TMPDIR", "")
+def _inside_home(td) -> bool:
     if not td:
         return False
     home = os.path.realpath(os.path.expanduser("~"))
@@ -66,6 +69,26 @@ def _tmpdir_is_safe() -> bool:
         return os.path.commonpath([os.path.realpath(td), home]) == home
     except ValueError:                   # different drives / unresolvable
         return False
+
+
+def _session_export(session_id):
+    """The TMPDIR this session's SessionStart hook exported, or None. Any failure is None."""
+    try:
+        import importlib.util
+        root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        spec = importlib.util.spec_from_file_location(
+            "_session_tmpdir", os.path.join(root, "tools", "session_tmpdir.py"))
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m.session_tmpdir(session_id)
+    except Exception:
+        return None
+
+
+def _tmpdir_is_safe(session_id=None) -> bool:
+    """True when the TMPDIR the command will run with points inside $HOME, which is the whole
+    point of setting it. A session export wins over the inherited value, as it does in the shell."""
+    return _inside_home(_session_export(session_id) or os.environ.get("TMPDIR", ""))
 
 
 def deny(reason):
@@ -92,14 +115,15 @@ def main():
 
     # Runtime-derived temp paths (tempfile.mkdtemp and friends). No literal appears in the text,
     # so this must be caught by NAME. Safe when $TMPDIR is inside $HOME, or when `dir=` pins it.
-    if TEMPFILE_RE.search(cmd) and not TEMPFILE_SAFE_RE.search(cmd) and not _tmpdir_is_safe():
+    safe_tmpdir = _tmpdir_is_safe(data.get("session_id"))
+    if TEMPFILE_RE.search(cmd) and not TEMPFILE_SAFE_RE.search(cmd) and not safe_tmpdir:
         deny("A tempfile constructor (mkdtemp/mkstemp/NamedTemporaryFile/…) derives its path from "
              "$TMPDIR, which currently resolves OUTSIDE $HOME. NERSC HARD RULE: no writes outside "
              "home. Pass an explicit `dir=` inside the repo (e.g. dir='./tmp'), or set TMPDIR to a "
              "directory under $HOME.")
 
     if not (ABS_RE.search(cmd) or VAR_RE.search(cmd)
-            or (TMPDIR_RE.search(cmd) and not _tmpdir_is_safe())):
+            or (TMPDIR_RE.search(cmd) and not safe_tmpdir)):
         sys.exit(0)                      # no forbidden temp/scratch path referenced
 
     if REDIR_RE.search(cmd) or FILEOP_RE.search(cmd) or INPROG_WRITE_RE.search(cmd):

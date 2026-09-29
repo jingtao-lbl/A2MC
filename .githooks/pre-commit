@@ -904,15 +904,31 @@ fi
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude/skills/[^/]+/SKILL\.md$|^\.githooks/pre-commit$|^\.claude/hooks/|^docs/skill_graph/.*\.yaml$'; then
     PY="$(pick_py)"
     if [[ -n "$PY" && -f "$ROOT/tools/generate_skill_graph.py" ]]; then
-        for _g in generate_skill_graph generate_harness_graph; do
+        # "tool[:flag]" -- the harness generator builds two graphs and each needs its own check
+        for _spec in generate_skill_graph generate_harness_graph generate_harness_graph:--overview; do
+            _g="${_spec%%:*}"; _flag=""
+            [[ "$_spec" == *:* ]] && _flag="${_spec#*:}"
             [[ -f "$ROOT/tools/$_g.py" ]] || continue
-            if ! "$PY" "$ROOT/tools/$_g.py" --check >/dev/null 2>&1; then
+            if ! "$PY" "$ROOT/tools/$_g.py" $_flag --check >/dev/null 2>&1; then
                 echo "" >&2
-                echo "pre-commit: ADVISORY -- $_g is out of date with this change." >&2
-                echo "  python3 tools/$_g.py    (then stage docs/skill_graph/)" >&2
+                echo "pre-commit: ADVISORY -- $_g $_flag is out of date with this change." >&2
+                echo "  python3 tools/$_g.py $_flag    (then stage docs/skill_graph/)" >&2
                 echo "  Not blocking." >&2
             fi
         done
+        # The same change set can open a STRUCTURAL gap the graphs draw but do not judge: a new
+        # checker nobody wrote a skill for, or an artifact no checker governs. Compared against a
+        # committed baseline by NAME, so only a gap that is actually new is reported -- a standing
+        # audit that reprints the same twelve names on every commit is one nobody reads by the third.
+        if [[ -f "$ROOT/tools/harness_query.py" && -f "$ROOT/docs/skill_graph/audit_baseline.json" ]]; then
+            HQ_OUT="$("$PY" "$ROOT/tools/harness_query.py" --audit --baseline check 2>&1)" || true
+            if echo "$HQ_OUT" | grep -q 'NEW\|resolved'; then
+                echo "" >&2
+                echo "$HQ_OUT" | sed 's/^/pre-commit: ADVISORY -- /' >&2
+                echo "  Describe it in a skill, or refresh: python3 tools/harness_query.py --audit --baseline update" >&2
+                echo "  Not blocking." >&2
+            fi
+        fi
     fi
 fi
 

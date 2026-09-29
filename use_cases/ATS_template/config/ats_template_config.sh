@@ -26,9 +26,9 @@
 #   ([[feedback_two_machine_configs_cime_vs_noncime]]).
 # =============================================================================
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 export A2MC_USE_CASE_DIR="$(dirname "$SCRIPT_DIR")"
-export A2MC_SITE_CONFIG="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
+export A2MC_SITE_CONFIG="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]:-$0}")"
 # ---- Auto-source the MACHINE config if it is not already loaded --------------
 # Makes driving this case ONE command instead of two:
 #     source use_cases/ATS_<Case>/config/ats_<case>_config.sh

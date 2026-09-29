@@ -138,10 +138,13 @@ def _tmpdir_row():
     temp-directory variable at the repo's gitignored tmp/ fixes that by construction, in any
     language that honours it, which is why it is the real fix and the hook is the backstop.
 
-    It lives in a shell profile, so GIT CANNOT CARRY IT: a fresh clone, or the same clone on
-    another machine, silently has only the backstop, and nothing reported that until this row
-    existed (2026-09-22, register item F1). Anything inside $HOME counts, not only the repo's own
-    tmp/ -- the rule is about the quota boundary, not a particular directory.
+    The SessionStart hook sets it for the agent's shell, per session, from the clone's own path
+    (tools/session_tmpdir.py says why no other layer works). So the row asks three things, in the
+    order that decides them: does the effective value -- this session's export, else the inherited
+    one -- resolve inside $HOME; if not and this IS a session, the export did not happen; if not
+    and this is a plain shell, will the hook be able to export a legal path for this clone, which
+    fails only when the clone itself sits outside $HOME. It never advises a shell profile: that
+    redirects every repository on the account into this one clone's tmp/.
     """
     # The rule is NERSC's, so the row applies only on a NERSC machine. Off NERSC it is NA, per
     # this file's own contract that a row which cannot apply reports NA rather than FAIL. Until
@@ -151,19 +154,31 @@ def _tmpdir_row():
     if not os.environ.get("NERSC_HOST"):
         return (NA, "TMPDIR inside $HOME",
                 "not a NERSC machine (NERSC_HOST unset); the $HOME-only write rule is NERSC's")
-    td = os.environ.get("TMPDIR", "")
-    fix = ('point TMPDIR at %s/tmp in your shell profile, guarded on $SLURM_JOB_ID being unset '
-           'so a batch job keeps node-local scratch' % ROOT)
-    if not td:
-        return (FAIL, "TMPDIR inside $HOME",
-                "unset, so a runtime temp write lands outside $HOME and breaks the NERSC rule  -> " + fix)
-    home = os.path.realpath(os.path.expanduser("~"))
-    real = os.path.realpath(os.path.expandvars(td))
-    if real == home or real.startswith(home + os.sep):
-        inside_repo = real.startswith(os.path.realpath(str(ROOT)))
-        return (PASS, "TMPDIR inside $HOME", "the repo's tmp/" if inside_repo else real)
-    return (FAIL, "TMPDIR inside $HOME",
-            "%s is outside $HOME, so a runtime temp write breaks the NERSC rule  -> %s" % (real, fix))
+    import session_tmpdir as S
+    label = "TMPDIR inside $HOME"
+    sid = os.environ.get("CLAUDE_CODE_SESSION_ID", "")
+    exported = S.session_tmpdir(sid)
+    td = exported or os.environ.get("TMPDIR", "")
+    if S.inside_home(td):
+        real = os.path.realpath(os.path.expandvars(td))
+        where = "the repo's tmp/" if real.startswith(os.path.realpath(str(ROOT))) else real
+        return (PASS, label, where + (", set for this session by the SessionStart hook"
+                                      if exported else ""))
+    shown = td or "unset"
+    if not S.inside_home(S.repo_tmpdir(ROOT)):
+        return (FAIL, label,
+                "this clone is outside $HOME, so the SessionStart hook cannot point TMPDIR at its "
+                "tmp/ and a runtime temp write breaks the NERSC rule  -> clone under $HOME, or pin "
+                "every temp call (dir= / mktemp -p) inside it")
+    if sid:
+        return (FAIL, label,
+                "%s: this session did not get the repo's tmp/ from the SessionStart hook  -> "
+                "restart the session; if it persists, check that this Claude Code sets "
+                "$CLAUDE_ENV_FILE for SessionStart hooks. Do NOT export it in a shell profile, "
+                "which redirects every repository on the account" % shown)
+    return (PASS, label,
+            "%s in this shell; each Claude Code session in this clone gets the repo's tmp/ from "
+            "the SessionStart hook, and a shell gets it by sourcing a machine config" % shown)
 
 
 def clone_rows():

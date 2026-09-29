@@ -116,6 +116,7 @@ add-only asymmetry is exactly how a deleted skill leaves stale registry rows beh
 
 ## Guardrails
 
+- **Ask what governs the file before you edit it:** `python3 tools/harness_query.py --touches .claude/skills/<name>/SKILL.md`. It names every numbered check gated on that path, the skill (if any) describing each, and the OFF-PATH readers a gate cannot show — `visibility:` is read by both sync legs, `modes.scope` by `tools/skill_models.py`, and the registry rows live in four files. That last group is what makes a skill file unusual: most of its contract is enforced from somewhere its own path never mentions. Use `--contract '<token>'` before changing a field name or a rule, since it lists every tracked file carrying that token and a contract here is almost never in one place. `tools/generate_harness_graph.py` draws the same chain for a human; the query is the same derivation for an agent.
 - **Register in all THREE or it drifts** — never finish without the README-table row, the
   catalog entry, AND the AGENTS.md "At a glance" row. `tools/check_skill_registry.py` (step 5)
   is the enforceable 4-way-parity backstop; wire it into CI / pre-commit so the invariant holds

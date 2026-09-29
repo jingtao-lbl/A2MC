@@ -77,3 +77,74 @@ python3 tools/generate_harness_graph.py --check    # exit 1 if the committed fil
 **Derived, so it cannot go stale.** The checker nodes and the hook edges come from the numbered checks in `.githooks/commit`; the artifact each checker governs comes from the path pattern that gates it; the skill edges from each `SKILL.md`. Curated in `harness_data.yaml`: what a gate pattern *means*, the glosses, and the reciprocal pairs — none of which a parse yields.
 
 **An unmapped gate is reported, never dropped.** A checker whose subject nobody has named is exactly what this graph exists to surface, so the generator warns rather than omitting the node.
+
+---
+
+# Harness overview
+
+`A2MC_Harness_Overview.html` is the same subject at concept level: **seven words**, each standing for a whole category, and how each holds the next honest. Use it to explain the harness; use the full network to work on it.
+
+```bash
+python3 tools/generate_harness_graph.py --overview
+python3 tools/generate_harness_graph.py --overview --check
+```
+
+| | |
+|---|---|
+| **Skills** | the procedure for one kind of work. Says HOW, and names what to record |
+| **Logs** | the record of what was done and why |
+| **Memory** | what survives a session ending |
+| **Tools** | what the work is actually done with |
+| **Checkers** | the tools that assert a result rather than produce one |
+| **Hooks** | the numbered checks at commit, plus those that fire while the agent works |
+| **Discipline** | the outcome. Not a file: what holds when nobody is watching |
+
+**The chain the arrows draw**, and each link is a real mechanism rather than a sentiment: a skill drives tools and requires a log; a log names the memory it wrote **and the memory names the log back**; a lesson that recurs becomes a procedure; checkers assert each of those; hooks invoke the checkers and refuse the commit. Discipline is what is left when that loop closes.
+
+**Its labels carry live counts**, substituted from the repository at generation time — how many skills, how many numbered checks, how many of the tools are checkers, how many skills name their own. A concept diagram is the easiest thing to let drift, so nothing in it is typed by hand twice.
+
+**Only STRUCTURAL counts, though.** The dev-log count was in there for exactly one commit and made the graph stale the moment the next log was written, firing the drift advisory on ordinary activity. A check that cries wolf is worse than no check, and it devalues the ones beside it. Counts that change when the *harness* changes belong here; counts that change when *work happens* do not.
+
+---
+
+# Asking the graph instead of looking at it
+
+A picture is for a human. An agent cannot look at one, and the agent is the reader who most needs this: the failure these graphs describe is editing one instance of a contract that lives in four places, which is a thing you do at the keyboard rather than while studying a diagram. `tools/harness_query.py` answers the same questions the harness network draws, from the same derivation, as text.
+
+```bash
+python3 tools/harness_query.py --touches <path>     # what governs this file, and which skill says how
+python3 tools/harness_query.py --impact <name>      # what depends on this checker, skill or artifact
+python3 tools/harness_query.py --contract '<token>' # every tracked file that carries this field or rule
+python3 tools/harness_query.py --audit              # the structural gaps, by name
+```
+
+`--touches` is the one that earns its place. It reports every numbered check in `.githooks/pre-commit` whose gate pattern matches the path, the skill (if any) describing each, the **reciprocal** pairs among them, and — for a `SKILL.md` — the readers a gate cannot show at all: `visibility:` is read by both sync legs, `modes.scope` by `tools/skill_models.py`, and the registry rows live in four separate files. `--contract` exists because the answer to "where else does this live?" should come from the repository rather than from recall.
+
+It shares `generate_harness_graph.py`'s derivation rather than re-deriving anything, so the text and the picture cannot disagree.
+
+## The audit, and why it is bound to check (27)
+
+`--audit` reports three numbers, each a structural gap the graphs draw but do not judge:
+
+| | meaning |
+|---|---|
+| artifacts no checker governs | something the agent writes that nothing asserts |
+| enforcement with no procedure | a check nobody described, so you meet it by tripping it |
+| skills with no hook-wired checker | a procedure with no assertion, which is a habit |
+
+The third is not a defect on its own — most skills need no checker. The first two are.
+
+**It is compared against a committed baseline, by NAME**, in `audit_baseline.json`:
+
+```bash
+python3 tools/harness_query.py --audit --baseline check    # report only what MOVED; exit 1 on a new gap
+python3 tools/harness_query.py --audit --baseline update   # accept the current state as the baseline
+```
+
+Two decisions in that, both learned here. **By name rather than by count**, because one checker gaining a skill while another loses one leaves the count identical and the harness changed. **Only what moved**, because a standing audit that reprints the same twelve names on every commit is one nobody reads by the third — the same reason check (27) is gated on the skills, the hook and this directory's YAML rather than running always. It is wired into check (27) as ADVISORY, alongside the three staleness checks, since a gap is worth naming and is nobody's reason to be refused a commit.
+
+## The hook that speaks first
+
+`.claude/hooks/remind-governing-checks.py` is a `PreToolUse` hook on `Write|Edit|NotebookEdit`. Before a file is written it runs the `--touches` derivation and states what governs that path, so the chain is met while the file is open rather than at commit time when the checker refuses it.
+
+It is information and never a block; every path exits 0, including every failure, because a reminder that breaks the tool call it precedes is worse than no reminder. It speaks **once per path per session** (deduped through the gitignored `tmp/`), and says nothing at all for a path nothing governs.

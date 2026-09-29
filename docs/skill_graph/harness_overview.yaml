@@ -1,0 +1,41 @@
+# The harness at concept level: one word per category, and how each holds the next honest.
+# Counts in {braces} are SUBSTITUTED from the repository at generation time, so even the
+# overview cannot drift from what is actually there.
+#
+# ONLY STRUCTURAL counts belong here -- how many skills, how many checks, how many of the
+# tools assert rather than produce. A count that grows with routine work does NOT: the log
+# count was in this file for one commit, and it made the graph stale the moment the next log
+# was written, which fires the drift advisory on ordinary activity and teaches everyone to
+# ignore it. A check that cries wolf is worse than no check.
+#
+# Regenerate:  python3 tools/generate_harness_graph.py --overview
+
+heading: A2MC harness overview
+desc: >-
+  Seven parts of the A2MC agent harness and the relationships between them. Solid arrows show
+  what one part requires of another. Dashed arrows show what asserts or governs it.
+
+nodes:
+  Skills:     [knowledge, "{skills} procedures, one per kind of work. Says HOW, and names what to record."]
+  Logs:       [meta, "One per piece of work, plus a phase log per case. The record of what was done and why."]
+  Memory:     [meta, "{memories} cross-session notes. What survives a session ending."]
+  Tools:      [modeldev, "{tools} scripts. What the work is actually done with."]
+  Checkers:   [phase, "{checkers} of those tools assert a result rather than produce one."]
+  Hooks:      [calibration, "{checks} numbered checks at commit, {agenthooks} more that fire while the agent works."]
+  Discipline: [authoring, "The outcome. Not a file: what holds when nobody is watching."]
+
+# source, target, type (route = requires, support = asserts/governs), label
+edges:
+  - [Skills, Tools, route, drives]
+  - [Skills, Logs, route, "no work without a log"]
+  - [Skills, Checkers, route, "{skills_with_checker} of {skills} name their own"]
+  - [Tools, Logs, route, "produce the evidence a log cites"]
+  - [Logs, Memory, route, "a log names the memory it wrote"]
+  - [Memory, Logs, route, "and the memory names the log back"]
+  - [Memory, Skills, route, "a lesson that recurs becomes a procedure"]
+  - [Checkers, Logs, support, "form, evidence, claims"]
+  - [Checkers, Memory, support, "frontmatter, and the link back"]
+  - [Checkers, Skills, support, "registry parity"]
+  - [Hooks, Checkers, support, "invokes, then refuses"]
+  - [Hooks, Discipline, support, "what makes it not optional"]
+  - [Checkers, Discipline, support, "detection beats instruction"]

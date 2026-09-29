@@ -50,7 +50,7 @@ fi
 # A site config re-exports the same value afterward, which is harmless.
 # Precedence: shell export > this derivation.
 if [ -z "${A2MC_ROOT:-}" ]; then
-    export A2MC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    export A2MC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 fi
 
 # ========================
@@ -419,7 +419,7 @@ validate_config() {
 }
 
 # Discover available site configs
-_A2MC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_A2MC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 _A2MC_SITES=()
 for _cfg in "${_A2MC_DIR}"/use_cases/*/config/*_config.sh; do
     [ -f "$_cfg" ] && _A2MC_SITES+=("$_cfg")

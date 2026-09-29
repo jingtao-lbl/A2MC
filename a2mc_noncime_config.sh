@@ -30,7 +30,7 @@
 # ========================
 # a2mc_config.sh references ${A2MC_ROOT} (e.g. for A2MC_RAG_DIR) but relies on it being set
 # elsewhere; set it explicitly here from this file's location (repo root).
-export A2MC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export A2MC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # ========================
 # TMPDIR — runtime temp writes stay inside the repo

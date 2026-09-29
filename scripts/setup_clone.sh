@@ -129,9 +129,11 @@ fi
 # -- carries no literal to match and slips past it. Pointing the temp-directory variable inside
 # $HOME fixes that by construction, in any language that honours the variable.
 #
-# This lives in a SHELL PROFILE, so git cannot carry it and a fresh clone always starts without
-# it. This step reports and prints the line; it does NOT edit your profile, because that file is
-# outside this repository and outside this script's remit.
+# It is carried by git: the SessionStart hook exports it for the agent's shell, per session, as
+# this clone's own tmp/ (tools/session_tmpdir.py), and a machine config exports the same for any
+# shell that sources it. Nothing to install, so this step only confirms the one precondition the
+# hook needs -- the clone itself inside $HOME -- and warns off the shell profile, which redirects
+# every repository on the account into this clone.
 # ---------------------------------------------------------------------------------------------
 echo
 echo "== 5. runtime temp directory"
@@ -140,21 +142,18 @@ if [ -z "${NERSC_HOST:-}" ]; then
     # (audit 20260923b, F28 and persona P2).
     echo "    N/A: not a NERSC machine (NERSC_HOST unset); the \$HOME-only write rule is NERSC's"
 else
-TD_REAL="$(cd "${TMPDIR:-/nonexistent}" 2>/dev/null && pwd -P || echo "")"
+ROOT_REAL="$(cd "$ROOT" && pwd -P)"
 HOME_REAL="$(cd "$HOME" && pwd -P)"
-case "$TD_REAL" in
-    "$HOME_REAL"|"$HOME_REAL"/*)
-        echo "    OK: $TMPDIR is inside \$HOME"
+case "$ROOT_REAL" in
+    "$HOME_REAL"/*)
+        echo "    OK: each Claude Code session in this clone gets TMPDIR=$ROOT_REAL/tmp from the"
+        echo "    SessionStart hook; a shell gets it by sourcing a machine config. Do NOT export it"
+        echo "    in ~/.bashrc: that sends every repository's temp files into this clone."
         ;;
     *)
-        echo "    NOT SET UP: a runtime temp write would land outside \$HOME."
-        echo "    Add this to your shell profile (~/.bashrc), then open a new shell:"
-        echo
-        echo "        [ -z \"\$SLURM_JOB_ID\" ] && [ -d \"$ROOT/tmp\" ] && export TMPDIR=\"$ROOT/tmp\""
-        echo
-        echo "    The SLURM_JOB_ID guard is deliberate: inside a batch job the system default"
-        echo "    stands, so a large job's temporaries stay on node-local storage rather than"
-        echo "    filling the home quota."
+        echo "    NOT SET UP: this clone is outside \$HOME, so its tmp/ is not a legal temp"
+        echo "    directory either. Clone under \$HOME, or pin every temp call inside it"
+        echo "    (dir= in Python, mktemp -p)."
         ;;
 esac
 fi

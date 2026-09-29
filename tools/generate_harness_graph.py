@@ -40,6 +40,9 @@ HERE = ROOT / "docs" / "skill_graph"
 DATA = HERE / "harness_data.yaml"
 TEMPLATE = HERE / "harness_template.html"
 OUT = HERE / "A2MC_Harness_Network.html"
+OV_DATA = HERE / "harness_overview.yaml"
+OV_TEMPLATE = HERE / "overview_template.html"
+OV_OUT = HERE / "A2MC_Harness_Overview.html"
 
 G_ART, G_SKILL, G_CHECK, G_GIT, G_AGENT = "meta", "knowledge", "phase", "calibration", "modeldev"
 # A checker that verifies a link from BOTH ends gets its own group: neither half alone catches a
@@ -56,17 +59,55 @@ def load_yaml(p):
 
 
 def hook_checks():
-    """(check number, tool, gate pattern) for every numbered check that invokes a tool."""
-    text = HOOK.read_text(errors="replace")
-    parts = re.split(r"\n# \((\d+)\)", text)
+    """(check number, tool, gate pattern) for every numbered check that invokes a tool.
+
+    Scan the hook IN LINE ORDER and attribute each invocation to the numbered header above it and
+    the nearest gate above that invocation. Two earlier versions split the file on the numbered
+    comments and searched each section as a blob, which is wrong three ways in this file: the
+    numbered comments are NOT in ascending order, so a section runs to whichever number happens to
+    come next; a 2600-character window cut four sections off before their gate line and reported
+    them as UNGATED; and a checker merely discussed in a comment was attributed as if the check ran
+    it. An invocation is therefore matched in its invocation form -- `"$ROOT/tools/x.py"` -- and the
+    gate accepts both `grep -qE` and the bare `grep -E` inside a `[[ -n "$(...)" ]]` test, which is
+    how checks 15 and 23 are written.
+
+    Reporting a gated check as ungated is the one wrong answer this function must not give, because
+    `harness_query.py --touches` turns it into "nothing governs this path".
+    """
+    # Join shell continuations FIRST, so every gate sits on one logical line and the `--name-only`
+    # test below is exact. Both forms appear in this hook: a trailing backslash, and a pipeline whose
+    # next line begins with `|`. Ten of the 28 gates are written the second way.
+    logical = []
+    for raw in HOOK.read_text(errors="replace").splitlines():
+        if logical and (logical[-1].rstrip().endswith("\\") or raw.lstrip().startswith("|")):
+            logical[-1] = logical[-1].rstrip().rstrip("\\") + " " + raw.strip()
+        else:
+            logical.append(raw)
+
+    num = gate = ""
     out = []
-    for i in range(1, len(parts), 2):
-        num, body = parts[i], parts[i + 1][:2600]
-        tools = sorted(set(re.findall(r"tools/([a-z_]+)\.py", body)))
-        gates = re.findall(r"grep -qE '([^']+)'", body)
-        for t in tools:
-            out.append((num, t, gates[0] if gates else ""))
-    return out
+    for line in logical:
+        h = re.match(r"# \((\d+)\)", line)
+        if h:
+            num, gate = h.group(1), ""
+            continue
+        # Check 15 expresses its gate as a `sed` EXTRACTION of the site name rather than a grep, so
+        # it looked unconditional -- the same false "nothing governs this path" the docstring warns
+        # about, arriving by a second route. Take the sed's left-hand side and convert BRE to ERE.
+        d = re.search(r"sed -n 's\|(\^[^|]+?)\|", line)
+        if d and "--name-only" in line:
+            gate = d.group(1).replace("\\(", "(").replace("\\)", ")").rstrip(".*")
+
+        g = re.search(r"grep -q?E '([^']+)'", line)
+        if g and "--name-only" in line:
+            # A PATH gate, not any grep. Check 10 also greps the diff CONTENT for `^\+`, which is
+            # not a statement about which paths the check governs; taking it would have said this
+            # check fires on a file whose name starts with a plus.
+            gate = g.group(1)
+        for t in re.findall(r'\$ROOT/tools/([a-z_]+)\.py', line):
+            if (num, t, gate) not in out:
+                out.append((num, t, gate))       # a block may name its tool twice -- once in an
+    return out                                   # `-f` existence test, once to invoke it
 
 
 def build(data):
@@ -78,24 +119,32 @@ def build(data):
 
     seen_tools = set()
     for num, tool, gate in hook_checks():
-        if tool.startswith(("check_", "validate_")):
-            short = tool.replace("check_", "").replace("validate_", "")
-            nodes.setdefault(short, (G_CHECK, "Check (%s): %s" % (num, tool)))
-            if tool not in seen_tools:
-                edges.append(("pre-commit", short, "route", "check " + num))
-                seen_tools.add(tool)
-            if gate in art:
-                a, gl = art[gate]
-                nodes.setdefault(a, (G_ART, gl))
-                edges.append((short, a, "support", "governs"))
-            elif gate and gate != "(always)":
-                warn.append("no artifact mapped for gate %r (check %s, %s)" % (gate[:46], num, tool))
+        # EVERY hook-wired tool is a node. The earlier `startswith(("check_", "validate_"))` filter
+        # dropped two of the 28 silently -- `config_graph` and `generate_skill_graph`, which enforce
+        # as much as any `check_*` does -- so the graph understated the harness and the audit
+        # computed its coverage over an incomplete set. An off-convention name is now WARNED rather
+        # than used as grounds for exclusion.
+        short = re.sub(r"^(check|validate)_", "", tool)
+        nodes.setdefault(short, (G_CHECK, "Check (%s): %s" % (num, tool)))
+        if tool not in seen_tools:
+            edges.append(("pre-commit", short, "route", "check " + num))
+            seen_tools.add(tool)
+        if gate in art:
+            a, gl = art[gate]
+            nodes.setdefault(a, (G_ART, gl))
+            edges.append((short, a, "support", "governs"))
+        elif gate and gate != "(always)":
+            warn.append("no artifact mapped for gate %r (check %s, %s)" % (gate[:46], num, tool))
 
     # skills that name a checker present on the graph
     for f in sorted(SKILLS.glob("*/SKILL.md")):
-        for t in sorted(set(re.findall(r"tools/(check_[a-z_]+|validate_[a-z_]+)\.py",
-                                       f.read_text(errors="replace")))):
-            short = t.replace("check_", "").replace("validate_", "")
+        # ANY tools/<name>.py, not only the check_/validate_ ones. The narrower pattern was the same
+        # naming filter that hid two hook-wired tools from the node set, surviving in a second place:
+        # a skill documenting `tools/harness_query.py` produced no edge, so that tool read as a check
+        # nobody had described while two skills described it. The `short in nodes` guard below is what
+        # keeps this from drawing an edge for every utility a skill happens to mention.
+        for t in sorted(set(re.findall(r"tools/([a-z_]+)\.py", f.read_text(errors="replace")))):
+            short = re.sub(r"^(check|validate)_", "", t)
             if short in nodes:
                 nodes.setdefault(f.parent.name, (G_SKILL, "Skill: %s" % f.parent.name))
                 edges.append((f.parent.name, short, "route", "enforced by"))
@@ -152,27 +201,72 @@ def _emit(fields):
     assert lit.count("&#x27;") == 2 * len(fields), "malformed literal: %s" % lit
     return "        " + lit
 
-def render(nodes, edges):
+def render(nodes, edges, template=None, heading=None, desc=None):
+    """Heading and description are PARAMETERS, not defaults baked in here.
+
+    They were hardcoded, so the overview's own heading was replaced before its generator could set
+    it -- the token was already gone. A default that silently wins over an explicit value is the
+    same defect twice."""
+    template = template or TEMPLATE
     n = "\n".join(_emit([("id", k), ("g", v[0]), ("s", v[1])]) for k, v in sorted(nodes.items()))
     l = "\n".join(_emit([("source", a), ("target", b), ("t", t), ("l", x)])
                   for a, b, t, x in edges)
-    desc = ("A directed network of %d nodes: what the A2MC agent writes, the checkers that "
-            "assert it, and the hooks that refuse a commit. Solid arrows show enforcement "
-            "routing. Dashed arrows show what a checker governs." % len(nodes))
-    return (TEMPLATE.read_text().replace("__NODES__", n).replace("__LINKS__", l)
-            .replace("__HEADING__", "A2MC harness network").replace("__DESC__", desc))
+    if desc is None:
+        desc = ("A directed network of %d nodes: what the A2MC agent writes, the checkers that "
+                "assert it, and the hooks that refuse a commit. Solid arrows show enforcement "
+                "routing. Dashed arrows show what a checker governs." % len(nodes))
+    return (template.read_text().replace("__NODES__", n).replace("__LINKS__", l)
+            .replace("__HEADING__", heading or "A2MC harness network")
+            .replace("__DESC__", desc))
+
+
+def counts():
+    """The live numbers the overview's labels carry, so even a concept diagram cannot drift."""
+    checks = len(re.findall(r"^# \(\d+\)", HOOK.read_text(errors="replace"), re.M))
+    tools = sorted(set(re.findall(r"tools/([a-z_]+)\.py", HOOK.read_text(errors="replace"))))
+    skills = sorted(SKILLS.glob("*/SKILL.md"))
+    with_checker = [f for f in skills
+                    if re.search(r"tools/(check|validate)_[a-z_]+\.py", f.read_text(errors="replace"))]
+    mem = [x for x in (ROOT / ".claude_memory").glob("*.md") if x.name != "MEMORY.md"]
+    return {"skills": len(skills), "checks": checks, "checkers": len(tools),
+            "skills_with_checker": len(with_checker), "agenthooks": len(list(AGENT_HOOKS.glob("*.py"))),
+            "memories": len(mem), "devlogs": len(list((ROOT / "memory" / "dev_logs_adapterkit").glob("*.md"))),
+            "tools": len(list((ROOT / "tools").glob("*.py")))}
+
+
+def build_overview(data, c):
+    fill = lambda s: str(s).format(**c)
+    nodes = {k: (v[0], fill(v[1])) for k, v in data["nodes"].items()}
+    edges, warn = [], []
+    for src, tgt, typ, lab in data["edges"]:
+        if src in nodes and tgt in nodes:
+            edges.append((src, tgt, typ, fill(lab)))
+        else:
+            warn.append("overview edge %s->%s dropped: endpoint missing" % (src, tgt))
+    linked = {x for e in edges for x in e[:2]}
+    warn += ["%s is an ISOLATED node" % n for n in sorted(set(nodes) - linked)]
+    return nodes, edges, warn
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--check", action="store_true", help="exit 1 if the committed graph is stale")
+    ap.add_argument("--overview", action="store_true",
+                    help="build the concept-level overview instead of the full network")
     a = ap.parse_args()
-    for f in (DATA, TEMPLATE, HOOK):
+    for f in ((OV_DATA, OV_TEMPLATE, HOOK) if a.overview else (DATA, TEMPLATE, HOOK)):
         if not f.is_file():
             sys.stderr.write("missing %s\n" % f)
             return 2
-    nodes, edges, warn = build(load_yaml(DATA))
-    out = render(nodes, edges)
+    out_path = OV_OUT if a.overview else OUT
+    if a.overview:
+        d = load_yaml(OV_DATA)
+        nodes, edges, warn = build_overview(d, counts())
+        out = render(nodes, edges, OV_TEMPLATE,
+                     heading=d["heading"], desc=" ".join(d["desc"].split()))
+    else:
+        nodes, edges, warn = build(load_yaml(DATA))
+        out = render(nodes, edges)
     for w in warn:
         print("  [warn] " + w)
     kinds = {}
@@ -180,13 +274,13 @@ def main():
         kinds[g] = kinds.get(g, 0) + 1
     print("  %d node(s), %d edge(s)  %s" % (len(nodes), len(edges), kinds))
     if a.check:
-        if OUT.is_file() and OUT.read_text(errors="replace") == out:
+        if out_path.is_file() and out_path.read_text(errors="replace") == out:
             print("  up to date")
             return 0
         print("  OUT OF DATE -- run: python3 tools/generate_harness_graph.py")
         return 1
-    OUT.write_text(out)
-    print("  wrote %s" % OUT.relative_to(ROOT))
+    out_path.write_text(out)
+    print("  wrote %s" % out_path.relative_to(ROOT))
     return 0
 
 

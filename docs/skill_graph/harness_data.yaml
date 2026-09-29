@@ -33,6 +33,17 @@ artifacts:
   "^use_cases/[^/]+/": [case-state, "A case's round state, board and cycle reports."]
   "^(use_cases/[^/]+/parameters|models/[^/]+/reference_bounds)/.+\\.csv$": [param-bounds, "Parameter bounds and where each came from."]
 
+  # Surfaced on 2026-09-25 when the hook parse was corrected. Each of these five checks HAD a gate
+  # all along; the parser could not see it, so each read as ungated and nothing asked what it
+  # governed. Five artifacts were therefore missing from this map rather than from the harness.
+  "^phases/": [phase-script, "A phase script, and that phase's own CLAUDE.md."]
+  "^CLAUDE\\.md$": [version, "The version header and its changelog entry."]
+  "^use_cases/([^/]*)/": [case-state, "A case's round state, board and cycle reports."]
+  "\\.(py|sh)$": [source-note, "What a script's own comments may say, and what belongs in a log instead."]
+  "\\.(sh|py)$": [config-wiring, "A config variable and the layers that must declare it."]
+  ? "^\\.claude/skills/[^/]+/SKILL\\.md$|^\\.githooks/pre-commit$|^\\.claude/hooks/|^docs/skill_graph/.*\\.yaml$"
+  : [harness-graph, "The generated skill and harness graphs -- regenerated, never hand-edited."]
+
 # The agent-side hooks. These fire while the agent WORKS rather than at commit, so they catch a
 # thing before it is written instead of refusing it afterwards. Derived list, curated meaning.
 agent_hooks:

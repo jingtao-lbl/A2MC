@@ -36,13 +36,13 @@
 # =============================================================================
 
 # Where this file lives — used to derive A2MC_USE_CASE_DIR.
-# NOTE: BASH_SOURCE is a bash builtin; under zsh it is empty and A2MC_USE_CASE_DIR
-# collapses. Always source from bash (or `bash -c`).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Portable across bash and zsh: BASH_SOURCE is a bash builtin and is EMPTY under zsh, where
+# `$0` is the sourced file instead. The fallback is unreachable in bash, so bash is unchanged.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 export A2MC_USE_CASE_DIR="$(dirname "$SCRIPT_DIR")"
 # Absolute path to THIS site config — read by ConfigMode + the setup gate as the
 # signal that a site config (not just the machine config) was sourced.
-export A2MC_SITE_CONFIG="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
+export A2MC_SITE_CONFIG="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]:-$0}")"
 # ---- Auto-source the MACHINE config if it is not already loaded --------------
 # Makes driving this case ONE command instead of two:
 #     source use_cases/<YourSite>/config/<yoursite>_config.sh

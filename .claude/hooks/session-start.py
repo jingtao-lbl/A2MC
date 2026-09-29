@@ -221,6 +221,30 @@ def hpc_jobs_in_flight(root, lines):
 
 
 
+def session_tmpdir(root):
+    """Point the agent's TMPDIR at this clone's own tmp/ for the whole session (NERSC only).
+
+    NERSC's login profile exports TMPDIR=/tmp, so a runtime temp write breaks the $HOME-only rule
+    by default. This is the one layer that is carried by git, scoped to this repository and able to
+    build an absolute per-clone path: a project `env` block in settings.json cannot set TMPDIR, and
+    a shell profile redirects every repository on the account. Rationale in tools/session_tmpdir.py.
+    Runs BEFORE clone_setup() so the row reporting it sees this session's export.
+    """
+    try:
+        import importlib.util
+        path = os.path.join(root, "tools", "session_tmpdir.py")
+        if not os.path.isfile(path):
+            return
+        spec = importlib.util.spec_from_file_location("_session_tmpdir", path)
+        if spec is None or spec.loader is None:
+            return
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        m.export_for_session(root, os.environ.get("CLAUDE_ENV_FILE"))
+    except Exception:
+        return                          # a hook must never break a session
+
+
 def clone_setup(root, lines, relay=None):
     """Report per-clone wiring that has not happened, AT EVERY STAGE.
 
@@ -324,6 +348,7 @@ def main():
     lines = []
     relay = []
     ensure_memory_symlink(root, lines)
+    session_tmpdir(root)
     clone_setup(root, lines, relay)
     setup_stage(root, lines, relay)
     resource_headroom(root, lines, relay)
