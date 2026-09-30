@@ -53,6 +53,33 @@ def prune_catalog(dest: Path, dropped: set) -> int:
     return removed
 
 
+def prune_root_docs(dest: Path, dropped: set) -> int:
+    """A calibrating project's root CLAUDE.md and AGENTS.md carry A2MC's skill tables below the
+    marker line. Remove the rows whose FIRST cell is a dropped skill -- first cell only, because
+    another skill's row may mention one in passing ("routes to offline-testing-workflow") -- and only
+    below the marker, so the project's banner is never touched."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from _wrap_root_docs import MARKER
+    first_cell = re.compile(r"^\|\s*`(%s)`\s*\|" % "|".join(re.escape(d) for d in dropped))
+    removed = 0
+    for name in ("CLAUDE.md", "AGENTS.md"):
+        f = dest / name
+        if not f.is_file():
+            continue
+        text = f.read_text()
+        if MARKER not in text:
+            continue
+        banner, below = text.split(MARKER, 1)
+        kept = []
+        for line in below.splitlines(keepends=True):
+            if first_cell.match(line):
+                removed += 1
+                continue
+            kept.append(line)
+        f.write_text(banner + MARKER + "".join(kept))
+    return removed
+
+
 def main() -> int:
     if len(sys.argv) < 3:
         sys.stderr.write(__doc__)
@@ -60,7 +87,9 @@ def main() -> int:
     dest, dropped = Path(sys.argv[1]), set(sys.argv[2:])
     r = prune_readme(dest, dropped)
     c = prune_catalog(dest, dropped)
-    print("  de-registered %d README row(s) and %d catalog entry(ies)" % (r, c))
+    d = prune_root_docs(dest, dropped)
+    print("  de-registered %d README row(s), %d catalog entry(ies) and %d root-document row(s)"
+          % (r, c, d))
     return 0
 
 

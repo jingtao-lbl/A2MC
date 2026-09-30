@@ -37,6 +37,7 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
   A project is the fifth unit of work and the only one that owns a repo topology.
 - **Modes:** any — repo topology and the project-folder contract; model-agnostic and calibration-optional.
 - **Backing tools:** `scripts/wrap_for_project_agent.sh` (`--init` / `--refresh`), `scripts/_wrap_scaffold.sh`,
+  `scripts/_wrap_merge_settings.py`, `scripts/_wrap_root_docs.py`, `scripts/_wrap_deregister.py`,
   `tools/skill_models.py`, `tools/check_clone_setup.py`,
   `scripts/setup_clone.sh`, the destination's own setup checker.
 - **Key discipline:** every path both halves write is a named conflict surface with exactly one of three

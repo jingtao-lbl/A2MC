@@ -9,12 +9,13 @@
 # file here is written from this script, so a fresh wrap is reproducible and carries no other
 # project's vocabulary.
 #
-#   $1 = destination repo root   $2 = project folder name   $3 = comma-separated models (may be empty)
+#   $1 = destination repo root   $2 = project folder name   $3 = comma-separated models
+#   $4 = yes|no, whether calibration is part of the project (decides the root documents' wording)
 #
 # Author: Jing Tao with Claude on Perlmutter.
 set -euo pipefail
 
-DEST="$1" ; P="$2" ; MODELS="${3:-}"
+DEST="$1" ; P="$2" ; MODELS="${3:-}" ; CAL="${4:-no}"
 D="$DEST/$P"
 mkdir -p "$D"/{logs,scripts,.claude/hooks,.claude/skills,.githooks}
 
@@ -36,9 +37,11 @@ cat > "$DEST/CLAUDE.md" <<EOF
 
 **This is a PROJECT repository, not an A2MC development clone.**
 
-Read \`$P/CLAUDE.md\` — it is the contract for every session here. This file exists so an agent
+Read \`$P/CLAUDE.md\` — it is the contract for every session here. $( [ "$CAL" = yes ] && printf '%s' "This is the project banner, written from the research plan
+at create-project-agent Step 5b. A2MC's own guide follows below the marker line as reference,
+because calibration is part of this project." || printf '%s' "This file exists so an agent
 landing at the repository root is not sent to A2MC's own development guide, which describes a
-framework rather than this project.
+framework rather than this project." )
 
 | | |
 |---|---|
@@ -53,9 +56,10 @@ cat > "$DEST/AGENTS.md" <<EOF
 
 The harness-neutral operating contract for an agent working in **this project**.
 
-A2MC ships its own \`AGENTS.md\` describing a calibration framework and routing every session to its
+$( [ "$CAL" = yes ] && printf '%s' "This is the project banner. A2MC's own operating contract follows below the marker
+line, copied because calibration is part of this project; read it for everything that is A2MC's." || printf '%s' "A2MC ships its own \`AGENTS.md\` describing a calibration framework and routing every session to its
 own router. That document is true in A2MC and false here, which is why this repository owns this
-file instead of receiving it.
+file instead of receiving it." )
 
 ## Every session
 

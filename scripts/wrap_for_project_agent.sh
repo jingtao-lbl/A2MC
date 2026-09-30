@@ -27,7 +27,7 @@ A2MC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MARKER=".a2mc-downstream"
 KNOWN_MODELS=(fates elm ecosim pflotran ats)
 
-PROJECT="" ; DEST="" ; MODELS="" ; REMOTE="" ; MODE="" ; DRY=false ; ALLOW_DIRTY=false ; BRANCH="main"
+PROJECT="" ; DEST="" ; MODELS="" ; CALIBRATION="" ; REMOTE="" ; MODE="" ; DRY=false ; ALLOW_DIRTY=false ; BRANCH="main"
 
 die()  { echo "ERROR: $*" >&2; exit 1; }
 note() { echo "  $*"; }
@@ -38,14 +38,20 @@ usage() {
     cat <<'USAGE'
 
 Usage:
-  wrap_for_project_agent.sh --init --project <Name> --dest <path> [--models a,b] [--remote <url>]
-  wrap_for_project_agent.sh --refresh --dest <path> [--branch <name>] [--allow-dirty]
+  wrap_for_project_agent.sh --init --project <Name> --dest <path> --models a,b --calibration yes|no [--remote <url>]
+  wrap_for_project_agent.sh --refresh --dest <path> [--branch <name>] [--allow-dirty] [--calibration yes|no]
   Both accept --dry-run.
 
-  --models   comma-separated from: fates elm ecosim pflotran ats
-             Omitted means NONE: no knowledge base, RAG profile, adapter, case template or
-             model-specific skill travels. That is the right answer for a project with no
-             calibration, and it is where the weight is -- those paths are most of the tree.
+  --models       REQUIRED at --init. Comma-separated from: fates elm ecosim pflotran ats. Selects the
+                 knowledge bases, rag/ and each model's graphs, index and metadata, the adapters,
+                 case templates and model-specific skills. A project gets its own models' knowledge
+                 and none of another's.
+  --calibration  REQUIRED at --init. Is calibration one part of this project?
+                 yes -> root CLAUDE.md, README.md and AGENTS.md are A2MC's own, COPIED, with the
+                        project's banner above a marker line; --refresh updates what is below it.
+                 no  -> the project hand-writes its own three; nothing of A2MC's is copied into them.
+                 Recorded in the manifest. --refresh takes it only to fill a manifest made before
+                 the flag existed.
 USAGE
 }
 
@@ -57,6 +63,7 @@ while [[ $# -gt 0 ]]; do
         --project) PROJECT="${2:-}"; shift ;;
         --dest) DEST="${2:-}"; shift ;;
         --models) MODELS="${2:-}"; shift ;;
+        --calibration) CALIBRATION="${2:-}"; shift ;;
         --remote) REMOTE="${2:-}"; shift ;;
         --branch) BRANCH="${2:-}"; shift ;;
         --dry-run) DRY=true ;;
@@ -68,6 +75,7 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$MODE" ]] || { usage; die "one of --init or --refresh is required"; }
 [[ -n "$DEST"  ]] || die "--dest is required"
+[[ -z "$CALIBRATION" || "$CALIBRATION" == yes || "$CALIBRATION" == no ]] || die "--calibration takes yes or no"
 
 # ---------------------------------------------------------------- the source must be CLEAN
 # THIS SCRIPT COPIES; IT DOES NOT FILTER. Everything it copies is taken as fit to travel, so the
@@ -126,13 +134,27 @@ model_paths() {                       # $1 = model
         # ELM-FATES_template serves both fates and elm; match case-insensitively on the stem.
         if [[ "${b,,}" == *"${m,,}"* ]]; then echo "use_cases/$b/"; fi
     done
-    # RAG profiles are named <model>-<hash>, or api-<major>-<minor> for the FATES/ELM line.
-    local p pre
+    # RAG profiles are named <model>-<hash>, or api-<major>-<minor> for the FATES/ELM line. A
+    # profile's index, graph and metadata travel only with its model: a project gets the knowledge
+    # of the models it works with, and none of another model's.
+    local p pre g
+    # The model's knowledge GRAPHS, selected by their own name: rag/graphs/<model>*.json (api-*.json
+    # for the FATES/ELM line). Not derived from the index folders, so a graph is never missed
+    # because its model's index is laid out differently.
+    for g in "$A2MC_ROOT"/rag/graphs/"$m"*.json; do
+        [[ -f "$g" ]] && echo "rag/graphs/$(basename "$g")"
+    done
+    if [[ "$m" == "fates" || "$m" == "elm" ]]; then
+        for g in "$A2MC_ROOT"/rag/graphs/api-*.json; do
+            [[ -f "$g" ]] && echo "rag/graphs/$(basename "$g")"
+        done
+    fi
+    # The model's vector index and its metadata.
     for p in "$A2MC_ROOT"/rag/chroma_db/*/; do
         [[ -d "$p" ]] || continue
         pre="$(basename "$p")"
         if [[ "$pre" == "$m"-* ]] || { [[ "$m" == "fates" || "$m" == "elm" ]] && [[ "$pre" == api-* ]]; }; then
-            echo "rag/chroma_db/$pre/"; echo "rag/graphs/$pre.json"; echo "rag/metadata/$pre.json"
+            echo "rag/chroma_db/$pre/"; echo "rag/metadata/$pre.json"
         fi
     done
 }
@@ -147,7 +169,8 @@ fi
 
 build_includes() {
     INCLUDES=("${UNIVERSAL[@]}")
-    # rag/ machinery travels whenever ANY model does; its profiles are added per model above.
+    # rag/ comes with the models: its code, milestones.json and rag/data/ once any model is named,
+    # and each model's own graphs, vector index and metadata (model_paths).
     if [[ ${#WANTED[@]} -gt 0 ]]; then
         local f
         for f in "$A2MC_ROOT"/rag/*.py "$A2MC_ROOT"/rag/*.json "$A2MC_ROOT"/rag/*.yaml; do
@@ -159,6 +182,24 @@ build_includes() {
             while IFS= read -r path; do [[ -n "$path" ]] && INCLUDES+=("$path"); done < <(model_paths "$m")
         done
     fi
+}
+
+# Files inside use_cases/TEMPLATE/ named for a model -- <model>_template_config.sh, its round file,
+# targets and readme -- that this project did not ask for. The prefix is read from the file name and
+# matched ONLY against KNOWN_MODELS, so a folder such as case_template/ is never a candidate. The
+# fates files serve ELM as well, the same pairing model_paths uses.
+unwanted_template_files() {
+    local f b pre keep m
+    while IFS= read -r f; do
+        b="$(basename "$f")"
+        pre="${b%%_template*}"
+        [[ " ${KNOWN_MODELS[*]} " == *" $pre "* ]] || continue
+        keep=false
+        for m in "${WANTED[@]+"${WANTED[@]}"}"; do
+            if [[ "$m" == "$pre" ]] || { [[ "$pre" == "fates" && "$m" == "elm" ]]; }; then keep=true; fi
+        done
+        [[ "$keep" == false ]] && echo "${f#"$DEST"/}"
+    done < <(find "$DEST/use_cases/TEMPLATE" -maxdepth 2 -type f -name '*_template*' 2>/dev/null)
 }
 
 # Skills the project's model set does NOT need. Derived from each skill's `modes.scope`, never a
@@ -231,14 +272,29 @@ EOF
 do_init() {
     assert_clean_source
     [[ -n "$PROJECT" ]] || die "--init requires --project"
+    # A project names the models it works with. That choice decides which knowledge bases, RAG
+    # profiles, adapters, templates and skills it gets, so it is never left to a default.
+    [[ -n "$MODELS" ]] || die "--init requires --models: name the model(s) this project will use (known: ${KNOWN_MODELS[*]})"
+    # Whether calibration is part of the project decides what its root documents ARE: A2MC's own
+    # with a project banner on top, or the project's own written from scratch. Never defaulted.
+    [[ -n "$CALIBRATION" ]] || die "--init requires --calibration yes|no: is calibration one part of this project?"
     [[ "$PROJECT" =~ ^[A-Za-z][A-Za-z0-9_-]*$ ]] || die "project name must start with a letter and contain only letters, digits, - or _"
     project_collides "$PROJECT" && die "project name '$PROJECT' collides with a framework path — pick another"
     [[ ! -e "$DEST" || -z "$(ls -A "$DEST" 2>/dev/null)" ]] || die "destination '$DEST' exists and is not empty"
+    # The destination must not sit inside another git repository. If it did, `git init` below would
+    # be skipped because the outer repository answers first, and core.hooksPath, `git add -A` and the
+    # first commit would all land in THAT repository, sweeping up whatever it had uncommitted.
+    local probe="$DEST" outer
+    while [[ ! -d "$probe" ]]; do probe="$(dirname "$probe")"; done
+    if outer="$(git -C "$probe" rev-parse --show-toplevel 2>/dev/null)"; then
+        die "destination '$DEST' is inside the git repository '$outer'. Choose a path outside any repository; this script would otherwise configure and commit into that one."
+    fi
 
     echo "=== wrap_for_project_agent --init ==="
     note "project : $PROJECT"
     note "dest    : $DEST"
-    note "models  : ${MODELS:-<none> (no knowledge base, RAG, adapter or model skill will travel)}"
+    note "models  : $MODELS"
+    note "calibration part of the project: $CALIBRATION"
     echo
 
     run "mkdir -p '$DEST'"
@@ -258,7 +314,7 @@ do_init() {
     echo "Writing the project's own documents (before any framework path lands)..."
     if [[ "$DRY" == false ]]; then
         mkdir -p "$DEST/$PROJECT"/{logs,scripts,.claude/hooks,.claude/skills,.githooks}
-        "$A2MC_ROOT/scripts/_wrap_scaffold.sh" "$DEST" "$PROJECT" "$MODELS"
+        "$A2MC_ROOT/scripts/_wrap_scaffold.sh" "$DEST" "$PROJECT" "$MODELS" "$CALIBRATION"
     fi
     note "root CLAUDE.md, README.md, AGENTS.md  (destination-owned: a refresh never overwrites them)"
     note "$PROJECT/ scaffold: RESEARCH_PLAN.md PROJECT_STATE.json CLAUDE.md TODO.md logs/ scripts/"
@@ -271,11 +327,20 @@ do_init() {
             echo
             echo "project: $PROJECT"
             echo "models: ${MODELS:-none}"
+            echo "calibration: $CALIBRATION"
             echo "generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo
             echo "destination_owned:"
             printf '  - %s\n' "$PROJECT/" "CLAUDE.md" "README.md" "AGENTS.md" "$MARKER" ".gitignore"
             echo
+            echo "merged:        # both halves write it; the framework's hooks + the project's own"
+            printf '  - %s\n' ".claude/settings.json"
+            echo
+            if [[ "$CALIBRATION" == yes ]]; then
+                echo "composed:      # the project's banner above the marker; A2MC's own document below it"
+                printf '  - %s\n' "CLAUDE.md" "README.md" "AGENTS.md"
+                echo
+            fi
             echo "framework_paths:"
             printf '  - %s\n' "${INCLUDES[@]}"
         } > "$DEST/$PROJECT/SEPARATION_MANIFEST.yaml"
@@ -325,6 +390,19 @@ copy_framework() {
             rsync -aL "$src" "$dst"
         fi
     done
+    # use_cases/TEMPLATE/ is universal, but the per-model files inside it follow --models.
+    local t nt=0
+    while IFS= read -r t; do
+        [[ -n "$t" ]] || continue
+        if [[ "$DRY" == true ]]; then echo "  [dry] drop template file: $t"; else rm -f "$DEST/$t"; fi
+        nt=$((nt+1))
+    done < <(unwanted_template_files)
+    note "use_cases/TEMPLATE/ files for models not requested, dropped: $nt"
+
+    # Compose the root documents BEFORE de-registering skills: a calibrating project's copies carry
+    # A2MC's skill tables, and the dropped skills' rows must go from them too.
+    compose_root_docs
+
     # Skills belonging only to models this project did not ask for.
     local s n=0
     while IFS= read -r s; do
@@ -342,6 +420,34 @@ copy_framework() {
         # shellcheck disable=SC2086
         "$py2" "$A2MC_ROOT/scripts/_wrap_deregister.py" "$DEST" $names
     fi
+
+    # .claude/settings.json is MERGED, never copied: the framework's hook registrations plus every
+    # entry of the project's own. Without this the framework's hook FILES arrive and none of them
+    # is registered, so the write guard, the traversal guard and the session snapshot never run.
+    if [[ "$DRY" == true ]]; then
+        echo "  [dry] merge .claude/settings.json (framework hooks + the project's own)"
+    else
+        local py3
+        py3="$(pick_py)" || die "no python >= 3.7 to merge .claude/settings.json"
+        "$py3" "$A2MC_ROOT/scripts/_wrap_merge_settings.py" \
+            "$A2MC_ROOT/.claude/settings.json" "$DEST/.claude/settings.json" \
+            || die "could not merge .claude/settings.json; the framework's hooks would not be registered"
+    fi
+}
+
+# A calibrating project's root CLAUDE.md, README.md and AGENTS.md are A2MC's own, copied, with the
+# project's banner kept above a marker line. A project with no calibration writes its own and is
+# left alone here.
+compose_root_docs() {
+    if [[ "$CALIBRATION" != yes ]]; then
+        note "root CLAUDE.md, README.md, AGENTS.md: the project's own (no calibration), not copied"
+        return
+    fi
+    local py4 flag=""
+    py4="$(pick_py)" || die "no python >= 3.7 to compose the root documents"
+    [[ "$DRY" == true ]] && flag="--dry-run"
+    "$py4" "$A2MC_ROOT/scripts/_wrap_root_docs.py" "$A2MC_ROOT" "$DEST" $flag \
+        || die "could not compose the root documents; nothing was written"
 }
 
 write_marker_step() {
@@ -370,6 +476,15 @@ do_refresh() {
     PROJECT="$(awk '/^project:/{print $2}' "$man")"
     local man_models; man_models="$(awk '/^models:/{print $2}' "$man")"
     [[ "$man_models" == "none" ]] && man_models=""
+    local man_cal; man_cal="$(awk '/^calibration:/{print $2}' "$man")"
+    if [[ -n "$man_cal" ]]; then
+        [[ -z "$CALIBRATION" || "$CALIBRATION" == "$man_cal" ]] \
+            || die "the manifest records calibration: $man_cal; --calibration $CALIBRATION contradicts it"
+        CALIBRATION="$man_cal"
+    else
+        [[ -n "$CALIBRATION" ]] || die "the manifest predates --calibration: pass --calibration yes|no once, and it is recorded"
+        [[ "$DRY" == true ]] || sed -i "s/^models: .*/&\ncalibration: $CALIBRATION/" "$man"
+    fi
     if [[ -z "$MODELS" ]]; then MODELS="$man_models"; WANTED=(); [[ -n "$MODELS" ]] && IFS=',' read -ra WANTED <<< "$MODELS"; fi
 
     echo "=== wrap_for_project_agent --refresh ==="

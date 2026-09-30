@@ -81,6 +81,13 @@ def main():
     for a, b, lab in recip:
         lines.append("  RECIPROCAL %s <-> %s: %s. One half alone looks finished." % (a, b, lab))
     if is_skill:
+        if os.path.isfile(os.path.join(ROOT, rel)):
+            lines.append("  Editing an EXISTING skill changes a contract: follow the `refine-skill` "
+                         "skill -- show the PI the exact diff with its evidence and wait for approval, "
+                         "then re-read the WHOLE file after the edit, not just the changed lines.")
+        else:
+            lines.append("  A NEW skill: follow the `add-skill` skill, which registers it in all four "
+                         "places at once.")
         lines.append("  This skill's `visibility:` is read by BOTH sync legs; its registry rows in "
                      "CLAUDE.md, AGENTS.md, .claude/skills/README.md and "
                      "docs/a2mc_reference/skills_catalog.md must move in and out of the private "

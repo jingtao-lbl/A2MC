@@ -15,11 +15,12 @@ modes:
   A2MC-<Name>/                          the repo. Framework half REPLACED on every sync.
   │
   │  ═══ FRAMEWORK HALF — the capability the project is wrapping A2MC FOR ═══
-  │      41 include paths. Arrives by rsync, never edited here; a fix goes UPSTREAM.
-  ├── docs/<model>-knowledge-base/      five of them: FATES, ELM, EcoSIM, PFLOTRAN, ATS
-  ├── rag/                              RAG + GraphRAG retrieval over those, per milestone
-  ├── memory/                           MemoryManager + the per-model knowledge stores
-  ├── models/                           the adapter registry (EcoSIM, PFLOTRAN, ATS)
+  │      Paths listed in <ProjectName>/SEPARATION_MANIFEST.yaml. Arrive by rsync, never edited
+  │      here; a fix goes UPSTREAM.
+  ├── docs/<model>-knowledge-base/      one per model named in --models
+  ├── rag/                              RAG + GraphRAG over those models: their graphs and indexes only
+  ├── memory/                           MemoryManager + those models' knowledge stores
+  ├── models/                           the adapters for those models
   ├── phases/ orchestrator.py reasoning/    the 7-phase loop and its AI interface
   ├── use_cases/TEMPLATE/ *_template/   case scaffolds only — no real case ever ships
   ├── tools/ scripts/ tests/ templates/ the harness: checkers, validators, generators
@@ -29,7 +30,9 @@ modes:
   │
   │  ═══ CONTESTED — both halves write these ═══
   ├── .claude/settings.json             SHARED WRITE. MERGED at sync, never copied.
-  ├── CLAUDE.md  README.md              DESTINATION_OWNED banner. Hand-written; never arrives.
+  ├── CLAUDE.md  README.md  AGENTS.md   every project gets them. --calibration yes: A2MC's own,
+  │                                     banner on top (refresh updates below the marker);
+  │                                     no: the project's own, hand-written.
   │
   │  ═══ PROJECT HALF — everything the project authors ═══
   └── <ProjectName>/                    off INCLUDE + in DESTINATION_OWNED. Survives every sync.
@@ -48,8 +51,10 @@ modes:
                  nothing and costs 8 DEAD-REFs from skills that cite them as the
                  online counterpart they are the offline analog of.
 
-    by MODEL     docs/<model>-knowledge-base/   rag/ profiles   memory/<model>/
-                 models/<model>/   use_cases/<Model>_template/   model-specific skills
+    by MODEL     (--models REQUIRED) docs/<model>-knowledge-base/   memory/<model>/   models/<model>/
+                 rag/ + rag/graphs/<model>*.json + the model's index and metadata
+                 use_cases/<Model>_template/ + the <model>_template* files in TEMPLATE/
+                 model-specific skills
                  A project investigating one model in EcoSIM has no use for PFLOTRAN's
                  or ATS's knowledge base, RAG index, adapter or run-workflow skill.
 
@@ -84,10 +89,11 @@ So the first artifact is not a file tree. It is a **separation manifest**, deriv
 >
 > | prerequisite | check | if it fails |
 > |---|---|---|
-> | you are on `adapter-kit` in the dev clone | `git branch --show-current` prints `adapter-kit` | this skill authors a sync leg and edits `tests/`; it belongs on this branch only |
+> | you are in a RELEASE clone of A2MC (the public `A2MC`), not a development clone | `ls -d memory/dev_logs* .claude_memory TODO.md` finds none of them | the wrap script copies without filtering, so it refuses a development clone; clone the public `A2MC` and run from there |
 > | the clone is wired | `python3 tools/check_clone_setup.py` exits 0 | `a2mc-init` Step 1, then return here |
 > | the design document is in hand | `sed -n '1,80p' docs/40_Downstream_Project_Repo_Pattern.md` | read it — this skill is the executable procedure over that design, and Step 12 files the four places it has drifted |
-> | you are in an A2MC clone | `ls a2mc_config.sh tools/ .claude/skills/` resolves | this runs from A2MC, not from the project repo it creates | > | the getting-started tutorial is done | a wired clone, a built model, and a case with a completed round | the interview's two most consequential answers -- which models, and whether calibration is part of it -- are otherwise guessesachine; the leg never syncs it back, so `git ls-files` here will not find it** |
+> | you are in an A2MC clone | `ls a2mc_config.sh tools/ .claude/skills/` resolves | this runs from A2MC, not from the project repo it creates |
+> | the getting-started tutorial is done | a wired clone, a built model, and a case with a completed round | the interview's two most consequential answers -- which models, and whether calibration is part of it -- are otherwise guesses |
 >
 > **Anchor every command.** `A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel)}"` — an empty `$A2MC_ROOT` expands to the filesystem root, and a `rm -rf "$A2MC_ROOT/..."` written against it is unrecoverable.
 
@@ -130,7 +136,12 @@ exit $rc
 
 **A7. Skills NEST, hooks do NOT.** A subdirectory's `.claude/skills/` is discovered as **directory-scoped**, listed as `<ProjectName>:<name>`, with no registration (verified 2026-09-12), and needs only `name` and `description` frontmatter. `tools/check_skill_registry.py` scans only the repo root, so adding a project skill to the four framework registries fails as DRIFT — and the root `.claude/skills/` is an INCLUDE root, so a project skill placed there is deleted on the next sync. Hooks get no such treatment and must be registered in the root settings file. **A project skill duplicating a framework skill's name shadows it inside the folder** — rename it or reduce it to the delta, **but only when the framework copy actually lands in this destination**: a framework skill carrying `visibility: private` is stripped by every leg, nothing shadows, and the project copy is the only copy there will be.
 
-**A8. Root `CLAUDE.md`, `README.md` and `AGENTS.md` are each classified explicitly at creation.** The first two are authored as the **project's banner** and added to `DESTINATION_OWNED` before the first sync, with the cost in writing — framework documentation stops arriving in them. The recorded reason is sharper than "wrong document": the shipped README calls the public A2MC "(this repo)" and says no case study ships, both FALSE anywhere else, and nothing upstream can fix a sentence that is true at home and false where it lands. **`AGENTS.md` goes through the same decision and is not exempt** — it opens by calling A2MC a calibration framework and routes every session to a router with no project awareness, which is the README failure repeated on the one agent-facing document still shipping. Because `DESTINATION_OWNED` is consulted only inside the INCLUDE loop and has **no existence check**, a new repo listing these ships with **none** of them unless they exist by Step 2. **Existing is not the same as written, and conflating the two is how all three ship generic.** Step 2 runs before the research-goal conversation, so anything authored there can only describe the scaffold; the scaffold therefore writes placeholders that are true of every project built this way and specific to none. They are **classified and created at Step 2, and WRITTEN at Step 5b**, once the plan exists to distil.
+**A8. Root `CLAUDE.md`, `README.md` and `AGENTS.md`: every project gets all three, and whether calibration is part of the project decides what they ARE.** `--init` requires `--calibration yes|no` and records it in the manifest.
+
+- **Calibration is one part of the project (`yes`):** A2MC's own three documents are **copied**, and the project's banner goes **above a marker line**. Everything above the marker is the project's and is never touched; everything below it is replaced from the release on every `--refresh`, like any framework path. Skills dropped by `--models` are removed from the copied skill tables too, first cell only and below the marker only.
+- **No calibration at all (`no`):** nothing of A2MC's is copied into them; the project hand-writes its own. A2MC's versions open by calling it a calibration framework and route every session to a router with no project awareness, which is true there and false in a project that never calibrates.
+
+Either way `--init` creates them at Step 2, but what it can write then is a placeholder: Step 2 runs before the research-goal conversation. **Existing is not the same as written, and conflating the two is how all three ship generic.** Step 5b writes the banner (`yes`) or the whole document (`no`) from the plan.
 
 **A9. Forward-only is a law of the assembly, stated three ways.** An exclude hides a path so `--delete` never considers it and retracts nothing; dropping an INCLUDE path retracts nothing; a merge cannot restore what a merged commit deleted, and a merge sourced from the damaged branch faithfully preserves the damage. Therefore: protection is established BEFORE the first sync; **a recovery mechanism never takes its authority from a source the damage can reach**; the project folder keeps a committed inventory (`<ProjectName>/REGISTRATIONS.md`) of everything it registers so a restore is a diff rather than git archaeology; and every repair plan distinguishes the action that **stops** the damage from the action that **undoes** it, and schedules both.
 
@@ -169,7 +180,8 @@ So, at seeding time: **have the leg write a marker into the destination** identi
                             CREATE ──▶ Step 1 ──▶ Step 2 ...
                             ADOPT  ──▶ Step 1 ──▶ Step 1b ──▶ Step 2 ...   (rejoins at Step 3)
 
-  Does the project calibrate?          -> decides whether use_cases/ is on INCLUDE at all
+  Does the project calibrate?          -> --calibration yes|no: the root documents (A8), and
+                                          whether use_cases/ is on INCLUDE at all
   Does the project RUN things?         -> decides the EXECUTION pack. INDEPENDENT of the above.
   Does it produce figures/manuscript?  -> decides the MANUSCRIPT pack
   Does it evolve model source?         -> decides the MODEL-EVOLUTION pack
@@ -258,15 +270,22 @@ copy the framework half, write the downstream marker, scaffold the project folde
 
 ```bash
 scripts/wrap_for_project_agent.sh --init \
-    --project <ProjectName> --dest ~/A2MC-<Name> --models <a,b or omitted> [--remote <url>]
+    --project <ProjectName> --dest ~/A2MC-<Name> --models <a,b> --calibration yes|no [--remote <url>]
 ```
 
-Run it from your A2MC clone. If it refuses, it says what it found and what to do.
+Run it from a release clone of A2MC (the public `A2MC`); it refuses a development clone. If it refuses, it says what it found and what to do.
 
-**`--models` is the decision that matters**, and omitting it is a real answer. It selects the
-knowledge bases, RAG profiles, adapters, case templates and model-specific skills that travel, and
-those paths are most of the tree — a project with no calibration takes none of them and gets the
-harness alone. The skill subset is **derived** from each skill's `modes.scope` by
+**`--dest` must be OUTSIDE every git repository.** `--init` refuses one inside another repository, because `git init` would be skipped and the hooks path, `git add -A` and the first commit would all land in the outer repository, sweeping up whatever it had uncommitted.
+
+**`--models` is required, and it is the decision that matters.** A project names the models it will
+use. That selects the knowledge bases, `rag/` with each model's `rag/graphs/<model>*.json`, vector
+index and metadata, the adapters, the case templates (including the `<model>_template*` files inside
+`use_cases/TEMPLATE/`) and the model-specific skills. A project gets its own models' knowledge and
+none of another's; `--init` refuses without it.
+
+**`--calibration yes|no` is required too**, and it decides the three root documents (A8): A2MC's own
+with the project's banner on top when calibration is one part of the project, the project's own
+hand-written documents when it is not. The skill subset is **derived** from each skill's `modes.scope` by
 `tools/skill_models.py`, never from a hand-list, and the derivation **fails loudly** rather than
 shipping an unfiltered set, because "every model's skills went to a project that asked for one"
 looks exactly like success in the output.
@@ -275,8 +294,8 @@ looks exactly like success in the output.
 
 | | |
 |---|---|
-| root `CLAUDE.md`, `README.md`, **`AGENTS.md`** | the project's own. `AGENTS.md` is on no include list: A2MC's opens by calling itself a calibration framework, true there and false here. Listing it has the copy overwrite the project's — measured. |
-| the destination's `.claude/settings.json` | carrying the project's hook registrations, **before** the framework's file could land and win |
+| root `CLAUDE.md`, `README.md`, **`AGENTS.md`** | every project gets them. With `--calibration yes`, A2MC's own with the banner placeholder above the marker; with `no`, the project's own placeholder. None is on the include list, so the plain copy loop never overwrites the project's part. |
+| the destination's `.claude/settings.json` | the project's hook registrations; after the copy the framework's are **merged** in (`scripts/_wrap_merge_settings.py`, A2's rule), and again on every `--refresh` |
 | `<ProjectName>/SEPARATION_MANIFEST.yaml` | **derived** from the include list actually used, never hand-written, so it cannot freeze while its source moves (A13) |
 | `.a2mc-downstream` | so the framework's own checkers read this tree as a filtered copy (A14) |
 
@@ -328,7 +347,7 @@ What lands, and what you must now do to it:
 | `RESEARCH_PLAN.md` | four empty prompts | **fill it in first.** A board built before the plan holds tasks nobody can justify |
 | `PROJECT_STATE.json` | schema + one task ("fill in the plan") | add the project's real tasks, people and key facts |
 | `<Project>/CLAUDE.md` | the session contract | add what an agent must know here that is not generic |
-| root `README.md`, `CLAUDE.md`, `AGENTS.md` | placeholders | **Step 5b** — they are the repository's face and nothing can detect that they are still generic |
+| root `README.md`, `CLAUDE.md`, `AGENTS.md` | `--calibration yes`: a banner placeholder above A2MC's own document; `no`: the project's own placeholder | **Step 5b** — they are the repository's face and nothing can detect that they are still generic |
 | `TODO.md` | generated from the board | **never hand-edit**; regenerate with the project's own `todo.py` |
 | `scripts/` | `state.py` `todo.py` `check_log.py` `check_setup.py` | extend, do not rewrite — the pre-commit hook calls them by name |
 | `logs/README.md` | the log contract | adjust the header fields if the project needs more |
@@ -341,9 +360,9 @@ with no conflict to prevent, which is how a scaffold stops being used.
 
 ## Step 5b — write the three ROOT documents, from the plan  **[G4]**
 
-**Do this after the research-goal conversation and after `RESEARCH_PLAN.md` is filled — not at Step 2.** A8 classifies `README.md`, `CLAUDE.md` and `AGENTS.md` as the project's own and they are created by `--init`, but what `--init` can write is a placeholder: at that point the project has not been described to you. These three are a **distillation of the plan**, and written before it they are invention.
+**Do this after the research-goal conversation and after `RESEARCH_PLAN.md` is filled — not at Step 2.** A8 classifies `README.md`, `CLAUDE.md` and `AGENTS.md` as the project's own and they are created by `--init`, but what `--init` can write is a placeholder: at that point the project has not been described to you. These three are a **distillation of the plan**, and written before it they are invention. **With `--calibration yes`, write only ABOVE the marker line**: below it is A2MC's own document, replaced on every refresh. With `no`, write the whole document.
 
-**Nothing detects that they are still generic.** They parse, their links resolve, every checker passes, and `--refresh` never touches them. So the placeholder survives to the first real session and routes a reader by a description of the scaffold instead of the project. Measured on a project built to exercise this script: all three shipped untouched at 629, 922 and 422 bytes, against a real project's 66 KB, 22 KB and 4.4 KB. Nothing in the assembly complained, because there was nothing to complain with.
+**Nothing detects that they are still generic.** They parse, their links resolve, every checker passes, and `--refresh` never touches the project's part of them. So the placeholder survives to the first real session and routes a reader by a description of the scaffold instead of the project. Measured on a project built to exercise this script: all three shipped untouched at 629, 922 and 422 bytes, against a real project's 66 KB, 22 KB and 4.4 KB. Nothing in the assembly complained, because there was nothing to complain with.
 
 | file | who reads it, and how they arrive | what it must carry once it is the project's |
 |---|---|---|
@@ -460,7 +479,7 @@ Run M1 through M12 **in order**, all before anything irreversible. Then, and onl
 
 **When calibration IS a step,** `use_cases/` participates but **the project folder never holds a case**. Cases are authored **upstream** with `onboard-case` so they get the model's template and the two gates, then **handed over**: dropped from the leg's INCLUDE, added to `DESTINATION_OWNED`, and removed from the framework branch only after every tracked file is verified present in the destination. The handover works precisely **because** removing a path from INCLUDE does not retract the copy already delivered — the forward-only property that is a hazard everywhere else is the mechanism here. The board gains a `cases` collection that **points** at each case by path and round rather than copying its state.
 
-**When there is no calibration, nothing about the skeleton changes.** `use_cases/` simply does not appear in the manifest, `SHIPPABLE_CASES` stays empty (both legs' policy anyway) so the allowlist guard hard-aborts on any case path rather than silently no-opping, and the calibration halves of the framework are subtracted at G4 rather than shipped and ignored.
+**When there is no calibration, nothing about the skeleton changes.** The root documents are the project's own, hand-written (`--calibration no`, A8), `use_cases/` simply does not appear in the manifest, `SHIPPABLE_CASES` stays empty (both legs' policy anyway) so the allowlist guard hard-aborts on any case path rather than silently no-opping, and the calibration halves of the framework are subtracted at G4 rather than shipped and ignored.
 
 **Rewrite the boundary rule against whatever the other half actually is.** The calibrating form is *if a calibration round's comparability or reproducibility depends on the record, it belongs to the case under `../use_cases/<Model>_<Case>/`; everything else belongs here.* For a project whose other half is a model checkout and its source overrides, the unit is that project's own reproducibility unit — a simulation's configuration, a figure's data, a dataset's citation. **Q: name that unit before writing the sentence.** Then put the sentence **verbatim in README, CLAUDE.md and ONBOARDING**, follow it with **at least six worked example rows** because the rule is easier to state than to apply, and mandate the one-line-pointer convention for work that genuinely spans both — *a pointer is cheap; a duplicated record drifts*.
 
@@ -481,6 +500,8 @@ Add the project's own negatives beside them — no data in a text folder, no per
 
 ## Footguns
 
+- **A `--dest` inside another repository turns `--init` into a commit INTO that repository.** It now refuses; do not work round the refusal.
+- **A deleted marker line in a calibrating project's root document** leaves the refresh unable to tell the banner from the reference. It refuses rather than duplicating the reference; put the marker back under the banner by hand.
 - **A placeholder root document passes every check there is.** `README.md`, `CLAUDE.md` and `AGENTS.md` are generated true-of-any-project and are the first thing anyone reads. No checker can tell a generic banner from a written one, `--refresh` never touches them, and their being destination-owned means nobody upstream will ever notice. Step 5b is the only thing standing between the scaffold's text and a reader.
 
 - **The guarded leg cannot create a destination and the creating leg destroys the hooks.** Bootstrap by hand (Step 2b). Seeding with the documented tool reproduces the hook-deletion failure on run one, because the public leg lists the settings file on INCLUDE and copies it.
