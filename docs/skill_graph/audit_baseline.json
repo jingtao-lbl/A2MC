@@ -4,7 +4,6 @@
     "config_graph",
     "deferred_work_queued",
     "dev_log_for_version",
-    "generate_skill_graph",
     "log_placeholders",
     "model_change_ledger",
     "phase_script_docs",

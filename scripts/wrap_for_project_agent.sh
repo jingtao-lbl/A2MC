@@ -107,9 +107,13 @@ WHY
 UNIVERSAL=(
     "tools/" "scripts/" "tests/" "templates/" "phases/" "reasoning/" "orchestrator.py"
     ".claude/hooks/" ".claude/skills/" ".githooks/" "a2mc_config.sh" "a2mc_noncime_config.sh"
-    "docs/a2mc_reference/" "docs/tutorial/" "memory/__init__.py" "memory/manager.py" "memory/store.py"
+    "docs/a2mc_reference/" "docs/tutorial/" "docs/skill_graph/" "memory/__init__.py" "memory/manager.py" "memory/store.py"
     "plot/" "pytest.ini" "requirements.txt" "LICENSE" "VERSION" "use_cases/README.md" "use_cases/TEMPLATE/"
 )
+# docs/skill_graph/ carries the generators' INPUTS (curated YAML, templates) as well as their pages, so
+# the chained hook's graph checks have something to compare. The copied pages describe the RELEASE's
+# skills; after the model subset drops some, the agent regenerates them in the project repo
+# (create-project-agent skill), which is why this script copies and does not regenerate.
 # AGENTS.md is NOT here, deliberately: it is DESTINATION-OWNED. A2MC's own opens by calling itself
 # a calibration framework and routes every session to its router, which is true there and false in a
 # project repo. The scaffold writes the project's before any framework path lands; listing it here

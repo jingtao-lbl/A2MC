@@ -320,6 +320,24 @@ If a model you did not ask for is present, or one you did is missing, stop and f
 rather than editing the destination: a later `--refresh` recomputes the subset from the manifest,
 so a hand correction is undone on the next run.
 
+## Step 3b — regenerate the graphs IN the project repo, after `--init` and after every `--refresh`
+
+`docs/skill_graph/` arrives with the framework half: the generators' inputs (the curated YAML and the HTML templates) and the release's pages. Those pages describe the RELEASE's skills and hooks, and the model subset has just dropped some, so the chained hook reports all three graphs out of date on every framework commit until they are rebuilt here. The script copies and does not regenerate; this step is the agent's, run from the project repo's root:
+
+```bash
+cd ~/A2MC-<Name>
+python3 tools/generate_skill_graph.py
+python3 tools/generate_harness_graph.py
+python3 tools/generate_harness_graph.py --overview
+python3 tools/harness_query.py --audit --baseline update
+for c in generate_skill_graph.py generate_harness_graph.py "generate_harness_graph.py --overview"; do
+    python3 tools/$c --check || echo "STILL OUT OF DATE: $c"
+done
+git add docs/skill_graph/ && git commit -m "Regenerate the skill and harness graphs for this project"
+```
+
+**Expected warnings, not failures:** an edge dropped because a skill is "not on the graph" names a skill this project does not carry, such as a `visibility: private` framework skill that never ships. The audit baseline is rewritten for the same reason: the release's baseline lists skills that describe checks, and some of those skills are not here. Repeat this step after every `--refresh`, since the refresh copies the release's pages over the project's again.
+
 ## Step 4 — the project's own setup check decides  **[M5]**
 
 ```bash
