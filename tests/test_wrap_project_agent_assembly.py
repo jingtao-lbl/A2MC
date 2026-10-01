@@ -271,6 +271,44 @@ def test_a_project_made_before_the_flag_gets_the_reference_appended_once(tmp_pat
     assert {d: (dest / d).read_text() for d in ROOT_DOCS} == once, "a second refresh changed the documents"
 
 
+def test_a_project_that_adds_calibration_later_is_upgraded(tmp_path):
+    """--calibration no at --init, yes at a later --refresh: the hand-written documents become the
+    banner word for word, A2MC's own land below one marker, the manifest records the change, and
+    the next refresh needs no flag and changes nothing."""
+    src = _fake_release(tmp_path)
+    dest = _work(tmp_path) / "A2MC-Later"
+    r = _wrap(src, tmp_path, "--init", "--project", "Demo", "--dest", str(dest), "--models", "ecosim",
+              "--calibration", "no")
+    assert r.returncode == 0, r.stderr
+    for d in ROOT_DOCS:                                  # the project writes its own, as Step 5b says
+        (dest / d).write_text("# Demo %s\n\nThe project's own words about %s.\n" % (d, d))
+    _commit(dest, tmp_path, "Hand-written root documents")
+    before = {d: (dest / d).read_text() for d in ROOT_DOCS}
+    r = _wrap(src, tmp_path, "--refresh", "--dest", str(dest), "--calibration", "yes")
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    assert "calibration: no -> yes" in r.stdout, r.stdout[-2000:]
+    once = {d: (dest / d).read_text() for d in ROOT_DOCS}
+    for d in ROOT_DOCS:
+        assert once[d].startswith(before[d].rstrip()), "%s: the hand-written text was not kept" % d
+        assert once[d].count(MARKER) == 1 and "version one" in once[d], d
+    man = (dest / "Demo" / "SEPARATION_MANIFEST.yaml").read_text()
+    assert "calibration: yes" in man and "calibration: no" not in man, man
+    assert man.count("composed:") == 1 and man.index("composed:") < man.index("framework_paths:"), man
+    _commit(dest, tmp_path, "Upgrade")
+    r = _wrap(src, tmp_path, "--refresh", "--dest", str(dest))
+    assert r.returncode == 0, r.stderr
+    assert {d: (dest / d).read_text() for d in ROOT_DOCS} == once, "a second refresh changed the documents"
+
+
+def test_turning_calibration_off_is_refused_and_writes_nothing(built):
+    src, dest, ceiling = built
+    man = dest / "Demo" / "SEPARATION_MANIFEST.yaml"
+    before = {p: p.read_text() for p in [man] + [dest / d for d in ROOT_DOCS]}
+    r = _wrap(src, ceiling, "--refresh", "--dest", str(dest), "--calibration", "no")
+    assert r.returncode != 0 and "would turn it off" in r.stderr, r.stderr
+    assert {p: p.read_text() for p in before} == before, "a refused refresh wrote something"
+
+
 def test_framework_text_without_a_marker_is_refused_not_duplicated(built):
     src, dest, ceiling = built
     f = dest / "README.md"

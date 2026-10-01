@@ -424,3 +424,81 @@ def test_L7_respects_the_z_overflow_when_suggesting_a_letter(tmp_path):
     dup = _write(tmp_path, "20260801z_Another.md", GOOD)
     msg = [f.msg for f in clc.check_file(dup) if f.code == "L7"][0]
     assert "20260801za" in msg, msg
+
+
+# L7 — a memory written by MORE THAN ONE log (2026-10-01)
+# --------------------------------------------------------------------------
+# A memory legitimately carries several `**Source:**` lines: `manage-auto-memory` §1 says
+# "the log(s)", and one memory can be created by one log and extended by another. L7 tested
+# `cited_paths[0]` — only the FIRST — so at most one of those logs could ever satisfy it, and
+# which one depended on the order the lines happened to be in. Measured on the live pair:
+# with `20260929c` first it passed and `20260930k` warned; reordering flipped which.
+
+def _synthetic_bucket(tmp_path, monkeypatch, source_lines):
+    """A self-contained .claude_memory/ so the test cannot drift with the live bucket."""
+    bucket = tmp_path / "repo" / ".claude_memory"
+    bucket.mkdir(parents=True)
+    (bucket / "reference_two_sources.md").write_text(
+        "---\nname: reference_two_sources\n---\n\nA fact.\n\n" + "\n".join(source_lines) + "\n")
+    monkeypatch.setattr(clc, "REPO", tmp_path / "repo")
+    return bucket
+
+
+def _run(tmp_path, monkeypatch, capsys, written="`reference_two_sources`"):
+    log = _log_with_written(tmp_path, written)
+    monkeypatch.setattr(sys, "argv", ["check_log_conformance.py", "--dir", str(log.parent)])
+    rc = clc.main()
+    return rc, capsys.readouterr().out
+
+
+def test_L7_accepts_a_back_link_on_a_LATER_source_line(tmp_path, monkeypatch, capsys):
+    """The bug: only the first `**Source:**` was consulted, so a memory extended by a second
+    log reported that log as half-connected however correctly it was cited."""
+    _synthetic_bucket(tmp_path, monkeypatch, [
+        "**Source:** `memory/dev_logs_adapterkitpflotran/20260715z_Some_Other_Log.md` — created it.",
+        "**Source:** `memory/dev_logs_adapterkitpflotran/20260801a_Real.md` — extended it.",
+    ])
+    rc, out = _run(tmp_path, monkeypatch, capsys)
+    assert rc == 0, f"a correctly cited LATER Source must satisfy L7: {out}"
+    assert "[L7]" not in out, out
+
+
+def test_L7_accepts_a_back_link_on_the_FIRST_source_line(tmp_path, monkeypatch, capsys):
+    """The behaviour that already worked must keep working — the fix widens the test, it
+    does not move it."""
+    _synthetic_bucket(tmp_path, monkeypatch, [
+        "**Source:** `memory/dev_logs_adapterkitpflotran/20260801a_Real.md` — created it.",
+        "**Source:** `memory/dev_logs_adapterkitpflotran/20260715z_Some_Other_Log.md` — extended it.",
+    ])
+    rc, out = _run(tmp_path, monkeypatch, capsys)
+    assert rc == 0 and "[L7]" not in out, out
+
+
+def test_CONTROL_L7_still_warns_when_NO_source_line_names_the_log(tmp_path, monkeypatch, capsys):
+    """Widening to 'any Source line' must not make the check unfalsifiable: a memory citing
+    two OTHER logs is still a half-connected pair."""
+    _synthetic_bucket(tmp_path, monkeypatch, [
+        "**Source:** `memory/dev_logs_adapterkitpflotran/20260715z_Some_Other_Log.md` — created it.",
+        "**Source:** `memory/dev_logs_adapterkitpflotran/20260716y_Another_Log.md` — extended it.",
+    ])
+    rc, out = _run(tmp_path, monkeypatch, capsys)
+    assert rc == 1, f"must still WARN: {out}"
+    assert "[L7]" in out and "back-link is missing" in out, out
+
+
+def test_CONTROL_L7_rejects_a_SAME_STEM_log_with_a_DIFFERENT_title(tmp_path, monkeypatch, capsys):
+    """The protection the original comment exists for: a same-STEM log is not the same log.
+    The test is on the filename, so `20260801a_Real.md` and `20260801a_Other.md` are distinct
+    even though both are stem `20260801a`.
+
+    NOTE the limit this does NOT cover, found while writing it: the test matches the BASENAME,
+    so a log with an IDENTICAL filename in a different stream directory does satisfy the
+    back-link. That is reachable — the `log` skill tells you to COPY a reflection log between
+    streams rather than move it — but tightening it to the full path is a behaviour change
+    beyond the first-Source bug this commit fixes, so it is reported rather than changed."""
+    _synthetic_bucket(tmp_path, monkeypatch, [
+        "**Source:** `memory/dev_logs_adapterkitpflotran/20260801a_Other.md` — same stem, other log.",
+    ])
+    rc, out = _run(tmp_path, monkeypatch, capsys)
+    assert rc == 1, f"a same-stem but different log must not count: {out}"
+    assert "[L7]" in out, out

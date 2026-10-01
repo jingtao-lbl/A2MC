@@ -429,9 +429,15 @@ def _check_memory_written(path: Path, text: str) -> list:
         # branch dir (`20260806a` names one log in dev_logs_adapterkit and another in
         # dev_logs_adapterkitpflotran), which is the mirror of the defect fixed in
         # check_memory_bucket on 2026-08-19. Bare-stem citations keep the legacy test.
+        #
+        # EVERY path-qualified Source line counts, not just the first. A memory legitimately
+        # carries several -- `manage-auto-memory` §1 says "the log(s)" -- because one log can
+        # create it and another extend it. Testing `cited_paths[0]` meant at most ONE of those
+        # logs could satisfy the check, and which one depended on line order.
         cited_paths = [ln for ln in mem_text.splitlines() if ln.startswith("**Source:**")
                        and "/" in ln]
-        matched = (path.name in cited_paths[0] if cited_paths else stem in mem_text)
+        matched = (any(path.name in ln for ln in cited_paths) if cited_paths
+                   else stem in mem_text)
         if not matched:
             out.append(Finding(path, "L7", "warn",
                                f"names `{tok}` under 'Memory written' but that memory's "

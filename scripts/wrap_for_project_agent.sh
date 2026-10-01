@@ -50,8 +50,9 @@ Usage:
                  yes -> root CLAUDE.md, README.md and AGENTS.md are A2MC's own, COPIED, with the
                         project's banner above a marker line; --refresh updates what is below it.
                  no  -> the project hand-writes its own three; nothing of A2MC's is copied into them.
-                 Recorded in the manifest. --refresh takes it only to fill a manifest made before
-                 the flag existed.
+                 Recorded in the manifest. --refresh takes it to fill a manifest made before the
+                 flag existed, or to turn calibration ON for a project that adds it later (no ->
+                 yes: the hand-written documents become the banner). Turning it OFF is refused.
 USAGE
 }
 
@@ -482,9 +483,21 @@ do_refresh() {
     [[ "$man_models" == "none" ]] && man_models=""
     local man_cal; man_cal="$(awk '/^calibration:/{print $2}' "$man")"
     if [[ -n "$man_cal" ]]; then
-        [[ -z "$CALIBRATION" || "$CALIBRATION" == "$man_cal" ]] \
-            || die "the manifest records calibration: $man_cal; --calibration $CALIBRATION contradicts it"
-        CALIBRATION="$man_cal"
+        if [[ -n "$CALIBRATION" && "$CALIBRATION" != "$man_cal" ]]; then
+            # A project that adds calibration later is UPGRADED: its hand-written root documents
+            # become the banner and A2MC's own are appended below a marker (_wrap_root_docs.py, the
+            # marker-absent case). The reverse is refused: the reference below each marker would
+            # stay in the file and never be refreshed again, a frozen copy that reads as current.
+            [[ "$man_cal" == no && "$CALIBRATION" == yes ]] \
+                || die "the manifest records calibration: $man_cal; --calibration $CALIBRATION would turn it off, which is refused (the A2MC reference below each root document's marker would stay and go stale). Remove everything from the marker down in CLAUDE.md, README.md and AGENTS.md by hand, then set calibration: no in $man."
+            note "calibration: no -> yes. The root documents keep every word as the banner; A2MC's own are appended below a marker. Update the banners afterwards (create-project-agent Step 5b): they were written for a project without calibration."
+            if [[ "$DRY" == false ]]; then
+                sed -i 's/^calibration: no$/calibration: yes/' "$man"
+                grep -q '^composed:' "$man" || awk '/^framework_paths:/{print "composed:      # the project'"'"'s banner above the marker; A2MC'"'"'s own document below it"; print "  - CLAUDE.md"; print "  - README.md"; print "  - AGENTS.md"; print ""} {print}' "$man" > "$man.tmp" && mv "$man.tmp" "$man"
+            fi
+        else
+            CALIBRATION="$man_cal"
+        fi
     else
         [[ -n "$CALIBRATION" ]] || die "the manifest predates --calibration: pass --calibration yes|no once, and it is recorded"
         [[ "$DRY" == true ]] || sed -i "s/^models: .*/&\ncalibration: $CALIBRATION/" "$man"

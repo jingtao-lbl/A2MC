@@ -141,6 +141,8 @@ exit $rc
 - **Calibration is one part of the project (`yes`):** A2MC's own three documents are **copied**, and the project's banner goes **above a marker line**. Everything above the marker is the project's and is never touched; everything below it is replaced from the release on every `--refresh`, like any framework path. Skills dropped by `--models` are removed from the copied skill tables too, first cell only and below the marker only.
 - **No calibration at all (`no`):** nothing of A2MC's is copied into them; the project hand-writes its own. A2MC's versions open by calling it a calibration framework and route every session to a router with no project awareness, which is true there and false in a project that never calibrates.
 
+**The choice can be turned on later, never off.** A project that adds calibration after `--init` runs `--refresh --calibration yes` once: its hand-written documents become the banner word for word, A2MC's own are appended below a marker, and the manifest records `yes`. Then rewrite the banners (Step 5b), since they were written for a project without calibration. `--calibration no` on a `yes` project is refused: the reference below each marker would stay in the file and never be refreshed again. **So when calibration is undecided, choose `yes`** and let the banner say it has not started; that keeps A2MC's reference current for the day it does.
+
 Either way `--init` creates them at Step 2, but what it can write then is a placeholder: Step 2 runs before the research-goal conversation. **Existing is not the same as written, and conflating the two is how all three ship generic.** Step 5b writes the banner (`yes`) or the whole document (`no`) from the plan.
 
 **A9. Forward-only is a law of the assembly, stated three ways.** An exclude hides a path so `--delete` never considers it and retracts nothing; dropping an INCLUDE path retracts nothing; a merge cannot restore what a merged commit deleted, and a merge sourced from the damaged branch faithfully preserves the damage. Therefore: protection is established BEFORE the first sync; **a recovery mechanism never takes its authority from a source the damage can reach**; the project folder keeps a committed inventory (`<ProjectName>/REGISTRATIONS.md`) of everything it registers so a restore is a diff rather than git archaeology; and every repair plan distinguishes the action that **stops** the damage from the action that **undoes** it, and schedules both.
@@ -180,8 +182,8 @@ So, at seeding time: **have the leg write a marker into the destination** identi
                             CREATE ──▶ Step 1 ──▶ Step 2 ...
                             ADOPT  ──▶ Step 1 ──▶ Step 1b ──▶ Step 2 ...   (rejoins at Step 3)
 
-  Does the project calibrate?          -> --calibration yes|no: the root documents (A8), and
-                                          whether use_cases/ is on INCLUDE at all
+  Does the project calibrate?          -> --calibration yes|no: the root documents (A8), nothing
+                                          else. use_cases/ ships either way: cases are set up there
   Does the project RUN things?         -> decides the EXECUTION pack. INDEPENDENT of the above.
   Does it produce figures/manuscript?  -> decides the MANUSCRIPT pack
   Does it evolve model source?         -> decides the MODEL-EVOLUTION pack
@@ -285,7 +287,8 @@ none of another's; `--init` refuses without it.
 
 **`--calibration yes|no` is required too**, and it decides the three root documents (A8): A2MC's own
 with the project's banner on top when calibration is one part of the project, the project's own
-hand-written documents when it is not. The skill subset is **derived** from each skill's `modes.scope` by
+hand-written documents when it is not. It can be turned on later with `--refresh --calibration yes`, never off, so
+an undecided project chooses `yes`. The skill subset is **derived** from each skill's `modes.scope` by
 `tools/skill_models.py`, never from a hand-list, and the derivation **fails loudly** rather than
 shipping an unfiltered set, because "every model's skills went to a project that asked for one"
 looks exactly like success in the output.
@@ -336,7 +339,7 @@ done
 git add docs/skill_graph/ && git commit -m "Regenerate the skill and harness graphs for this project"
 ```
 
-**Expected warnings, not failures:** an edge dropped because a skill is "not on the graph" names a skill this project does not carry, such as a `visibility: private` framework skill that never ships. The audit baseline is rewritten for the same reason: the release's baseline lists skills that describe checks, and some of those skills are not here. Repeat this step after every `--refresh`, since the refresh copies the release's pages over the project's again.
+**Expected warnings, not failures:** an edge dropped because a skill is "not on the graph", and a gloss or exclusion that "names no skill on disk; remove it", each name a skill this project does not carry: one dropped by `--models`, or a `visibility: private` framework skill that never ships. Measured on an EcoSIM-only project: 11 glosses, 1 exclusion and 20 dropped edges. **Do not act on "remove it"**: `docs/skill_graph/graph_data.yaml` is framework half, so an edit there is overwritten by the next `--refresh`, and the release needs those entries for the skills it does carry. The audit baseline is rewritten for the same reason: the release's baseline lists skills that describe checks, and some of those skills are not here. Repeat this step after every `--refresh`, since the refresh copies the release's pages over the project's again.
 
 ## Step 4 — the project's own setup check decides  **[M5]**
 
@@ -390,7 +393,7 @@ with no conflict to prevent, which is how a scaffold stops being used.
 
 **Write the banner against the wrong turn you can actually name.** A project whose calibration is a later phase will otherwise have agents arrive and try to run a round, so the phase table exists to make arriving at the wrong phase obvious. Say plainly what has **not** started, and why the order is what it is — an ordering nobody can justify gets re-litigated every session.
 
-**Say in all three that they are the project's own**, because `--refresh` replaces the framework half around them and never these: what they claim is kept current by this project's own housekeeping or not at all.
+**Say in all three which part is the project's own.** `--refresh` never touches the project's part, so what it claims is kept current by this project's own housekeeping or not at all. With `--calibration yes`, that part is the banner; the reference below the marker is A2MC's, and every refresh replaces it.
 
 ```bash
 # 1. the scaffold's own sentences must be GONE from all three
@@ -493,11 +496,11 @@ Run M1 through M12 **in order**, all before anything irreversible. Then, and onl
 
 ## When the project has NO calibration — a first-class case, not a footnote
 
-**Calibration is one INCLUDE decision plus one board collection, never a structural assumption.** The CORE twelve contain no calibration concept at all, and the four framework failures this skill prevents are properties of the repo topology, not of the 7-phase loop.
+**Calibration is one root-documents decision plus one board collection, never a structural assumption.** The CORE twelve contain no calibration concept at all, and the four framework failures this skill prevents are properties of the repo topology, not of the 7-phase loop.
 
-**When calibration IS a step,** `use_cases/` participates but **the project folder never holds a case**. Cases are authored **upstream** with `onboard-case` so they get the model's template and the two gates, then **handed over**: dropped from the leg's INCLUDE, added to `DESTINATION_OWNED`, and removed from the framework branch only after every tracked file is verified present in the destination. The handover works precisely **because** removing a path from INCLUDE does not retract the copy already delivered — the forward-only property that is a hazard everywhere else is the mechanism here. The board gains a `cases` collection that **points** at each case by path and round rather than copying its state.
+**When calibration IS a step,** **the project folder still never holds a case**. Cases are authored **upstream** with `onboard-case` so they get the model's template and the two gates, then **handed over**: dropped from the leg's INCLUDE, added to `DESTINATION_OWNED`, and removed from the framework branch only after every tracked file is verified present in the destination. The handover works precisely **because** removing a path from INCLUDE does not retract the copy already delivered — the forward-only property that is a hazard everywhere else is the mechanism here. The board gains a `cases` collection that **points** at each case by path and round rather than copying its state.
 
-**When there is no calibration, nothing about the skeleton changes.** The root documents are the project's own, hand-written (`--calibration no`, A8), `use_cases/` simply does not appear in the manifest, `SHIPPABLE_CASES` stays empty (both legs' policy anyway) so the allowlist guard hard-aborts on any case path rather than silently no-opping, and the calibration halves of the framework are subtracted at G4 rather than shipped and ignored.
+**When there is no calibration, nothing about the skeleton changes.** The root documents are the project's own, hand-written (`--calibration no`, A8), `SHIPPABLE_CASES` stays empty (both legs' policy anyway) so the allowlist guard hard-aborts on any case path rather than silently no-opping, and **nothing of the framework is subtracted**. `use_cases/` (its `README.md`, `TEMPLATE/` and the chosen models' `*_template` folders) and `phases/` ship exactly as in a calibrating project, because setting up and running a case, such as a baseline or a sensitivity run, is not calibration, and that is where the case setup and the working machinery live.
 
 **Rewrite the boundary rule against whatever the other half actually is.** The calibrating form is *if a calibration round's comparability or reproducibility depends on the record, it belongs to the case under `../use_cases/<Model>_<Case>/`; everything else belongs here.* For a project whose other half is a model checkout and its source overrides, the unit is that project's own reproducibility unit — a simulation's configuration, a figure's data, a dataset's citation. **Q: name that unit before writing the sentence.** Then put the sentence **verbatim in README, CLAUDE.md and ONBOARDING**, follow it with **at least six worked example rows** because the rule is easier to state than to apply, and mandate the one-line-pointer convention for work that genuinely spans both — *a pointer is cheap; a duplicated record drifts*.
 
@@ -520,7 +523,7 @@ Add the project's own negatives beside them — no data in a text folder, no per
 
 - **A `--dest` inside another repository turns `--init` into a commit INTO that repository.** It now refuses; do not work round the refusal.
 - **A deleted marker line in a calibrating project's root document** leaves the refresh unable to tell the banner from the reference. It refuses rather than duplicating the reference; put the marker back under the banner by hand.
-- **A placeholder root document passes every check there is.** `README.md`, `CLAUDE.md` and `AGENTS.md` are generated true-of-any-project and are the first thing anyone reads. No checker can tell a generic banner from a written one, `--refresh` never touches them, and their being destination-owned means nobody upstream will ever notice. Step 5b is the only thing standing between the scaffold's text and a reader.
+- **A placeholder root document passes every check there is.** `README.md`, `CLAUDE.md` and `AGENTS.md` are generated true-of-any-project and are the first thing anyone reads. No checker can tell a generic banner from a written one. `--refresh` never touches the project's part of them: the banner above the marker with `--calibration yes`, the whole file with `no`. And because that part is destination-owned, nobody upstream will ever notice. Step 5b is the only thing standing between the scaffold's text and a reader.
 
 - **The guarded leg cannot create a destination and the creating leg destroys the hooks.** Bootstrap by hand (Step 2b). Seeding with the documented tool reproduces the hook-deletion failure on run one, because the public leg lists the settings file on INCLUDE and copies it.
 - **"Nothing of theirs to keep" is a FAILURE at the creation gate.** So is "their main registers only framework hooks". Both are the eight-day outage rendered as a reassuring sentence.
