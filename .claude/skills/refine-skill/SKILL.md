@@ -57,8 +57,9 @@ rewrites a skill on its own.**
    static). If the edit changed a **backing command** the skill documents, also run the **Tier-2 runtime**
    check `python3 tools/smoke_test_skills.py` — it actually executes the read-only backing commands and
    asserts exit 0, catching a broken/renamed command a static path-check can't. Then verify the branch
-   (Rule #11); commit with a plain no-attribution message; write a dev_log if substantive. Do not
-   public-sync (separate explicit action).
+   (Rule #11); commit with a plain no-attribution message; **write a dev log, always, and stage it in
+   the same commit**: pre-commit check (28) refuses a skill change without one (a reflow that only
+   moves line breaks is exempt). Do not public-sync (separate explicit action).
 
    > **Why (2026-07-09):** rapid `offline-testing-workflow` edits (per-phase builds, a debug-only
    > literal template, a new anti-pattern) left **anti-pattern #6 contradicting the revised Step 5**,

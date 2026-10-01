@@ -894,6 +894,24 @@ if git diff --cached --name-only --diff-filter=ACM | grep -qE '^(tools|tests)/.*
     fi
 fi
 
+# (28) tools/check_skill_change_logged.py -- a changed SKILL.md carries a dev log in the same commit.
+#
+# WHY. A skill is the agent's contract, so changing one changes behaviour, and the reason must be
+# findable. The capability check (5c) never looked under .claude/skills/ and is advisory by design,
+# so a skill change with no log passed silently -- twice on 2026-09-30. BLOCKING, per the PI. A change
+# that only moves line breaks (a reflow) is exempt; a tree with no dev-log stream is not applicable.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude/skills/[^/]+/SKILL\.md$'; then
+    PY="$(pick_py)"
+    if [[ -z "$PY" ]]; then
+        echo "pre-commit: python3 not found; skipping the skill-change-logged check ONLY" >&2
+    fi
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_skill_change_logged.py" --staged; then
+        echo "" >&2
+        echo "pre-commit: a skill changed with no dev log in the same commit -- see above." >&2
+        exit 1
+    fi
+fi
+
 # (27) tools/generate_skill_graph.py --check -- the skill graph tracks the catalogue.
 # ADVISORY, and gated on a skill actually changing. The graph is a generated view of
 # .claude/skills/; it went eight skills stale as a hand-built snapshot because nothing compared it

@@ -200,7 +200,7 @@ So, at seeding time: **have the leg write a marker into the destination** identi
 | **G5** | HUMAN | The first real sync. Every M below runs first. |
 | **M1** | `--dry-run` read for BOTH the transfer list and the deletion report; `<ProjectName>/` appears in neither. |
 | **M2** | Staged rehearsal into a throwaway destination that has an `origin` and the expected branch — a dry run cannot show the post-pass (private-block filter, changelog strip, path genericization, case-row pruning), and every filter defect this repo has found was found by staging. |
-| **M3** | The subset is verified in BOTH directions: the models you asked for are present, the ones you did not are absent, and `grep -rl 'visibility: private' <dest>/.claude/skills/` returns nothing. |
+| **M3** | The subset is verified in BOTH directions: the models you asked for are present, the ones you did not are absent, and no skill's FRONTMATTER says `visibility: private`: `for f in <dest>/.claude/skills/*/SKILL.md; do awk 'NR==1 && /^---$/ {fm=1; next} fm && /^---$/ {exit} fm' "$f" \| grep -q '^visibility:[[:space:]]*private' && echo "$f"; done` prints nothing. Read the frontmatter only: a plain `grep -rl` also matches the phrase in a skill's prose, this one's included. |
 | **M4** | `grep -rin '<donor-project-name>' <ProjectName>/scripts/ <ProjectName>/.claude/hooks/` returns nothing. |
 | **M5** | The new leg appears in all five enumerating test files and `~/a2mc_env/bin/python -m pytest tests/ -k sync` reports a **nonzero ran-count** — "no tests ran" is not a pass. |
 | **M6** | `git check-ignore -v` on every tracked binary in the project folder proves it is NOT ignored; and a second pass proves the must-ignore direction still holds for a generated artifact inside the folder. |

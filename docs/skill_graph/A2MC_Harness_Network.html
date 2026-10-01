@@ -1373,7 +1373,7 @@ html&gt;body{padding:0}&lt;/style&gt;
   &lt;div class=&quot;network-stage&quot;&gt;
     &lt;svg id=&quot;skill-network-svg&quot; role=&quot;img&quot; aria-labelledby=&quot;skill-network-title skill-network-desc&quot;&gt;
       &lt;title id=&quot;skill-network-title&quot;&gt;A2MC skill network&lt;/title&gt;
-      &lt;desc id=&quot;skill-network-desc&quot;&gt;A directed network of 79 nodes: what the A2MC agent writes, the checkers that assert it, and the hooks that refuse a commit. Solid arrows show enforcement routing. Dashed arrows show what a checker governs.&lt;/desc&gt;
+      &lt;desc id=&quot;skill-network-desc&quot;&gt;A directed network of 80 nodes: what the A2MC agent writes, the checkers that assert it, and the hooks that refuse a commit. Solid arrows show enforcement routing. Dashed arrows show what a checker governs.&lt;/desc&gt;
     &lt;/svg&gt;
   &lt;/div&gt;
   &lt;div id=&quot;skill-network-detail&quot; class=&quot;network-detail text-small&quot; aria-live=&quot;polite&quot;&gt;Select a node to see its purpose and direct connections. Select the background to reset.&lt;/div&gt;
@@ -1465,6 +1465,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         {id:&#x27;script_visibility&#x27;,g:&#x27;phase&#x27;,s:&#x27;Check (26): check_script_visibility&#x27;},
         {id:&#x27;session-start&#x27;,g:&#x27;modeldev&#x27;,s:&#x27;Prints the board, the state and what is not wired.&#x27;},
         {id:&#x27;skill&#x27;,g:&#x27;meta&#x27;,s:&#x27;A skill: the procedure for one kind of work.&#x27;},
+        {id:&#x27;skill_change_logged&#x27;,g:&#x27;phase&#x27;,s:&#x27;Check (28): check_skill_change_logged&#x27;},
         {id:&#x27;skill_claims&#x27;,g:&#x27;authoring&#x27;,s:&#x27;Check (12): check_skill_claims Verifies the link from both ends.&#x27;},
         {id:&#x27;skill_registry&#x27;,g:&#x27;phase&#x27;,s:&#x27;Check (2): check_skill_registry&#x27;},
         {id:&#x27;source-note&#x27;,g:&#x27;meta&#x27;,s:&#x27;What a script&#8217;s own comments may say, and what belongs in a log instead.&#x27;},
@@ -1533,6 +1534,8 @@ html&gt;body{padding:0}&lt;/style&gt;
         {source:&#x27;model_change_ledger&#x27;,target:&#x27;model-evolution&#x27;,t:&#x27;support&#x27;,l:&#x27;governs&#x27;},
         {source:&#x27;pre-commit&#x27;,target:&#x27;script_visibility&#x27;,t:&#x27;route&#x27;,l:&#x27;check 26&#x27;},
         {source:&#x27;script_visibility&#x27;,target:&#x27;tool-source&#x27;,t:&#x27;support&#x27;,l:&#x27;governs&#x27;},
+        {source:&#x27;pre-commit&#x27;,target:&#x27;skill_change_logged&#x27;,t:&#x27;route&#x27;,l:&#x27;check 28&#x27;},
+        {source:&#x27;skill_change_logged&#x27;,target:&#x27;skill&#x27;,t:&#x27;support&#x27;,l:&#x27;governs&#x27;},
         {source:&#x27;pre-commit&#x27;,target:&#x27;generate_skill_graph&#x27;,t:&#x27;route&#x27;,l:&#x27;check 27&#x27;},
         {source:&#x27;generate_skill_graph&#x27;,target:&#x27;harness-graph&#x27;,t:&#x27;support&#x27;,l:&#x27;governs&#x27;},
         {source:&#x27;pre-commit&#x27;,target:&#x27;harness_query&#x27;,t:&#x27;route&#x27;,l:&#x27;check 27&#x27;},
@@ -1588,6 +1591,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         {source:&#x27;phase6-refinement&#x27;,target:&#x27;workflow_state_offline&#x27;,t:&#x27;route&#x27;,l:&#x27;enforced by&#x27;},
         {source:&#x27;phase6-refinement&#x27;,target:&#x27;workflow_state_offline&#x27;,t:&#x27;route&#x27;,l:&#x27;enforced by&#x27;},
         {source:&#x27;plotting&#x27;,target:&#x27;skill_registry&#x27;,t:&#x27;route&#x27;,l:&#x27;enforced by&#x27;},
+        {source:&#x27;refine-skill&#x27;,target:&#x27;skill_change_logged&#x27;,t:&#x27;route&#x27;,l:&#x27;enforced by&#x27;},
         {source:&#x27;refine-skill&#x27;,target:&#x27;skill_registry&#x27;,t:&#x27;route&#x27;,l:&#x27;enforced by&#x27;},
         {source:&#x27;round-housekeeping&#x27;,target:&#x27;bound_source&#x27;,t:&#x27;route&#x27;,l:&#x27;enforced by&#x27;},
         {source:&#x27;round-housekeeping&#x27;,target:&#x27;workflow_state_offline&#x27;,t:&#x27;route&#x27;,l:&#x27;enforced by&#x27;},

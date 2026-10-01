@@ -12,21 +12,15 @@ modes:
 
 # Rebuild the RAG/GraphRAG Index
 
-The full reconstruction guide is **`docs/a2mc_reference/rag_build_roadmap.md`** — read it for
-the architecture, file inventory, and Recipe 1/2 detail. This skill is the operational
-runbook: pick the right rebuild mode, avoid the footguns, verify the result.
+The full reconstruction guide is **`docs/a2mc_reference/rag_build_roadmap.md`** — read it for the architecture, file inventory, and Recipe 1/2 detail. This skill is the operational runbook: pick the right rebuild mode, avoid the footguns, verify the result.
 
 > **Interpreter, by machine.** Call it `$PY` below.
-> - **Mac:** Python **3.10** from python.org —
->   `/Library/Frameworks/Python.framework/Versions/3.10/bin/python3`. Homebrew 3.12 fails on PEP-668.
-> - **Perlmutter:** `~/a2mc_env/bin/python` (3.11) — verified to import `chromadb` +
->   `sentence_transformers`. A bare system `python3` fails ([[reference_perlmutter_a2mc_env_python]]).
+> - **Mac:** Python **3.10** from python.org — `/Library/Frameworks/Python.framework/Versions/3.10/bin/python3`. Homebrew 3.12 fails on PEP-668.
+> - **Perlmutter:** `~/a2mc_env/bin/python` (3.11) — verified to import `chromadb` + `sentence_transformers`. A bare system `python3` fails ([[reference_perlmutter_a2mc_env_python]]).
 
 ## Step 0 — WHICH MODEL? There is one build script per model, and they are NOT interchangeable
 
-**Do this before Step 1.** A2MC's *workflow* is generic; anything that reads a **model's own
-artifacts** is a parallel per-model script ([[feedback_per_model_scripts_not_generic]]). Running
-FATES's builder for a PFLOTRAN profile does not fail usefully — it writes into the wrong collection.
+**Do this before Step 1.** A2MC's *workflow* is generic; anything that reads a **model's own artifacts** is a parallel per-model script ([[feedback_per_model_scripts_not_generic]]). Running FATES's builder for a PFLOTRAN profile does not fail usefully — it writes into the wrong collection.
 
 | Model | Script | Profile | Collection | Flags it accepts |
 |---|---|---|---|---|
@@ -34,32 +28,20 @@ FATES's builder for a PFLOTRAN profile does not fail usefully — it writes into
 | **EcoSIM** | `scripts/build_ecosim_rag.py` | `ecosim-2dea74d9` | `ecosim_knowledge` | `--rebuild` `--graph-only` `--no-write-counts` `--allow-shrink` |
 | **PFLOTRAN** | `scripts/build_pflotran_rag.py` | `pflotran-157a26f7` | `pflotran_knowledge` | `--rebuild` `--no-write-counts` |
 
-**The flag sets genuinely differ — do not copy a command across rows.** PFLOTRAN has **no
-`--graph-only`** and **no `--allow-shrink`**; EcoSIM has **no `--test`**; only FATES takes
-`--profile` (it is the only model with more than one).
+**The flag sets genuinely differ — do not copy a command across rows.** PFLOTRAN has **no `--graph-only`** and **no `--allow-shrink`**; EcoSIM has **no `--test`**; only FATES takes `--profile` (it is the only model with more than one).
 
 Per-model behaviour worth knowing before you run:
 
-- **PFLOTRAN refuses to write an empty graph** rather than emitting a profile that *looks* built
-  (`build_pflotran_rag.py:25-28`). It also prefers the live mass-balance tape and falls back to the
-  committed output registry `docs/pflotran-knowledge-base/pflotran_output_info_157a26f7.json`,
-  saying **NEITHER** rather than silently building with zero output nodes (`20260806b`).
-- **EcoSIM has a count-regression guard**: a >2 % drop in docs/nodes/edges vs `expected_counts` in
-  `rag/milestones.json` fails the build. Bypass only with `--allow-shrink`, deliberately.
-- **Both adapters write `expected_counts` back** into `rag/milestones.json` on success, which *arms*
-  that guard for next time — so a rebuild normally dirties `milestones.json` too. Suppress with
-  `--no-write-counts`.
+- **PFLOTRAN refuses to write an empty graph** rather than emitting a profile that *looks* built (`build_pflotran_rag.py:25-28`). It also prefers the live mass-balance tape and falls back to the committed output registry `docs/pflotran-knowledge-base/pflotran_output_info_157a26f7.json`, saying **NEITHER** rather than silently building with zero output nodes (`20260806b`). **Source a PFLOTRAN case config in the SAME command**: the builder reads the input deck from `$A2MC_PFLOTRAN_DECK` and the tape from `$A2MC_PFLOTRAN_REFERENCE_MAS`, and the milestone has no `param_file` to fall back on. Without the deck it prints `deck: (absent — parameter ADDRESSES will be omitted)` and still exits 0, with the deck addresses gone from every parameter node (27 of them, measured 2026-09-30, `20260930f`): `source use_cases/<PFLOTRAN case>/config/<case>_config.sh && $PY scripts/build_pflotran_rag.py --rebuild`. Then diff the graph against `HEAD`: same nodes, same attributes, same edges, unless content changed.
+- **EcoSIM has a count-regression guard**: a >2 % drop in docs/nodes/edges vs `expected_counts` in `rag/milestones.json` fails the build. Bypass only with `--allow-shrink`, deliberately.
+- **Both adapters write `expected_counts` back** into `rag/milestones.json` on success, which *arms* that guard for next time — so a rebuild normally dirties `milestones.json` too. Suppress with `--no-write-counts`.
 
 > ### ⚠️ THE REBUILD WILL SILENTLY NOT COMMIT — read Step 4 BEFORE you build
-> `rag/chroma_db/<profile>/chroma.sqlite3` carries `--skip-worktree` in every clone, so `git add`
-> and even `git add -A` stage **nothing** and print no error. This is not hypothetical: it is
-> exactly how the 2026-08-01 PFLOTRAN rebuild was lost (`20260806b` §Problem 3).
+> `rag/chroma_db/<profile>/chroma.sqlite3` carries `--skip-worktree` in every clone, so `git add` and even `git add -A` stage **nothing** and print no error. This is not hypothetical: it is exactly how the 2026-08-01 PFLOTRAN rebuild was lost (`20260806b` §Problem 3). **And the UUID-named segment folder beside it holds the vectors.** It must be committed with the database. A database without it still opens, counts every document and answers queries, from an index of a handful of vectors (`20260930e`).
 
 ## Step 1 — classify the task (decision tree)
 
-**Commands below are written for FATES.** For EcoSIM or PFLOTRAN, keep the *mode* column and
-swap in that model's script and flags from Step 0 — e.g. PFLOTRAN's builder has no
-`--graph-only`, so its "curated YAML only" row is a full `--rebuild`.
+**Commands below are written for FATES.** For EcoSIM or PFLOTRAN, keep the *mode* column and swap in that model's script and flags from Step 0 — e.g. PFLOTRAN's builder has no `--graph-only`, so its "curated YAML only" row is a full `--rebuild`.
 
 | What changed | Mode | Command (FATES; see Step 0 for the other models) |
 |---|---|---|
@@ -69,9 +51,7 @@ swap in that model's script and flags from Step 0 — e.g. PFLOTRAN's builder ha
 | A **new model** entirely (EcoSim, ReSOM, …), or a full from-nothing build | use **`build-rag-from-scratch`** | that orchestrator owns wiki-gen + parser/loader registration; this skill is only the (re)index step it calls |
 | Index "just stopped working" | diagnose first (Step 5) | usually Python version or empty `chroma_db/` |
 
-**Never** rely on an incremental add for a content change: `add_documents()` dedupes by
-`chunk_id` and silently SKIPS existing entries (`vector_store.py:110-127`). A wiki edit
-that preserves chunk count but changes text is ignored unless you `--rebuild`.
+**Never** rely on an incremental add for a content change: `add_documents()` dedupes by `chunk_id` and silently SKIPS existing entries (`vector_store.py:110-127`). A wiki edit that preserves chunk count but changes text is ignored unless you `--rebuild`.
 
 ## Step 2 — standard rebuild (current tree, no commit bump)
 
@@ -81,33 +61,19 @@ that preserves chunk count but changes text is ignored unless you `--rebuild`.
 $PY scripts/build_rag_index.py --rebuild --test --profile <name>   # e.g. api-43-1
 ```
 
-`--profile` resolves EVERY commit-pinned input (wiki subdirs, param file, FATES+ELM output CDLs)
-from `rag/milestones.json` — the registered pinned filenames, else the milestone **anchor** commit.
-You do NOT need `--fates-wiki-subdir` / `--param-cdl` / `--output-cdl` for a registered milestone
-(the checkout HEAD is usually a *later* commit than the anchor, so deriving filenames from HEAD used
-to silently fall through to the generic CDLs and shrink the index — the v2.183 near-miss).
+`--profile` resolves EVERY commit-pinned input (wiki subdirs, param file, FATES+ELM output CDLs) from `rag/milestones.json` — the registered pinned filenames, else the milestone **anchor** commit. You do NOT need `--fates-wiki-subdir` / `--param-cdl` / `--output-cdl` for a registered milestone (the checkout HEAD is usually a *later* commit than the anchor, so deriving filenames from HEAD used to silently fall through to the generic CDLs and shrink the index — the v2.183 near-miss).
 
 Two guards now make that failure loud:
-- **Input-contract guard** — if a registered milestone's resolved inputs don't match its registry
-  entry, the build aborts (exit 2) before embedding. Override with `--allow-generic-cdl` only for a
-  deliberate off-milestone build.
-- **Count-regression guard** — a >2% drop in docs/nodes/edges vs the milestone's `expected_counts`
-  fails the build (exit 3). Growth is fine; bump `expected_counts` when you legitimately add content.
+- **Input-contract guard** — if a registered milestone's resolved inputs don't match its registry entry, the build aborts (exit 2) before embedding. Override with `--allow-generic-cdl` only for a deliberate off-milestone build.
+- **Count-regression guard** — a >2% drop in docs/nodes/edges vs the milestone's `expected_counts` fails the build (exit 3). Growth is fine; bump `expected_counts` when you legitimately add content.
 
 Plain `--rebuild --test` (no `--profile`) still works for the active env profile.
 
-Reads `docs/fates-knowledge-base/` + `docs/elm-knowledge-base/`, parses the two CDLs,
-overlays `rag/data/curated_relationships.yaml`, writes `rag/chroma_db/<profile>/` +
-`rag/graphs/<profile>.json`. Local, ~2 min, $0 (embeddings are local
-sentence-transformers, not an API call).
+Reads `docs/fates-knowledge-base/` + `docs/elm-knowledge-base/`, parses the two CDLs, overlays `rag/data/curated_relationships.yaml`, writes `rag/chroma_db/<profile>/` + `rag/graphs/<profile>.json`. Local, ~2 min, $0 (embeddings are local sentence-transformers, not an API call).
 
 ## Step 2b — Recipe 1: bumping the wiki to a new commit-pinned tree
 
-The **#1 footgun.** The loader probes wiki dir names and **stops at the first match**
-(`rag/loader.py:366-371`), so a bare `--rebuild` keeps indexing the *legacy* tree even
-though a commit-pinned `fates-codebase-wiki-e85d997/` exists. The build looks like it
-succeeded but indexes the wrong content. Redirect with a symlink, archive the old
-artifacts for rollback, then rebuild:
+The **#1 footgun.** The loader probes wiki dir names and **stops at the first match** (`rag/loader.py:366-371`), so a bare `--rebuild` keeps indexing the *legacy* tree even though a commit-pinned `fates-codebase-wiki-e85d997/` exists. The build looks like it succeeded but indexes the wrong content. Redirect with a symlink, archive the old artifacts for rollback, then rebuild:
 
 ```bash
 cd docs/fates-knowledge-base
@@ -119,9 +85,7 @@ mv rag/fates_knowledge_graph.json rag/fates_knowledge_graph.json.legacy_$(date +
 $PY scripts/build_rag_index.py --rebuild --test
 ```
 
-Pair a wiki bump with a **CDL refresh** — the CDLs are hand-managed, not auto-regenerated
-from source (`ncdump -h fates_params_default.nc > fates_params_info.cdl` against the FATES
-build matching the wiki commit). See Recipe 1 in the roadmap for the full sequence.
+Pair a wiki bump with a **CDL refresh** — the CDLs are hand-managed, not auto-regenerated from source (`ncdump -h fates_params_default.nc > fates_params_info.cdl` against the FATES build matching the wiki commit). See Recipe 1 in the roadmap for the full sequence.
 
 ## Step 3 — verify (do not trust a silent success)
 
@@ -135,22 +99,11 @@ print(r.get_targeted_context(param_names=['fates_cnp_pid_kp'],
 "
 ```
 
-- **Stats sanity:** current api-31-0 build is ~2,581 vector docs, ~1,295 graph nodes, ~2,197 edges (CLAUDE.md §RAG/GraphRAG).
-  168 nodes means you ran a pre-Feb-2026 build — `--rebuild` again. 0 docs means the wiki
-  path didn't match (the Step 2b footgun).
-- **Content spot-check after a bump** (these are the claims that were wrong in the stale
-  Feb-2026 index): phenology defaults `-68 / 638 / -0.01`, transpiration units in `mm`,
-  and the phantom `fates_cnp_nfix` parameter **absent**. Open a matched `.md` and confirm
-  it's the new commit's content, not legacy.
+- **Stats sanity:** current api-31-0 build is ~2,581 vector docs, ~1,295 graph nodes, ~2,197 edges (CLAUDE.md §RAG/GraphRAG). 168 nodes means you ran a pre-Feb-2026 build — `--rebuild` again. 0 docs means the wiki path didn't match (the Step 2b footgun).
+- **Content spot-check after a bump** (these are the claims that were wrong in the stale Feb-2026 index): phenology defaults `-68 / 638 / -0.01`, transpiration units in `mm`, and the phantom `fates_cnp_nfix` parameter **absent**. Open a matched `.md` and confirm it's the new commit's content, not legacy.
+
 > ### THE VERIFY CHECKERS ROUTE BY MODEL TOO — the same fork as Step 0
-> Step 0 routes the BUILD script by model and, until 2026-09-06, this step did not route the
-> CHECKERS. Both names below are FATES-shaped, so on an adapter model a session reads
-> `check_rag_queries.py`, finds it does not fit, and concludes the check does not apply — while
-> **`tools/check_ecosim_rag_queries.py` is model-GENERIC and covers exactly that case.** Its
-> filename is kept for back-compat; its own docstring calls it "the non-FATES analog of
-> `tools/check_rag_queries.py` ... works for ANY registered model profile". Measured that day: a
-> curated-seed edit was rebuilt and shipped without the REQUIRED golden-query test for precisely
-> this reason.
+> Step 0 routes the BUILD script by model and, until 2026-09-06, this step did not route the CHECKERS. Both names below are FATES-shaped, so on an adapter model a session reads `check_rag_queries.py`, finds it does not fit, and concludes the check does not apply — while **`tools/check_ecosim_rag_queries.py` is model-GENERIC and covers exactly that case.** Its filename is kept for back-compat; its own docstring calls it "the non-FATES analog of `tools/check_rag_queries.py` ... works for ANY registered model profile". Measured that day: a curated-seed edit was rebuilt and shipped without the REQUIRED golden-query test for precisely this reason.
 >
 > | model | golden-query content + count regression | metadata coverage |
 > |---|---|---|
@@ -158,75 +111,30 @@ print(r.get_targeted_context(param_names=['fates_cnp_pid_kp'],
 > | **EcoSIM** | `tools/check_ecosim_rag_queries.py --profile ecosim-2dea74d9` | not configured — see below |
 > | **PFLOTRAN** | `tools/check_ecosim_rag_queries.py --profile pflotran-157a26f7` | not configured — see below |
 >
-> **"Not configured" is not "not covered."** `check_rag_coverage.py` reads `rag/canary_queries.yaml`,
-> which lists only the two `api-*` profiles, so on an adapter profile it falls through to the default
-> `fates_knowledge` collection and exits 1. The generic guard carries its own **count-regression
-> check plus graph node floors**, which is the same bug class from the other side, so an adapter
-> rebuild is verified — just not by that script. Adding adapter blocks to `canary_queries.yaml` is
-> open work, not a blocker.
+> **"Not configured" is not "not covered."** `check_rag_coverage.py` reads `rag/canary_queries.yaml`, which lists only the two `api-*` profiles, so on an adapter profile it falls through to the default `fates_knowledge` collection and exits 1. The generic guard carries its own **count-regression check plus graph node floors**, which is the same bug class from the other side, so an adapter rebuild is verified — just not by that script. Adding adapter blocks to `canary_queries.yaml` is open work, not a blocker.
 >
-> **Also run after any curated-seed or curated-YAML edit:** `$PY tools/validate_seed_coverage.py
-> --seed <the file the profile was built from>`. It is **model-agnostic and works on every shape** —
-> verified on `models/ecosim/curated_seed.yaml`, `models/pflotran/curated_seed.yaml` and
-> `rag/data/curated_relationships_api-43-1.yaml`. It asserts C1 every category has a mechanism and
-> C2 every calibratable parameter is named by one, because the seed builder prints
-> `[SKIP] category X has no assigned mechanisms` and then **exits 0**, so a partial seed reads as a
-> finished one. Read the profile's own `rag/metadata/<profile>.json` for which file to pass —
-> adapters use `models/<model>/curated_seed.yaml`, only the FATES profiles use `rag/data/`.
+> **Also run after any curated-seed or curated-YAML edit:** `$PY tools/validate_seed_coverage.py --seed <the file the profile was built from>`. It is **model-agnostic and works on every shape** — verified on `models/ecosim/curated_seed.yaml`, `models/pflotran/curated_seed.yaml` and `rag/data/curated_relationships_api-43-1.yaml`. It asserts C1 every category has a mechanism and C2 every calibratable parameter is named by one, because the seed builder prints `[SKIP] category X has no assigned mechanisms` and then **exits 0**, so a partial seed reads as a finished one. Read the profile's own `rag/metadata/<profile>.json` for which file to pass — adapters use `models/<model>/curated_seed.yaml`, only the FATES profiles use `rag/data/`.
 
-- **Coverage self-test (docs/33 §3c) — FATES profiles:** `$PY tools/check_rag_coverage.py --profile <profile>` —
-  asserts every expected `kb_source` is present above a floor and canary wiki files appear.
-  This catches the ELM-wiki-absent bug class (a whole KB silently dropped: `kb_source 'elm' = 0`).
-  Update `rag/canary_queries.yaml` floors after a legitimate rebuild; the *presence* invariant should hold.
-- **Golden-query content test (REQUIRED after any content change; route by model per the table above):**
-  `$PY tools/check_rag_queries.py --profile <profile>`. Coverage is metadata-only — it does NOT
-  catch a *wrong answer* (a bad SZPF ordering formula, a mislabeled PFT identity: dev_logs
-  `20260710r/t`). This one runs the embedding model + graph and asserts real query results:
-  `must_contain` / `must_not_contain` per query (e.g. the correct
-  `iscpf = (pft-1)*nlevsclass+size_class`, the wrong `(size_class-1)*numpft` absent) plus a
-  graph PFT-identity check (PFT10/11/12 = the api-43 arctic `fates_pftname`). Assertions live in
-  `rag/golden_queries.yaml` — **add a query there for every new content invariant you fix** so a
-  regression fails loudly next time. It self-verifies (a negative run does fail); exit 1 = wrong
-  content, exit 0 = pass or gracefully-skipped (no embedding model).
+- **Coverage self-test (docs/33 §3c) — FATES profiles:** `$PY tools/check_rag_coverage.py --profile <profile>` — asserts every expected `kb_source` is present above a floor and canary wiki files appear. This catches the ELM-wiki-absent bug class (a whole KB silently dropped: `kb_source 'elm' = 0`). Update `rag/canary_queries.yaml` floors after a legitimate rebuild; the *presence* invariant should hold.
+- **Golden-query content test (REQUIRED after any content change; route by model per the table above):** `$PY tools/check_rag_queries.py --profile <profile>`. Coverage is metadata-only — it does NOT catch a *wrong answer* (a bad SZPF ordering formula, a mislabeled PFT identity: dev_logs `20260710r/t`). This one runs the embedding model + graph and asserts real query results: `must_contain` / `must_not_contain` per query (e.g. the correct `iscpf = (pft-1)*nlevsclass+size_class`, the wrong `(size_class-1)*numpft` absent) plus a graph PFT-identity check (PFT10/11/12 = the api-43 arctic `fates_pftname`). Assertions live in `rag/golden_queries.yaml` — **add a query there for every new content invariant you fix** so a regression fails loudly next time. It self-verifies (a negative run does fail); exit 1 = wrong content, exit 0 = pass or gracefully-skipped (no embedding model).
 
 ## Step 3b — graph-only rebuild after a curated-YAML edit
 
-**Route by model first (Step 0).** The command below is FATES's; EcoSIM is
-`$PY scripts/build_ecosim_rag.py --graph-only`, and **PFLOTRAN has no `--graph-only` at all**, so a
-curated edit there is a full `--rebuild`.
+**Route by model first (Step 0).** The command below is FATES's; EcoSIM is `$PY scripts/build_ecosim_rag.py --graph-only`, and **PFLOTRAN has no `--graph-only` at all**, so a curated edit there is a full `--rebuild`.
 
 ```bash
 $PY scripts/build_rag_index.py --rebuild --graph-only --test
 ```
 
-Skips re-embedding (the vector index is unchanged) — seconds, not minutes. Watch the
-build log for `skipped edge: endpoint not found`: a curated edge whose parameter/output
-isn't in the CDL is **silently dropped** (`graph_builder.py:414`). Either add the endpoint
-to the CDL or use the YAML curated-only fallback. (To inject a *new fact* across all three
-memory channels before rebuilding, that's the `inject-knowledge` skill — this skill only
-re-indexes what's already authored.)
+Skips re-embedding (the vector index is unchanged) — seconds, not minutes. Watch the build log for `skipped edge: endpoint not found`: a curated edge whose parameter/output isn't in the CDL is **silently dropped** (`graph_builder.py:414`). Either add the endpoint to the CDL or use the YAML curated-only fallback. (To inject a *new fact* across all three memory channels before rebuilding, that's the `inject-knowledge` skill — this skill only re-indexes what's already authored.)
 
-> **A graph-only rebuild is a CONTENT change, so Step 3's checks are not optional here.** This is
-> the step most likely to be entered directly, and the silently-dropped edge above is exactly the
-> failure they catch. Run both, routed by model per Step 3's table: the **golden-query test**
-> (`check_rag_queries.py` for FATES, `check_ecosim_rag_queries.py` for an adapter) and
-> `$PY tools/validate_seed_coverage.py --seed <the file the profile was built from>`. Cheap
-> arithmetic check while you are here: **the edge count should rise by exactly the number of edges
-> you authored.** If it rose by fewer, an endpoint did not resolve, and that is the dropped-edge
-> case reading as success.
+> **A graph-only rebuild is a CONTENT change, so Step 3's checks are not optional here.** This is the step most likely to be entered directly, and the silently-dropped edge above is exactly the failure they catch. Run both, routed by model per Step 3's table: the **golden-query test** (`check_rag_queries.py` for FATES, `check_ecosim_rag_queries.py` for an adapter) and `$PY tools/validate_seed_coverage.py --seed <the file the profile was built from>`. Cheap arithmetic check while you are here: **the edge count should rise by exactly the number of edges you authored.** If it rose by fewer, an endpoint did not resolve, and that is the dropped-edge case reading as success.
 >
-> **Check that the counts guard actually ran.** EcoSIM's builder gated both its count-regression
-> check and its `expected_counts` write-back on `not args.graph_only` until 2026-09-06 — disarming
-> them in the one mode a curated edit uses. Fixed there; if you add a builder for a new model, do
-> not re-introduce that gate. A graph-only run should still print `expected_counts written to
-> milestones.json`.
+> **Check that the counts guard actually ran.** EcoSIM's builder gated both its count-regression check and its `expected_counts` write-back on `not args.graph_only` until 2026-09-06 — disarming them in the one mode a curated edit uses. Fixed there; if you add a builder for a new model, do not re-introduce that gate. A graph-only run should still print `expected_counts written to milestones.json`.
 
 ## Step 4 — COMMIT the rebuild (the step that silently does nothing)
 
-**A rebuild you cannot commit is a rebuild you did not do.** `chroma.sqlite3` is *tracked*, but
-ChromaDB rewrites it on every **read**, so it would show as modified forever. Every clone therefore
-sets `git update-index --skip-worktree` on it — which tells git to **stop looking at the file
-entirely**.
+**A rebuild you cannot commit is a rebuild you did not do.** `chroma.sqlite3` is *tracked*, but ChromaDB rewrites it on every **read**, so it would show as modified forever. Every clone therefore sets `git update-index --skip-worktree` on it — which tells git to **stop looking at the file entirely**.
 
 Consequence, verified 2026-08-07 on a live 11 MB index that genuinely differed from HEAD:
 
@@ -236,11 +144,7 @@ git add <the sqlite>   -> stages NOTHING (message mentions "sparse-checkout", wh
 git add -A             -> stages 0 files
 ```
 
-So `rebuild → git add -A → commit → push` yields a commit containing **everything except the new
-index**, with no error. The graph (`rag/graphs/<profile>.json`) is plain JSON and commits normally,
-so you get a **half-updated RAG layer that looks complete**. That is precisely the 2026-08-01
-PFLOTRAN failure: the graph landed, the 1374-chunk vector index did not, and the committed index sat
-at 1314 chunks with **zero curated content** until 2026-08-07.
+So `rebuild → git add -A → commit → push` yields a commit containing **everything except the new index**, with no error. The graph (`rag/graphs/<profile>.json`) is plain JSON and commits normally, so you get a **half-updated RAG layer that looks complete**. That is precisely the 2026-08-01 PFLOTRAN failure: the graph landed, the 1374-chunk vector index did not, and the committed index sat at 1314 chunks with **zero curated content** until 2026-08-07.
 
 **The sequence — un-skip FIRST, re-arm AFTER:**
 
@@ -250,6 +154,8 @@ git update-index --no-skip-worktree "$F"      # BEFORE the build, or at least be
 $PY scripts/build_<model>_rag.py --rebuild    # (Step 0 picks the script)
 git status --porcelain "$F"                   # MUST show " M" — if empty, the flag is still set
 git add "$F" rag/graphs/<profile>.json rag/milestones.json
+git add rag/chroma_db/<profile>/<new-uuid>/      # the vectors; the UUID is new on every rebuild
+git rm -r --cached rag/chroma_db/<profile>/<old-uuid>/   # if the old folder was tracked
 git commit
 git update-index --skip-worktree "$F"         # re-arm, or read-churn dirties every later status
 ```
@@ -258,10 +164,13 @@ git update-index --skip-worktree "$F"         # re-arm, or read-churn dirties ev
 
 ```bash
 git show --stat HEAD | grep chroma.sqlite3    # must appear
+git ls-tree -r -l HEAD rag/chroma_db/<profile> # the segment folder's files too; --stat abbreviates long paths
 $PY -c "
 import chromadb; c=chromadb.PersistentClient(path='rag/chroma_db/<profile>')
 col=c.get_collection('<collection>'); print('documents:', col.count())
-print('curated chunks:', len(col.get(where={'source':{'\$contains':'curated'}}).get('ids',[])))"
+g=col.get(include=['embeddings','metadatas'])
+print('stored vectors:', sum(e is not None for e in g['embeddings']), '(must equal documents)')
+print('curated chunks:', sum(str((m or {}).get('source','')).startswith('curated') for m in g['metadatas']))"
 ```
 
 A count that matches the *pre-rebuild* number means the old index is still what is committed.
@@ -270,25 +179,18 @@ A count that matches the *pre-rebuild* number means the old index is still what 
 
 ## Step 5 — when the index "just stopped working"
 
-1. Wrong Python (must be 3.10 from python.org). 2. `rag/chroma_db/` exists and non-empty.
-3. `rag/graphs/<profile>.json` exists. 4. `--test` the existing index. 5. Still
-broken → `--rebuild`. Cross-CWD failures (Perlmutter) trace to path resolution
-(`rag/hybrid_retriever.py` `_resolve_path`) and the NetworkX `edges="links"` JSON-key
-compat fix (`20260204a`).
+1. Wrong Python (per machine, see the interpreter note at the top: python.org 3.10 on the Mac, `~/a2mc_env/bin/python` on Perlmutter).
+2. `rag/chroma_db/` exists and non-empty.
+3. `rag/graphs/<profile>.json` exists.
+4. `--test` the existing index.
+5. Still broken → `--rebuild`.
+
+Cross-CWD failures (Perlmutter) trace to path resolution (`rag/hybrid_retriever.py` `_resolve_path`) and the NetworkX `edges="links"` JSON-key compat fix (`20260204a`).
 
 ## Notes
 
-- **Other knobs:** `A2MC_PFTS` sets the PFT list — always set it (the site config does)
-  so the graph builds PFT-specific nodes for exactly your calibrated PFTs (e.g.
-  `A2MC_PFTS=10,11,12` for api-43 Kougarok). If unset, `graph_builder.py`
-  `_resolve_pft_list` falls back to a site-agnostic all-12-PFT default `[1..12]` **and
-  prints a warning** — usable but not tailored to your site.
-- **After a commit bump or curated edit, validate the chain** before trusting it — the
-  `validate-rag-chain` skill (wiki↔source, YAML↔wiki, profile diff).
-- **Where it lives in code:** the roadmap §8 has a grep cheat-sheet for every default path,
-  the wiki subdir patterns, the chunk-ID/dedup logic, and the curated-YAML loader.
-- Branch note: wiki *bumps* and new-model adds are forward-dev (mostly `main`/adapter-kit);
-  on a version-pinned manuscript branch the common use is a `--graph-only` refresh after a
-  curated-YAML injection. A pinned (e.g. api-31-0) index is the manuscript-reproducibility anchor
-  — don't bump its wiki commit here without reason.
+- **Other knobs:** `A2MC_PFTS` sets the PFT list — always set it (the site config does) so the graph builds PFT-specific nodes for exactly your calibrated PFTs (e.g. `A2MC_PFTS=10,11,12` for api-43 Kougarok). If unset, `graph_builder.py` `_resolve_pft_list` falls back to a site-agnostic all-12-PFT default `[1..12]` **and prints a warning** — usable but not tailored to your site.
+- **After a commit bump or curated edit, validate the chain** before trusting it — the `validate-rag-chain` skill (wiki↔source, YAML↔wiki, profile diff).
+- **Where it lives in code:** the roadmap §8 has a grep cheat-sheet for every default path, the wiki subdir patterns, the chunk-ID/dedup logic, and the curated-YAML loader.
+- Branch note: wiki *bumps* and new-model adds are forward-dev (mostly `main`/adapter-kit); on a version-pinned manuscript branch the common use is a `--graph-only` refresh after a curated-YAML injection. A pinned (e.g. api-31-0) index is the manuscript-reproducibility anchor — don't bump its wiki commit here without reason.
 
