@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""commit-msg hook — block AI-attribution trailers in any commit (CLAUDE.md rule #1).
+"""commit-msg hook — block AI-attribution trailers in any commit (CLAUDE.md rule #1), and a
+model-evolution finding committed without its case's offline-state decision (see
+`state_with_findings` below).
 
 Git-level fallback for the Claude Code PreToolUse `block-ai-attribution` hook: that hook
 only sees `git commit -m` via the Bash tool, so editor-based commits would slip past it.
@@ -8,7 +10,11 @@ signatures — NOT bare "Claude"/"Anthropic" (which legitimately appear in CLAUD
 
 Activate (once per clone): git config core.hooksPath .githooks
 """
+import glob
+import json
+import os
 import re
+import subprocess
 import sys
 
 PATTERNS = [
@@ -26,6 +32,51 @@ PATTERNS = [
 # A bare reference of the form GitHub autolinks. The lookbehind spares a doubled sign, a
 # hex colour, a URL fragment, and `PFT#11`, where the digits follow a word character.
 BARE_REF = re.compile(r"(?<![#\w/])#\d+\b")
+
+# A MODEL-EVOLUTION FINDING TRAVELS WITH ITS STATE DECISION. Within the calibration loop the offline
+# state keeps pace with the work, but model-evolution records almost never carried a state update
+# (measured per case in memory/dev_logs_adapterkit/20261014a_*), so a day of findings could live
+# only in those records while the case's resume brain fell behind. A commit that adds or changes a
+# record under use_cases/<case>/memory/model_evolution/ must therefore stage that case's active
+# offline state too, or say in the message why the state does not change:
+#     State-Unchanged: <reason, at least 10 characters>
+ME_RECORD = re.compile(r"^use_cases/([^/]+)/memory/model_evolution/(?!README)[^/]+\.md$")
+STATE_UNCHANGED = re.compile(r"^\s*State-Unchanged:\s*(\S.{9,})$", re.MULTILINE)
+
+
+def _git(*args):
+    # stdout=PIPE / universal_newlines rather than capture_output / text: git runs this hook with
+    # whatever `python3` is on PATH, which can be 3.6, where those two keywords do not exist.
+    return subprocess.run(["git"] + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          universal_newlines=True).stdout
+
+
+def state_with_findings(body, staged, root):
+    """Return the message to block with, or "" when the commit is fine."""
+    if STATE_UNCHANGED.search(body):
+        return ""
+    missing = []
+    for case in sorted({m.group(1) for m in (ME_RECORD.match(p) for p in staged) if m}):
+        states = sorted(glob.glob(os.path.join(root, "use_cases", case, "memory",
+                                               "workflow_state_offline_r*.json")))
+        if not states:
+            continue                         # no offline state for this case: nothing to update
+        try:
+            if json.load(open(states[-1])).get("converged"):
+                continue                     # a closed round is not expected to keep recording
+        except Exception:
+            pass
+        rel = os.path.relpath(states[-1], root).replace(os.sep, "/")
+        if rel not in staged:
+            missing.append((case, rel))
+    if not missing:
+        return ""
+    lines = ["commit-msg: a model-evolution record changed and its case's offline state did not:"]
+    lines += ["  %s -> stage %s with the finding recorded (st.add_decision(finding, rationale))"
+              % (c, r) for c, r in missing]
+    lines += ["  If this change records no finding (a typo, a formatting fix, a cross-reference),",
+              "  add a line to the message:  State-Unchanged: <why the state does not change>"]
+    return "\n".join(lines) + "\n"
 
 
 def main() -> int:
@@ -56,6 +107,14 @@ def main() -> int:
                 "autolinks them to an issue in THIS repository. Write 'task 17', 'Rule 4', "
                 "'anti-pattern 11', or the full owner/repo#2939 form for another repo.\n"
                 % ", ".join(hits))
+            return 1
+
+    root = _git("rev-parse", "--show-toplevel").strip()
+    if root:
+        staged = set(_git("diff", "--cached", "--name-only", "--diff-filter=AM").split("\n")) - {""}
+        block = state_with_findings(body, staged, root)
+        if block:
+            sys.stderr.write(block)
             return 1
     return 0
 

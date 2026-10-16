@@ -75,9 +75,24 @@ def _sh(*args):
     return p.stdout or ""
 
 
+#: Directories under a phase's artifact folder that hold ARCHIVED COPIES of scripts that RAN.
+#: A file here is evidence, not source: its value is being byte-identical to what the scheduler
+#: executed, so it records which binary a run was bound to and under what flags. Editing one to
+#: satisfy a style rule destroys the only property it has. The rule this check enforces -- keep
+#: the incident in the dev log, keep the durable rule in the source -- is addressed to the file's
+#: AUTHOR, and the author of an archived copy is whoever wrote the original, which this check
+#: already judges in its own location.
+ARCHIVE_DIRS = ("/submit_scripts/", "/run_tracking/")
+
+
+def is_archived_copy(path):
+    return "/memory/phase_results/" in path and any(d in path for d in ARCHIVE_DIRS)
+
+
 def staged_source():
     out = _sh("git", "diff", "--cached", "--name-only", "--diff-filter=ACM")
-    return [p for p in out.split() if p.endswith((".py", ".sh"))]
+    return [p for p in out.split()
+            if p.endswith((".py", ".sh")) and not is_archived_copy(p)]
 
 
 def added_lines(path):

@@ -24,7 +24,9 @@ critical-minerals proposal review and adapted for A2MC's two uses.
   list (`use_cases/{Model}_{Case}/parameters/FATES_Parameter_List_*.csv` — the `lower`/`upper` columns).
   Deliverable = a **bounds table**: `parameter | literature range [lo, hi] | central | units |
   PFT/context | citations`. This is the evidence layer behind those `lower`/`upper` bounds
-  and the `onboard-case` Step 4b "never invent a bound" rule.
+  and the `onboard-case` Step 4b "never invent a bound" rule. Start from
+  `models/<model>/reference_bounds/` where it exists: it holds bounds verified on earlier cases of the
+  model. It is a reference, not this case's evidence.
 - **MANUSCRIPT / TOPIC** (writing): a synthesis for a paper section or research plan.
   Deliverable = a themed markdown review separating established knowledge from hypotheses.
 
@@ -129,8 +131,17 @@ not usable — soften the claim or remove it. This is the cardinal rule (Stage 2
 
 ## Stage 6 — Output
 
-Write the review/table to a markdown file (bounds mode: alongside the param list, e.g.
-`use_cases/{Model}_{Case}/parameters/bounds_literature_<date>.md`; manuscript mode: an `ana_log`).
+Where the output goes depends on the mode:
+
+- **Bounds mode:** the review is specific to the case. Write it beside the parameter list it justifies,
+  as `use_cases/{Model}_{Case}/parameters/bounds_literature_review_<YYYYMMDD>.md`. Each refined row's
+  `bound_source` carries `literature:` with the paper's DOI (`tools/check_bound_source.py` B4 warns on one
+  without), and the review holds the full evidence. `models/<model>/reference_bounds/` is where you start,
+  not where a case's review is written; once a case study is settled, its verified bounds can be
+  backfilled there for later cases.
+- **Manuscript / topic mode:** write it up as a report, following `write-report`, in the case's
+  `use_cases/{Model}_{Case}/reports/<YYYYMMDDx>_<topic>/`.
+
 Render to PDF with the `markdown-to-pdf` skill if a shareable doc is wanted. Every citation must
 resolve to a real DOI from the search results.
 

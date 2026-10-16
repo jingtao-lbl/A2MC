@@ -242,9 +242,9 @@ produced, not demanded.
 | 4 | Wiki ↔ source validation | **V1** `tools/validate_wiki_vs_source.py --model <name>` | Green/Yellow |
 | 5–6 | Extract param/output surface; write real parsers | `models/<name>/{parameter,output}_parser.py` | parses real files |
 | — | **Adapter conformance** | **V4** `adapter_conformance_validator.py` | ≥ Yellow |
-| 7 | Curated seed (Recipe G1, PI-in-the-loop) | `scripts/curated_seed_builder.py` / **`inject-knowledge`** | seed written AND `tools/validate_seed_coverage.py` passes |
+| 7 | Curated seed (Recipe G1, PI-in-the-loop) | `scripts/curated_seed_builder.py` / **`inject-knowledge`** | seed written AND `tools/validate_seed_coverage.py` passes; if it cites source, its `tools/check_<name>_seed_citations.py` passes |
 | 8 | Curated-YAML ↔ wiki validation | **V2** `yaml_wiki_validator.py` | Green/Yellow |
-| 9 | RAG build + milestone registration | `scripts/build_<name>_rag.py` via **`build-rag-from-scratch`** + `rag/milestones.json` | index built and committed; milestone registered; **`model_preflight` against `$CHECKOUT` reports match** |
+| 9 | RAG build + milestone registration | `scripts/build_<name>_rag.py` via **`build-rag-from-scratch`** + `rag/milestones.json` | index built and committed; milestone registered; **`model_preflight` against `$CHECKOUT` reports match**; golden-query block added and `check_ecosim_rag_queries.py --model <name>` passes; `check_stage_ready.py --model <name> --checkout "$CHECKOUT"` shows the profile resolves |
 | — | RAG diff vs reference (+ FATES regression) | **V3** `rag_diff.py` | no regression |
 | 10 | Seed adaptive memory | `memory/<name>/gained_knowledge/` | **4 stores exist AND `MemoryManager` returns non-empty context** — `check_stage_ready.py --model <m>` |
 | 11 | Pick + render run template | `models/_template/runtemplates/` | — |
@@ -276,10 +276,10 @@ python scripts/init_adapter.py --model <name> \
 1. **Wiki (step 3).** `generate-codebase-wiki` → `docs/<name>-knowledge-base/<name>-codebase-wiki-<commit>/`.
    Commit-pin the dir name. Then **V1** — use the model-generic `tools/validate_wiki_vs_source.py
    --model <name> --wiki <dir> --source <src>` (it dispatches through the spec's `source_extensions`/
-   `routine_decl_patterns`/`module_file_pattern`); the FATES `codebase_wiki_validator.py` is the untouched reference.
+   `routine_decl_patterns`/`module_file_pattern`); the FATES `codebase_wiki_validator.py` is the untouched reference. A model whose wiki legitimately names symbols outside its own tree gets a model-specific series on top: ATS has `tools/validate_ats_wiki.py` (the Amanzi boundary, the deck's factory keys).
 2. **Output surface (step 5).** If the model ships a real history tape, read *that* (it is the
    authoritative registry) rather than source-scanning — see `scripts/extract_ecosim_outputs.py`
-   as the pattern. Emit CDL in the **indented `:attr = "..."`** style the `output_parser`
+   as the pattern; `scripts/extract_pflotran_outputs.py` is the one for a model whose output is a text tape (the mass-balance file) rather than a netCDF history. Emit CDL in the **indented `:attr = "..."`** style the `output_parser`
    recognizes (the qualified `varname:attr` style from raw `ncdump -h` is silently dropped).
 3. **Parsers (step 6) — the adapter package.** Fill `models/<name>/`: `spec.py` (from source-cited
    wiki findings + domain vocabulary), `version.py` (commit-based detector + bump-tier classifier),
@@ -308,6 +308,8 @@ python scripts/init_adapter.py --model <name> \
    FATES `curated_relationships_*.yaml` (FAIL). **Do not treat FAIL as cosmetic**: an unreachable
    parameter is one the calibration can never be told to move.
 
+   **If the seed cites source lines, give the model a citation checker** that asserts each one resolves (EcoSIM's at the profile's knowledge-base commit, PFLOTRAN's against the source and input deck it is given). `tools/check_ecosim_seed_citations.py` and `tools/check_pflotran_seed_citations.py` are the precedents, model-specific on purpose because each seed has its own citation conventions.
+
    **Also curate the SCORED TARGETS, not only the parameters.** Graph `affects` edges are built from
    `mechanisms[*].affects`, so an output no mechanism names has **zero incoming edges** and the graph
    cannot answer "what reaches my binding target" for it. Measured 2026-09-06 on an onboarded model:
@@ -330,7 +332,7 @@ python scripts/init_adapter.py --model <name> \
    `rag/milestones.json` (non-FATES models use the generic `adapter`/`model_commit_built`/
    `model_wiki_subdir` schema `ecosim-2dea74d9` established). Build:
    `$PY scripts/build_<name>_rag.py --rebuild`. Then delegate the surrounding chain to
-   `build-rag-from-scratch` (Path N).
+   `build-rag-from-scratch` (Path M, the adapter path; its Path N is the shared-`rag/` FATES/ELM one).
 
    **Then run the pre-flight check against the checkout the milestone was built from.** It is the first
    point at which `model_preflight` can succeed for this model:
@@ -340,6 +342,8 @@ python scripts/init_adapter.py --model <name> \
    ```
 
    It must report **match** (exit 0). Anything else means the milestone just registered does not resolve the checkout it was built from, most likely a wrong `model_commit_built` or a `version.py` that reads the commit wrongly, and every later user of this model would meet it as DRIFT or CANNOT VERIFY instead.
+
+   **Then the two checks that close step 9:** add the profile's block to `rag/golden_queries.yaml` and run `python tools/check_ecosim_rag_queries.py --model <name>` (model-generic despite its name), and confirm `python3 tools/check_stage_ready.py --model <name> --checkout "$CHECKOUT"` shows the profile resolves.
 
    **Do NOT merge these into one cross-model builder.** See "Per-model scripts" below — this was
    tried on ATS and reversed.
@@ -554,7 +558,7 @@ Two concrete costs of the merged form, both measured:
    spec-dispatched `--model` versions — `tools/validate_wiki_vs_source.py`, `tools/validate_curated_yaml.py`,
    `tools/run_template_validator.py` — plus `tools/model_preflight.py` (version+PFT), `tools/model_evaluate_case.py`
    (obs↔sim), `tools/check_ecosim_rag_queries.py --profile`. Run these with `--model <name>`; the FATES/EcoSIM
-   originals are the untouched reference. (The V3 profile-diff `rag_diff.py` is still FATES-shaped.)
+   originals are the untouched reference. (The V3 profile-diff `rag_diff.py` is still FATES-shaped.) Two more manage the registered profile: `tools/kb_profile.py --model <name>` says which one covers a commit, and `tools/kb_patch.py` patches one for a fix (`generate-codebase-wiki` Workflow P). Every knowledge-base BUILD step's tool for every model, in one table: [[reference_per_model_kb_build_tools]].
 5. **Python 3.10 + CDL attribute style** (see the two callouts above).
 6. **The parameter description LIES — verify definitions/units in SOURCE.** A param's netCDF
    `long_name` AND its `units` attribute can be wrong; the truth is how the internal variable is
@@ -576,13 +580,13 @@ Two concrete costs of the merged form, both measured:
 
 ## Where each onboarded model stands
 
-| model | status on this line | milestone |
+| model | status on this line | milestones (2026-10-15) |
 |---|---|---|
-| EcoSIM | the first model driven through this skill; fully onboarded, with cases calibrated end to end | `ecosim-2dea74d9` |
+| EcoSIM | the first model driven through this skill; fully onboarded, with cases calibrated end to end | `ecosim-cb243228` (live), `ecosim-2dea74d9` (legacy) |
 | PFLOTRAN | the second; fully onboarded. Rebuilt on Perlmutter 2026-09-23 on `cpe/25.09` after its first toolchain was removed (`models/pflotran/BUILD.md`) | `pflotran-157a26f7` |
 | ATS | adapter and parsers done; stopped before step 9 (no milestone, memory store or run template) | none: resume at `check_stage_ready.py --model ats` |
 
-`python3 tools/check_stage_ready.py --model <name>` is the live answer; this table is a snapshot.
+`python3 tools/check_stage_ready.py --model <name>` is the live answer; this table is a snapshot. For the milestones, `python tools/kb_profile.py --model <name> --list` is.
 
 ## Cross-references
 

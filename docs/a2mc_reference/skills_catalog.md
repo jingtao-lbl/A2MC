@@ -213,10 +213,17 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Modes:** `any` — model-agnostic, with the CIME and adapter tool paths named in separate columns;
   the mechanism tools (carbon / mortality / nutrient / PFT) are FATES-shaped and have no adapter analog.
 
+### `query-knowledge-base`
+- **Purpose:** The USE side of the knowledge base. Query its three tiers (Tier 1 technical documents and the commit-pinned codebase wiki; Tier 2 RAG vector search and the two-layer knowledge graph, auto-extracted structure plus the curated parameter-mechanism-output network; Tier 3 the model-level and case-level adaptive memory) for the parameters, mechanisms and outputs a piece of reasoning is about, then go to model source only to confirm.
+- **Invoke when:** Phase 3 diagnosis, Phase 4 hypothesis, Phase 6 refinement and a `diagnose-forensics` finding (required: their logs name this skill and cite the artifact); "what does the KB say about X", "which parameters reach this output", "check the KB first".
+- **Backing tools:** `tools/kb_network.py` (writes the stamped `kb_network.md`/`.json` into the phase's `phase_results/<stem>/`), `tools/kb_profile.py`, `HybridRetriever`; gate `tools/check_calibration_log_conformance.py` C11 + C13; reminder `.claude/hooks/remind-kb-before-source.py`.
+- **NOT for:** building, validating or patching the knowledge base (`build-rag-from-scratch`, `rebuild-rag`, `generate-codebase-wiki`, `validate-rag-chain`); writing Tier 3 (`curate-knowledge`, `inject-knowledge`).
+- **Modes:** `any` — every model; per-model locations are read from the profile's milestone.
+
 ### `scientific-analysis`
-- **Purpose:** A manuscript-supporting investigation that ends in a figure + an ana_log:
+- **Purpose:** A manuscript-supporting investigation that ends in a figure + a log or report:
   pose a question → pull run data → compute the statistic/mechanism → make a figure → cite
-  evidence → write an ana_log.
+  evidence → write a free-style calibration log (`calibration-log`) or a report (`write-report`).
 - **Invoke when:** "investigate whether X", "is X correlated with Y", "analyze the mechanism", "make a manuscript figure for X".
 - **Modes:** `any` — model-agnostic; examples are FATES/Kougarok.
 
@@ -477,7 +484,7 @@ pinned checkout, governed by the reproducibility contract (`E3SM_FATES_api43/CLA
 branch, **push only to the `jingtao-lbl` fork (never upstream)**, switch-gated default-off, V0-at-equality.
 
 ### `model-evolution`
-- **Purpose:** The general workflow for evolving **any onboarded model's** *source* — ELM/FATES, EcoSIM, PFLOTRAN, ATS — (mechanism fix, structural refactor, debug instrumentation, new parameter): branch-by-intent, mechanism-first gate, scope-from-source, **preserve the baseline binary before building the change**, switch-gate default-off, paired ON/OFF V0-at-equality verify, log both streams, fork-only push. Umbrella that `add-fates-parameter` routes up to for the FATES knob case.
+- **Purpose:** The general workflow for evolving **any onboarded model's** *source* — ELM/FATES, EcoSIM, PFLOTRAN, ATS — (mechanism fix, structural refactor, debug instrumentation, new parameter): branch-by-intent, mechanism-first gate, scope-from-source, **preserve the baseline binary before building the change**, switch-gate default-off, paired ON/OFF V0-at-equality verify, log in the case's `use_cases/{Model}_{Case}/memory/model_evolution/` stream, fork-only push. Umbrella that `add-fates-parameter` routes up to for the FATES knob case.
 - **Invoke when:** "update/change the model code", "modify the FATES/ELM/EcoSIM/PFLOTRAN source", "add a mechanism/fix to the model", "promote a hardcoded constant to an input parameter", "refactor the phenology/allocation code", "instrument the model". NOT parameter-file tuning (that's calibration).
 - **Modes:** `requires_fates: false` (covers any onboarded model's source); model-dev.
 - **Per-model, not generic:** the *workflow* is shared; the **build system** (CIME builds per case, a shared CMake tree has one mutable binary), the **knob surface** (`EDParamsMod`/`EDPftvarcon` vs a guarded NetCDF read path), and the **fork remotes** differ by model.

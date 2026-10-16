@@ -10,7 +10,7 @@ in `models/<name>/` plus its own knowledge chain (source-grounded wiki → curat
 | model | status | what exists today |
 |---|---|---|
 | **ELM / ELM-FATES** | **supported** — the worked reference | milestones `api-43-1`, `api-31-0`; the Kougarok reference case |
-| **EcoSIM** | **supported** | adapter, milestone `ecosim-2dea74d9`, RAG + curated seed, two live cases (BioCON, Lusignan) |
+| **EcoSIM** | **supported** | adapter, registered milestones (`python tools/kb_profile.py --model ecosim --list`; the one covering your commit: `--model ecosim`), RAG + curated seed, two live cases (BioCON, Lusignan) |
 | **PFLOTRAN** | **supported**; case work in progress | adapter, milestone `pflotran-157a26f7`, RAG + curated seed, the miniLEO case (its `extract`/`evaluate` path is still being finished) |
 | **ATS** | **in progress** | adapter and knowledge base built on a feature branch; no registered milestone or run template in this release yet |
 | **ecosys** | **planned** | not scoped in-repo yet. (EcoSIM descends from ecosys, so much of the groundwork is shared.) |
@@ -471,9 +471,9 @@ Three nested loops (outermost -> middle -> inner):
 # Control iteration limits
 python orchestrator.py --run \
     --start-round 2 \              # Calibration round (outermost loop)
-    --max-skip-testing 10 \        # Max Phase 3<->4 cycles (default: 10)
-    --max-experiments 10 \         # Max full experiment cycles (default: 10)
-    --confidence-threshold 0.95    # Exit skip testing threshold (default: 0.95)
+    --max-skip-testing <N> \       # Max Phase 3<->4 cycles (default: $A2MC_MAX_SKIP_TESTING)
+    --max-experiments <N> \        # Max full experiment cycles (default: $A2MC_MAX_EXPERIMENTS)
+    --confidence-threshold <X>     # Exit skip testing threshold (default: $A2MC_CONFIDENCE_THRESHOLD)
 ```
 
 ### 5.4 Phase details

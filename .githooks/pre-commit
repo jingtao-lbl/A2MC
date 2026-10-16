@@ -35,6 +35,34 @@ pick_py() {
     command -v python3 2>/dev/null || true
 }
 
+# Is this tree a downstream copy (a sync leg's destination, a project repo) or the development repo?
+# The SAME rule as tools/downstream.py, restated in shell because the hook decides before it has a
+# Python: the marker a wrap or a sync writes, and no dev-log stream beside it (both together are a
+# mistake, which checks strict). tests/test_pre_commit_hook_wiring.py runs this function against
+# downstream.state() on the same trees, so the two cannot drift apart unnoticed.
+a2mc_is_downstream() {
+    [[ -f "$1/.a2mc-downstream" ]] && ! compgen -G "$1/memory/dev_logs*" >/dev/null
+}
+
+# run_tool PY TOOL [ARGS...] -- every check calls its tool through this.
+# A tool may be `visibility: private`, and then the sync legs do not ship it. In a DOWNSTREAM copy a
+# missing tool is therefore expected: its check is skipped, with one line saying so. In the
+# DEVELOPMENT repo a missing tool is a dead gate -- the check would silently stop running -- so it
+# fails, loudly, rather than passing.
+run_tool() {
+    local py="$1" tool="$2"
+    shift 2
+    if [[ ! -f "$tool" ]]; then
+        if a2mc_is_downstream "$ROOT"; then
+            echo "pre-commit: ${tool#"$ROOT"/} is not in this copy (visibility: private); its check is skipped" >&2
+            return 0
+        fi
+        echo "pre-commit: ${tool#"$ROOT"/} is MISSING in the development repo -- its check cannot run. Restore it, or remove its block from .githooks/pre-commit." >&2
+        return 1
+    fi
+    "$py" "$tool" "$@"
+}
+
 # Staged paths that touch the skill system.
 if git diff --cached --name-only --diff-filter=ACMRD \
      | grep -qE '^\.claude/skills/|^docs/a2mc_reference/skills_catalog\.md$|^AGENTS\.md$|^tools/|^scripts/|^CLAUDE\.md$|^README\.md$'; then
@@ -45,7 +73,7 @@ if git diff --cached --name-only --diff-filter=ACMRD \
         # line skips only this one, which is what the rest of the hook already does.
         echo "pre-commit: python3 not found; skipping the skill-registry check ONLY" >&2
     fi
-    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_skill_registry.py"; then
+    if [[ -n "$PY" ]] && ! run_tool "$PY" "$ROOT/tools/check_skill_registry.py"; then
         echo "" >&2
         echo "pre-commit: skill-registry drift — fix the above (register in all THREE: the" >&2
         echo "  README 'Current skills' table, docs/a2mc_reference/skills_catalog.md, AND the" >&2
@@ -64,7 +92,7 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^phases/'; then
         # line skips only this one, which is what the rest of the hook already does.
         echo "pre-commit: python3 not found; skipping the phase script-doc check ONLY" >&2
     fi
-    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_phase_script_docs.py"; then
+    if [[ -n "$PY" ]] && ! run_tool "$PY" "$ROOT/tools/check_phase_script_docs.py"; then
         echo "" >&2
         echo "pre-commit: phase script-doc drift — scripts are truth. Update the phase" >&2
         echo "  CLAUDE.md 'Scripts in This Folder' table to match the *.py on disk (do NOT" >&2
@@ -84,7 +112,7 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude_memor
         # line skips only this one, which is what the rest of the hook already does.
         echo "pre-commit: python3 not found; skipping the memory-bucket check ONLY" >&2
     fi
-    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_memory_bucket.py"; then
+    if [[ -n "$PY" ]] && ! run_tool "$PY" "$ROOT/tools/check_memory_bucket.py"; then
         echo "" >&2
         echo "pre-commit: memory-bucket frontmatter invalid — every .claude_memory/*.md needs a" >&2
         echo "  valid machine/visibility/scope/type (schema: docs/29). Bypass with --no-verify" >&2
@@ -99,7 +127,7 @@ fi
 # caught only because the validator happened to be run by hand.
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(\.claude/skills/|AGENTS\.md$)'; then
     PY="$(pick_py)"
-    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/validate_agent_surface.py"; then
+    if [[ -n "$PY" ]] && ! run_tool "$PY" "$ROOT/tools/validate_agent_surface.py"; then
         echo "" >&2
         echo "pre-commit: agent-surface validation failed — a private path/username/branch token," >&2
         echo "  a malformed modes: block, or a broken relative link. The leak scan matters most:" >&2
@@ -114,7 +142,7 @@ fi
 # identical header string `git merge-tree` reported the merge CLEAN.
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(CLAUDE\.md|memory/a2mc_development_history\.md)$'; then
     PY="$(pick_py)"
-    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_version_consistency.py"; then
+    if [[ -n "$PY" ]] && ! run_tool "$PY" "$ROOT/tools/check_version_consistency.py"; then
         echo "" >&2
         echo "pre-commit: version inconsistent — the CLAUDE.md header version must have exactly" >&2
         echo "  one changelog entry in memory/a2mc_development_history.md. Two entries on the" >&2
@@ -133,7 +161,7 @@ fi
 # Fires only when CLAUDE.md is staged, i.e. exactly when a version is being claimed.
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^CLAUDE\.md$'; then
     PY="$(pick_py)"
-    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_dev_log_for_version.py" --quiet; then
+    if [[ -n "$PY" ]] && ! run_tool "$PY" "$ROOT/tools/check_dev_log_for_version.py" --quiet; then
         echo "" >&2
         echo "pre-commit: this version has NO dev log claiming it." >&2
         echo "  Run: python tools/check_dev_log_for_version.py" >&2
@@ -154,7 +182,7 @@ fi
 # every typo gets muted. ADVISORY (never blocks): a feature branch bumps at merge time and a mid-arc
 # commit's log legitimately lands next, so erroring here would train people to bypass it.
 CAP_PY="$(pick_py)"
-if [[ -n "$CAP_PY" ]] && ! "$CAP_PY" "$ROOT/tools/check_capability_change_logged.py" --quiet; then
+if [[ -n "$CAP_PY" ]] && ! run_tool "$CAP_PY" "$ROOT/tools/check_capability_change_logged.py" --quiet; then
     echo "" >&2
     echo "pre-commit: ADVISORY -- capability change with no version bump and no dev log (above)." >&2
     echo "  Not blocking. Legitimate if this is a feature branch that bumps at merge time, or a" >&2
@@ -185,7 +213,7 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^memory/(dev_log
     PY="$(pick_py)"
     _clc_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_log_conformance.py" --staged || _clc_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_log_conformance.py" --staged || _clc_rc=$?
     fi
     if [[ $_clc_rc -ge 2 ]]; then
         echo "" >&2
@@ -217,7 +245,7 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^use_cases/.+/me
     PY="$(pick_py)"
     _ccl_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_calibration_log_conformance.py" --staged || _ccl_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_calibration_log_conformance.py" --staged || _ccl_rc=$?
     fi
     if [[ $_ccl_rc -ge 2 ]]; then
         echo "" >&2
@@ -246,7 +274,7 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^use_cases/[^/]+
     PY="$(pick_py)"
     _crc_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_report_conformance.py" --staged || _crc_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_report_conformance.py" --staged || _crc_rc=$?
     fi
     if [[ $_crc_rc -ge 2 ]]; then
         echo "" >&2
@@ -277,7 +305,7 @@ if git diff --cached --name-only --diff-filter=ACM | grep -qE '^(use_cases/[^/]+
     PY="$(pick_py)"
     _bs_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_bound_source.py" --staged || _bs_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_bound_source.py" --staged || _bs_rc=$?
     fi
     if [[ $_bs_rc -ge 2 ]]; then
         echo "" >&2
@@ -314,7 +342,7 @@ if git diff --cached --name-only --diff-filter=ACMR \
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
-        PLH_OUT="$("$PY" "$ROOT/tools/check_log_placeholders.py" --staged 2>&1)"
+        PLH_OUT="$(run_tool "$PY" "$ROOT/tools/check_log_placeholders.py" --staged 2>&1)"
         PLH_RC=$?
         set -e
         if [[ $PLH_RC -ne 0 ]]; then
@@ -366,7 +394,7 @@ if [[ -n "${PY:-}" ]]; then
              | sed -n 's|^use_cases/\([^/]*\)/.*|\1|p' | sort -u)
     if [[ ${#TIER_SITES[@]} -gt 0 ]]; then
         set +e
-        TIER_OUT="$("$PY" "$ROOT/tools/check_case_script_tier.py" "${TIER_SITES[@]}" 2>&1)"
+        TIER_OUT="$(run_tool "$PY" "$ROOT/tools/check_case_script_tier.py" "${TIER_SITES[@]}" 2>&1)"
         TIER_RC=$?
         set -e
         if [[ $TIER_RC -ne 0 ]]; then
@@ -396,7 +424,7 @@ if git diff --cached --name-only --diff-filter=ACMR \
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
-        DFR_OUT="$("$PY" "$ROOT/tools/check_deferred_work_queued.py" --staged 2>&1)"
+        DFR_OUT="$(run_tool "$PY" "$ROOT/tools/check_deferred_work_queued.py" --staged 2>&1)"
         DFR_RC=$?
         set -e
         [[ $DFR_RC -ne 0 ]] && echo "$DFR_OUT" | sed 's/^/  /' >&2
@@ -423,7 +451,7 @@ if git diff --cached --name-only --diff-filter=ACMR \
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
-        SKC_OUT="$("$PY" "$ROOT/tools/check_skill_claims.py" --staged 2>&1)"
+        SKC_OUT="$(run_tool "$PY" "$ROOT/tools/check_skill_claims.py" --staged 2>&1)"
         SKC_RC=$?
         set -e
         if [[ $SKC_RC -ge 2 ]]; then
@@ -462,7 +490,7 @@ if git diff --cached --name-only --diff-filter=ACMR \
         for f in $(git diff --cached --name-only --diff-filter=ACMR \
                      | grep -E '^use_cases/.+/memory/logs/[0-9]{8}[a-z]+_phase[0-9]+_.+\.md$'); do
             _ole_rc=0
-            _ole_out="$("$PY" "$ROOT/tools/check_offline_log_evidence.py" "$ROOT/$f" 2>&1)" || _ole_rc=$?
+            _ole_out="$(run_tool "$PY" "$ROOT/tools/check_offline_log_evidence.py" "$ROOT/$f" 2>&1)" || _ole_rc=$?
             if [[ $_ole_rc -ne 0 ]]; then
                 echo "" >&2
                 echo "$_ole_out" | sed 's/^/  /' >&2
@@ -515,7 +543,7 @@ if git diff --cached --name-only --diff-filter=ACMR \
         # (fd2 is already /dev/null by then), so the tool speaks into nothing and a broken check
         # is indistinguishable from a clean one. Found by testing this very block, 2026-08-22.
         set +e
-        CG_OUT="$("$PY" "$ROOT/tools/config_graph.py" --like "$STEM" 2>&1)"
+        CG_OUT="$(run_tool "$PY" "$ROOT/tools/config_graph.py" --like "$STEM" 2>&1)"
         CG_RC=$?
         set -e
         echo "" >&2
@@ -561,7 +589,7 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^use_cases/[^/]
         # non-zero ABORTS the hook right here -- blocking the commit with no diagnostic at all,
         # which is indistinguishable from a hook crash. Disable errexit across the capture only.
         set +e
-        STATE_OUT="$("$PY" "$ROOT/tools/check_workflow_state_offline.py" 2>&1)"
+        STATE_OUT="$(run_tool "$PY" "$ROOT/tools/check_workflow_state_offline.py" 2>&1)"
         STATE_RC=$?
         set -e
         if [[ $STATE_RC -ne 0 ]]; then
@@ -602,7 +630,7 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^use_cases/[^/]
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
-        CYC_OUT="$("$PY" "$ROOT/tools/check_cycle_reports.py" 2>&1)"
+        CYC_OUT="$(run_tool "$PY" "$ROOT/tools/check_cycle_reports.py" 2>&1)"
         CYC_RC=$?
         set -e
         # exit 2 is the anti-silent-pass guard: a naming convention moved and the checker has gone
@@ -640,7 +668,7 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^rag/'; then
     PY="$(pick_py)"
     _rag_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_rag_index_committed.py" --staged || _rag_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_rag_index_committed.py" --staged || _rag_rc=$?
     fi
     if [[ $_rag_rc -ge 2 ]]; then
         echo "" >&2
@@ -669,7 +697,7 @@ if git diff --cached --name-only --diff-filter=ACMR \
     PY="$(pick_py)"
     _cov_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_graph_coverage.py" || _cov_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_graph_coverage.py" || _cov_rc=$?
     fi
     if [[ $_cov_rc -ge 1 ]]; then
         echo "" >&2
@@ -697,7 +725,7 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '/reports/'; the
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
-        FIGF_OUT="$("$PY" "$ROOT/tools/check_report_figure_freshness.py" --staged 2>&1)"
+        FIGF_OUT="$(run_tool "$PY" "$ROOT/tools/check_report_figure_freshness.py" --staged 2>&1)"
         FIGF_RC=$?
         set -e
         if [[ $FIGF_RC -ge 2 ]]; then
@@ -731,7 +759,7 @@ if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^use_cases/[^/]+
     PY="$(pick_py)"
     _crr_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_report_references.py" --staged || _crr_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_report_references.py" --staged || _crr_rc=$?
     fi
     if [[ $_crr_rc -ge 2 ]]; then
         echo "" >&2
@@ -761,7 +789,7 @@ if [[ -n "$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(py|sh)
     PY="$(pick_py)"
     if [[ -n "$PY" ]]; then
         set +e
-        CSN_OUT="$("$PY" "$ROOT/tools/check_source_notes.py" --staged 2>&1)"
+        CSN_OUT="$(run_tool "$PY" "$ROOT/tools/check_source_notes.py" --staged 2>&1)"
         CSN_RC=$?
         set -e
         if [[ $CSN_RC -ne 0 ]]; then
@@ -827,7 +855,7 @@ if git diff --cached --name-only --diff-filter=ACMR \
     PY="$(pick_py)"
     _mec_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_model_evolution_conformance.py" --staged || _mec_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_model_evolution_conformance.py" --staged || _mec_rc=$?
     fi
     if [[ $_mec_rc -ge 2 ]]; then
         echo "" >&2
@@ -859,7 +887,7 @@ if git diff --cached --name-only --diff-filter=ACMR \
     PY="$(pick_py)"
     _mcl_rc=0
     if [[ -n "$PY" ]]; then
-        "$PY" "$ROOT/tools/check_model_change_ledger.py" --staged || _mcl_rc=$?
+        run_tool "$PY" "$ROOT/tools/check_model_change_ledger.py" --staged || _mcl_rc=$?
     fi
     if [[ $_mcl_rc -ge 2 ]]; then
         echo "" >&2
@@ -887,27 +915,33 @@ if git diff --cached --name-only --diff-filter=ACM | grep -qE '^(tools|tests)/.*
     if [[ -z "$PY" ]]; then
         echo "pre-commit: python3 not found; skipping the script-visibility check ONLY" >&2
     fi
-    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_script_visibility.py" --staged; then
+    if [[ -n "$PY" ]] && ! run_tool "$PY" "$ROOT/tools/check_script_visibility.py" --staged; then
         echo "" >&2
         echo "pre-commit: a new test or tool does not say whether it ships -- see above." >&2
         exit 1
     fi
 fi
 
-# (28) tools/check_skill_change_logged.py -- a changed SKILL.md carries a dev log in the same commit.
+# (28) tools/check_harness_change_logged.py -- a changed HARNESS component carries a dev log in the
+# same commit: a skill, a git hook, an agent hook, .claude/settings.json, a machine config, or a
+# checker (a tool this hook invokes, or any tools/check_*.py / validate_*.py).
 #
-# WHY. A skill is the agent's contract, so changing one changes behaviour, and the reason must be
-# findable. The capability check (5c) never looked under .claude/skills/ and is advisory by design,
-# so a skill change with no log passed silently -- twice on 2026-09-30. BLOCKING, per the PI. A change
-# that only moves line breaks (a reflow) is exempt; a tree with no dev-log stream is not applicable.
-if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude/skills/[^/]+/SKILL\.md$'; then
+# WHY. The harness is what holds the agent's behaviour, so changing any part of it changes behaviour,
+# and the reason must be findable. The capability check (5c) is advisory and keys on new functions and
+# flags, so a skill edit with no log passed silently twice on 2026-09-30, and a hook, a checker's logic,
+# the settings file or a config default could still change with no record. BLOCKING, per the PI. A
+# markdown change that only moves line breaks (a reflow) is exempt; a tree with no dev-log stream is
+# not applicable. The gate is broad (any tools/*.py); the tool decides which of those are checkers.
+# The tool is `visibility: private`, so the sync legs do not ship it; run_tool skips it in a
+# downstream copy and fails if it is missing here.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude/skills/[^/]+/SKILL\.md$|^\.githooks/|^\.claude/hooks/|^\.claude/settings\.json$|^a2mc(_noncime)?_config\.sh$|^tools/[^/]+\.py$'; then
     PY="$(pick_py)"
     if [[ -z "$PY" ]]; then
-        echo "pre-commit: python3 not found; skipping the skill-change-logged check ONLY" >&2
+        echo "pre-commit: python3 not found; skipping the harness-change-logged check ONLY" >&2
     fi
-    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_skill_change_logged.py" --staged; then
+    if [[ -n "$PY" ]] && ! run_tool "$PY" "$ROOT/tools/check_harness_change_logged.py" --staged; then
         echo "" >&2
-        echo "pre-commit: a skill changed with no dev log in the same commit -- see above." >&2
+        echo "pre-commit: a harness component changed with no dev log in the same commit -- see above." >&2
         exit 1
     fi
 fi
@@ -939,13 +973,42 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude/skill
         # committed baseline by NAME, so only a gap that is actually new is reported -- a standing
         # audit that reprints the same twelve names on every commit is one nobody reads by the third.
         if [[ -f "$ROOT/tools/harness_query.py" && -f "$ROOT/docs/skill_graph/audit_baseline.json" ]]; then
-            HQ_OUT="$("$PY" "$ROOT/tools/harness_query.py" --audit --baseline check 2>&1)" || true
+            HQ_OUT="$(run_tool "$PY" "$ROOT/tools/harness_query.py" --audit --baseline check 2>&1)" || true
             if echo "$HQ_OUT" | grep -q 'NEW\|resolved'; then
                 echo "" >&2
                 echo "$HQ_OUT" | sed 's/^/pre-commit: ADVISORY -- /' >&2
                 echo "  Describe it in a skill, or refresh: python3 tools/harness_query.py --audit --baseline update" >&2
                 echo "  Not blocking." >&2
             fi
+        fi
+    fi
+fi
+
+# (29) tools/check_memory_trigger_drift.py -- a trigger that cites a memory must still agree with it.
+# ADVISORY, and gated on a memory or a trigger changing. Since v2.498 the edit-time reminder carries a
+# PARAPHRASE of three memories and other hooks cite memories in their docstrings, so two things can
+# drift silently: a citation to a memory that was renamed, retired or mistyped, and a memory edited
+# after the trigger quoting it. Nothing compared them. Not blocking for a PRE-EXISTING dangling
+# citation -- guessing which memory an old citation meant is worse than reporting it -- but a dangling
+# citation in a file THIS commit touches is an error, the same non-retroactive shape as check (26).
+# The tool is `visibility: private` (its subject, .claude_memory/, ships nowhere), so run_tool skips
+# it in a downstream copy.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude_memory/|^\.claude/hooks/|^\.githooks/|^tools/[^/]+\.py$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        MTD_OUT="$(run_tool "$PY" "$ROOT/tools/check_memory_trigger_drift.py" --staged 2>&1)"
+        MTD_RC=$?
+        set -e
+        if [[ $MTD_RC -eq 2 ]]; then
+            echo "" >&2
+            echo "$MTD_OUT" >&2
+            echo "pre-commit: a file in this commit cites a memory that does not exist -- see above." >&2
+            exit 1
+        elif [[ $MTD_RC -eq 1 ]]; then
+            echo "" >&2
+            echo "$MTD_OUT" | sed 's/^/pre-commit: ADVISORY -- /' >&2
+            echo "  Not blocking. Edit the memory FIRST, then its triggers, in one commit." >&2
         fi
     fi
 fi

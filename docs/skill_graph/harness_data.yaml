@@ -43,6 +43,11 @@ artifacts:
   "\\.(sh|py)$": [config-wiring, "A config variable and the layers that must declare it."]
   ? "^\\.claude/skills/[^/]+/SKILL\\.md$|^\\.githooks/pre-commit$|^\\.claude/hooks/|^docs/skill_graph/.*\\.yaml$"
   : [harness-graph, "The generated skill and harness graphs -- regenerated, never hand-edited."]
+  # Check 28 since 2026-10-06: every harness component, so one node for all six kinds rather than
+  # forcing the gate onto `skill`. The key is the hook's gate VERBATIM -- the generator matches it
+  # as an exact string, and a gate it cannot map silently loses its edge.
+  ? "^\\.claude/skills/[^/]+/SKILL\\.md$|^\\.githooks/|^\\.claude/hooks/|^\\.claude/settings\\.json$|^a2mc(_noncime)?_config\\.sh$|^tools/[^/]+\\.py$"
+  : [harness, "A harness component: a skill, a git or agent hook, a checker, the settings file, or a machine config."]
 
 # The agent-side hooks. These fire while the agent WORKS rather than at commit, so they catch a
 # thing before it is written instead of refusing it afterwards. Derived list, curated meaning.

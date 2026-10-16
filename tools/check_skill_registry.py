@@ -557,6 +557,35 @@ def modes_check(disk):
     return problems
 
 
+def profile_literal_check(disk, milestones_path=None):
+    """PROFILE-LITERAL: a skill tells the reader to pass a REGISTERED knowledge-base profile by name.
+
+    Which profile applies is a property of the commit the user runs, resolved from
+    rag/milestones.json by tools/kb_profile.py; a name written into an instruction is right for one
+    commit and wrong from the next re-anchor or patch on (PI, 2026-10-15: skills never hardcode the
+    profile). Measured that day: `rebuild-rag` and `validate-rag-chain` told the reader to run
+    `--profile ecosim-2dea74d9` after that profile had become legacy. The check is deliberately
+    narrow -- a registered name as the argument of `--profile`, above the skill's changelog -- so a
+    skill can still NAME a specific profile it means on purpose, such as the frozen `api-31-0`
+    manuscript archive, or describe a past bump in a dated passage."""
+    import json
+    path = milestones_path or (ROOT / "rag" / "milestones.json")
+    if not path.exists():
+        return []
+    names = set(json.loads(path.read_text()).get("milestones", {}))
+    problems = []
+    for name, text in disk.items():
+        body = re.split(r"^## Changelog\s*$", text, maxsplit=1, flags=re.M)[0]
+        for n, line in enumerate(body.splitlines(), 1):
+            for m in re.finditer(r"--profile[ =]+`?([A-Za-z0-9][\w.-]*)", line):
+                if m.group(1) in names:
+                    problems.append(
+                        f"PROFILE-LITERAL: '{name}' SKILL.md:{n} passes `--profile {m.group(1)}`. Resolve it "
+                        f"instead (`python tools/kb_profile.py --model <m> --name-only`), or omit --profile "
+                        f"so the tool resolves it: a written profile is wrong after the next re-anchor or patch.")
+    return problems
+
+
 def main():
     disk = skills_on_disk()
     if not disk:
@@ -648,6 +677,7 @@ def main():
     problems += marker_check()
     problems += phase_section_check()
     problems += modes_check(disk)
+    problems += profile_literal_check(disk)
 
     print(f"Skills on disk : {len(disk_names)}")
     print(f"README table   : {len(readme)}")

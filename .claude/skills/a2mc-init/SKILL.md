@@ -227,7 +227,7 @@ other checkout it cannot find E3SM commits, which says nothing about the model, 
 | verdict (`model_preflight` exit) | meaning | route |
 |---|---|---|
 | match (0) | the checkout is the commit a registered profile describes | continue |
-| **DRIFT** (3) | the model is onboarded; this commit is not the registered one | **continue, and say so.** A2MC reasons with the registered profile. Rebuild it (`rebuild-rag`; EcoSIM also has `ecosim-version-drift`) only if the user's source differs in the mechanisms being calibrated |
+| **DRIFT** (3) | the model is onboarded; this commit is not the registered one | **continue, and say so.** A2MC reasons with the registered profile. Only if the user's source differs in the mechanisms being calibrated: a small fix on top of the registered base is patched into that profile (`generate-codebase-wiki` Workflow P), and a different base becomes a new milestone (`rebuild-rag`; EcoSIM also has `ecosim-version-drift`). The DRIFT message names the nearest profile and how far the checkout is from it |
 | NO MILESTONE (2) | the adapter registers but its onboarding stopped before its milestone (ATS today) | `onboard-model`, resuming at `check_stage_ready.py --model <m>`'s first failing row |
 | CANNOT VERIFY (1) | no version could be read | fix the path, or go back to 2.1. A model installed without git metadata (tarball, conda, spack) can never be read: record its version by hand and treat it as drift |
 

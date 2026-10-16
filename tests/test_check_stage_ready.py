@@ -76,9 +76,14 @@ def make_clone(tmp: Path, *, models=(), cases=(), offline_state=False, milestone
             (d / "memory" / "workflow_state_offline_r01.json").write_text("{}")
     (tmp / "rag").mkdir(parents=True, exist_ok=True)
     ms = milestones if milestones is not None else {
-        m: {"adapter": m, "knowledge_base_dir": f"docs/{m}-kb", "curated_yaml_path": f"models/{m}/curated_seed.yaml"}
+        m: {"adapter": m, "knowledge_base_dir": f"docs/{m}-kb", "curated_yaml_path": f"models/{m}/curated_seed.yaml",
+            "model_commit_built": "0123456789abcdef0123456789abcdef01234567"}
         for m in models}
     (tmp / "rag" / "milestones.json").write_text(json.dumps({"milestones": ms}))
+    gq = "profiles:\n" + "".join(
+        f"  {prof}:\n    collection: x_knowledge\n    queries:\n      - name: q\n        query: q\n"
+        for prof in ms)
+    (tmp / "rag" / "golden_queries.yaml").write_text(gq)
     for prof, e in ms.items():
         (tmp / (e.get("knowledge_base_dir") or f"docs/{prof}-kb")).mkdir(parents=True, exist_ok=True)
         cy = tmp / (e.get("curated_yaml_path") or f"models/{prof}/curated_seed.yaml")
@@ -424,3 +429,95 @@ def test_the_fates_template_placeholder_forms_are_caught(tmp_path):
         'export A2MC_SURFDATA="/path/to/your/surfdata.nc"\n')
     rc, out = run(root, "--case", "ELM-FATES_Foo")
     assert "✗ template placeholders replaced" in out, out
+
+
+# --------------------------------------------------------------------- every profile, and the three rows of 2026-10-15
+def _two_profiles(root: Path, live_index=True):
+    """A model with a LEGACY profile that sorts first and a live one after it: the shape that made
+    stage 2 audit EcoSIM's legacy profile and never look at the live one."""
+    base = {"adapter": "ecosim", "knowledge_base_dir": "docs/ecosim-kb",
+            "model_commit_built": "0123456789abcdef0123456789abcdef01234567"}
+    ms = {"ecosim-aaaa": {**base, "legacy": True, "curated_yaml_path": "models/ecosim/seed_old.yaml"},
+          "ecosim-zzzz": {**base, "curated_yaml_path": "models/ecosim/curated_seed.yaml"}}
+    make_clone(root, models=("ecosim",), milestones=ms)
+    if not live_index:
+        import shutil
+        shutil.rmtree(root / "rag" / "chroma_db" / "ecosim-zzzz")
+    return root
+
+
+def test_every_registered_profile_is_audited_not_the_first(tmp_path):
+    """The live profile's missing index must FAIL even though the legacy one sorts first and is
+    complete. Before 2026-10-15 only `sorted(...)[0]` was checked, and this passed."""
+    rc, out = run(_two_profiles(tmp_path, live_index=False), "--model", "ecosim")
+    assert rc == 1, out
+    assert "RAG index committed [ecosim-zzzz]" in out and "absent" in out, out
+    assert "live: ecosim-zzzz; legacy: ecosim-aaaa" in out, out
+
+
+def test_a_model_whose_profiles_are_all_legacy_fails(tmp_path):
+    root = make_clone(tmp_path, models=("ecosim",), milestones={
+        "ecosim-aaaa": {"adapter": "ecosim", "legacy": True, "knowledge_base_dir": "docs/ecosim-kb",
+                        "curated_yaml_path": "models/ecosim/curated_seed.yaml",
+                        "model_commit_built": "0123456789abcdef0123456789abcdef01234567"}})
+    rc, out = run(root, "--model", "ecosim")
+    assert rc == 1 and "every one legacy" in out, out
+
+
+def test_a_seed_that_cites_source_needs_its_checker(tmp_path):
+    root = make_clone(tmp_path, models=("ecosim",))
+    (root / "models" / "ecosim" / "curated_seed.yaml").write_text("m:\n  code_location: src/Mod.F90:120-131\n")
+    rc, out = run(root, "--model", "ecosim")
+    assert rc == 1 and "seed-citation checker" in out and "check_ecosim_seed_citations.py" in out, out
+    (root / "tools").mkdir(exist_ok=True)
+    (root / "tools" / "check_ecosim_seed_citations.py").write_text("# stub\n")
+    rc, out = run(root, "--model", "ecosim")
+    assert rc == 0 and "1 citation(s) in the seed" in out, out
+
+
+def test_a_seed_with_no_citations_needs_no_checker(tmp_path):
+    rc, out = run(make_clone(tmp_path, models=("ecosim",)), "--model", "ecosim")
+    assert rc == 0 and "the seed cites no source lines" in out, out
+
+
+def test_a_live_profile_without_a_golden_query_block_fails(tmp_path):
+    root = make_clone(tmp_path, models=("ecosim",))
+    (root / "rag" / "golden_queries.yaml").write_text("profiles:\n  other-profile:\n    collection: x\n")
+    rc, out = run(root, "--model", "ecosim")
+    assert rc == 1 and "no `ecosim` block in rag/golden_queries.yaml" in out, out
+
+
+def _git_repo(path: Path, n_commits: int):
+    path.mkdir(parents=True)
+    g = lambda *a: subprocess.run(["git", "-C", str(path), *a], capture_output=True, text=True, check=True).stdout.strip()
+    g("init", "-q"); g("config", "user.email", "t@t"); g("config", "user.name", "t")
+    shas = []
+    for i in range(n_commits):
+        (path / "f.F90").write_text(f"! {i}\n")
+        g("add", "f.F90"); g("commit", "-q", "-m", f"c{i}")
+        shas.append(g("rev-parse", "HEAD"))
+    return shas
+
+
+def test_the_profile_resolves_its_base_and_patches_from_a_checkout(tmp_path):
+    shas = _git_repo(tmp_path / "src", 2)
+    root = make_clone(tmp_path / "clone", models=("ecosim",), milestones={
+        "ecosim-base": {"adapter": "ecosim", "knowledge_base_dir": "docs/ecosim-kb",
+                        "curated_yaml_path": "models/ecosim/curated_seed.yaml",
+                        "model_commit_built": shas[0], "patches": [{"commit": shas[1]}]}})
+    rc, out = run(root, "--model", "ecosim", "--checkout", str(tmp_path / "src"))
+    assert rc == 0, out
+    assert f"base {shas[0][:8]} and 1 patch(es) resolve to ecosim-base" in out, out
+
+
+def test_a_checkout_without_the_milestone_commit_fails_when_named(tmp_path):
+    _git_repo(tmp_path / "other", 1)
+    root = make_clone(tmp_path / "clone", models=("ecosim",))
+    rc, out = run(root, "--model", "ecosim", "--checkout", str(tmp_path / "other"))
+    assert rc == 1 and "is not a commit in" in out, out
+
+
+def test_no_checkout_reports_what_a_fresh_clone_resolves_to(tmp_path):
+    rc, out = run(make_clone(tmp_path, models=("ecosim",)), "--model", "ecosim")
+    assert rc == 0, out
+    assert "a clone with no checkout resolves to ecosim" in out and "pass --checkout" in out, out

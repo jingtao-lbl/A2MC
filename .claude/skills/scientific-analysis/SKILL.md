@@ -2,15 +2,15 @@
 name: scientific-analysis
 visibility: public
 category: calibration
-description: Run a manuscript-supporting scientific investigation that ends in a figure + an ana_log — pose a question, pull ensemble/run data, compute the statistic/mechanism, make a figure, cite evidence, and write an ana_log. Use when the user asks to "investigate whether X", "is X correlated with Y", "analyze the mechanism of X", "make a manuscript figure for X", "P-pool / cross-regime / attribution analysis". For a standardized single-round report use summarize-calibration-round; for cross-round figures use compare-calibration-rounds.
+description: Run a manuscript-supporting scientific investigation that ends in a figure + a log or report — pose a question, pull ensemble/run data, compute the statistic/mechanism, make a figure, cite evidence, and write a free-style calibration log or report. Use when the user asks to "investigate whether X", "is X correlated with Y", "analyze the mechanism of X", "make a manuscript figure for X", "P-pool / cross-regime / attribution analysis". For a standardized single-round report use summarize-calibration-round; for cross-round figures use compare-calibration-rounds.
 modes:
   requires_fates: false
   nutrient_pathway: any
   scope: [analysis]
-  summary: "Investigation -> figure -> ana_log workflow; model-agnostic (examples are FATES/Kougarok)."
+  summary: "Investigation -> figure -> calibration log or report workflow; model-agnostic (examples are FATES/Kougarok)."
 ---
 
-# Scientific Analysis → Figure → ana_log
+# Scientific Analysis → Figure → Log or Report
 
 The interactive agent does the open-ended, manuscript-supporting science that the fixed
 calibration loop can't: "is PFT10 P uptake growth-limited or stoichiometric?", "attribute
@@ -53,8 +53,10 @@ it — the source remains ground truth on what the model DOES. Measured 2026-09-
 ## Step 2 — pull + analyze
 
 Reuse the analysis tooling rather than re-deriving:
-- `use_cases/{Model}_{Case}/analysis/` scripts (attribution, contrast, forcing comparison) and
-  `tools/plot_ensemble_cases.py` / `tools/extract_ADSP_RGSP_slim.py` for ensemble data.
+- The case's script TEMPLATES in `use_cases/{Model}_{Case}/scripts/`: copy one into the log's
+  `phase_results/{stem}/` and adapt it there. And `tools/plot_ensemble_cases.py` /
+  `tools/extract_ADSP_RGSP_slim.py` for ensemble data. The old `use_cases/{Model}_{Case}/analysis/`
+  directory is retired; do not add to it.
 - **For any per-PFT / SZPF extraction in a custom script, use `tools/fates_utils`** — `get_szpf_range()`,
   `extract_pft_data()`, `aggregate_szpf_by_pft()`, `get_pft_index()`, `identify_dimension_level()`. Do
   **not** hand-roll the SZPF (`levscpf`) index: it is **PFT-major** `(pft-1)×nlevsclass`, where
@@ -73,16 +75,20 @@ units, semantic colours and the A2MC ensemble template — and the one step that
 catches a broken figure: **open the rendered PNG and look at it.** An overlapping legend or a
 label sitting on the data never shows up in the code.
 
-Save figures under `use_cases/{Model}_{Case}/analysis/` with the **round + axis-mode + case
-count** embedded in the name (memory: plot filename convention) — e.g.
-`R4_combined_519yr_top50_<topic>.png` — to avoid the `ensemble_biomass_all_cases.png`
-ambiguity from past sessions. Figures are gitignored, so the filename is the only durable
-pointer.
+Save each figure in the log's `use_cases/{Model}_{Case}/memory/phase_results/{stem}/`, where
+`{stem}` is the log's own stem. That folder is self-documenting: each figure ships with its
+caption `.md`, its generating `.py` and its data file (`calibration-log` owns the rule). Embed the
+**round + axis-mode + case count** in the figure's name (memory: plot filename convention), e.g.
+`R4_combined_519yr_top50_<topic>.png`, to avoid the `ensemble_biomass_all_cases.png` ambiguity
+from past sessions. Figures here are tracked, and the log embeds them by a relative path, as
+`calibration-log` describes.
 
-## Step 4 — write the ana_log (cite explicit evidence)
+## Step 4 — write the log or report (cite explicit evidence)
 
-Write an `ana_log` via the `/log` skill (`/log ana <topic>` → `memory/ana_logs/`). The
-load-bearing rule: **every quantitative claim names its figure / statistic / data file
+Write a **free-style calibration log** with the `calibration-log` skill (its Type B session log,
+under the case's `use_cases/{Model}_{Case}/memory/logs/`; that skill owns the path and header). When
+the write-up is for a reader outside the project, write a **report** with the `write-report` skill
+instead. `memory/ana_logs/` is retired and takes no new files. The load-bearing rule: **every quantitative claim names its figure / statistic / data file
 inline**, and a section drawing on several artifacts gets an **"Artifacts this section is
 based on"** table. A claim with no cited source is a red flag — find the source or soften
 it. Render to PDF with the `markdown-to-pdf` skill if it's a shareable note.
@@ -95,9 +101,8 @@ MemoryManager / by hand) or stage + promote via `curate-knowledge`. Do NOT injec
 unverified hunch.
 
 ## Notes
-- ana_logs are manuscript working notes — tracked on this branch, excluded from public
-  sync.
+- The log and the report both live with their case (`use_cases/{Model}_{Case}/memory/logs/` and `use_cases/{Model}_{Case}/reports/`), so they ship only if the case does.
 - Pairs with: `diagnose-forensics` (triage odd results), `compare-calibration-rounds` /
-  `summarize-calibration-round` (standardized figures), `/log` (the ana_log + supersede
-  protocol), `markdown-to-pdf` (render), `curate-knowledge` (land a lesson).
+  `summarize-calibration-round` (standardized figures), `calibration-log` (the free-style
+  log), `write-report` (the report), `markdown-to-pdf` (render), `curate-knowledge` (land a lesson).
 

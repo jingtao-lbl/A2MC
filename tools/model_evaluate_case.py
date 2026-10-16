@@ -77,7 +77,7 @@ def _resolve_backend(model: Optional[str] = None, backend: Optional[Any] = None)
 # own; there is no model-agnostic default). The generic keywords are max/mean/last.
 ECOSYSTEM_REDUCES = frozenset({
     "sum_pft_peak", "growing_season_mean_abs", "growing_season_daytime_mean_abs",
-    "annual", "depth_integral", "year_end",
+    "annual", "depth_integral", "year_end", "season_sum",
 })
 
 # NB `year_end` MUST be listed above, not merely implemented in the backend. A reduce keyword

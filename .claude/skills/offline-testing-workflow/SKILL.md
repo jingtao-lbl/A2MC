@@ -18,7 +18,7 @@ A reproducible pipeline for running an A2MC HPC experiment (typically 6-10 varia
 
 - The user asks for an "experiment", "test", "verify the X hypothesis", "Phase 4/5 run", or "parameter sweep" on a small set (≤ ~10) of variants
 - Diagnosis (manual or AI-driven) has surfaced a candidate parameter to test
-- An ana_log identifies a mechanistic hypothesis that needs experimental confirmation before updating the knowledge base
+- A log identifies a mechanistic hypothesis that needs experimental confirmation before updating the knowledge base
 
 Do NOT invoke for:
 - Full Morris ensemble runs (use `phases/phase0_design/submit_phase0.py` directly)
@@ -27,11 +27,13 @@ Do NOT invoke for:
 
 ## Step 1 — Search dev_logs FIRST for prior plans on the same topic
 
-This is the #1 lesson from the H1 misadventure. Before writing a new experiment plan, grep `memory/dev_logs/` and `memory/ana_logs/` for prior work:
+This is the #1 lesson from the H1 misadventure. Before writing a new experiment plan, search the dev logs, the case's calibration logs (where plans and results are written now) and the frozen `memory/ana_logs/` archive for prior work:
 
 ```bash
-# Replace <topic> with the parameter / mechanism you're about to test
-grep -lriE "<topic>|<param_name>|experiment.*<topic>" memory/dev_logs/ memory/ana_logs/ 2>/dev/null
+# Replace <topic> with the parameter / mechanism you're about to test, and {Model}_{Case} with the case.
+# Name the case directory: a wildcard pathspec such as use_cases/*/memory/logs matches nothing.
+git grep -l -i -E --untracked "<topic>|<param_name>|experiment.*<topic>" -- \
+    'memory/dev_logs*' memory/ana_logs use_cases/{Model}_{Case}/memory/logs
 ```
 
 If a prior plan exists, **read it first** and decide: (a) execute it as-is, (b) augment it with new data, or (c) supersede it with explicit reasoning in a new dev_log. Do NOT silently write a parallel plan.
@@ -50,7 +52,7 @@ Tools:
 - **GitHub queries** for the model repo (e.g., `NGEET/fates`) — community knowledge often surfaces in issues + PRs that don't make it to published literature. Use `curl https://api.github.com/search/issues?q=repo:NGEET/fates+<term>` since `gh` CLI may not be available on the HPC login node.
 - **WebSearch** as fallback when MCP isn't loaded.
 
-Capture findings in an ana_log (`memory/ana_logs/<date>_<param>_Literature_Search.md`) with these sections:
+Capture findings with `literature-review` in bounds mode, in the case's `use_cases/{Model}_{Case}/parameters/bounds_literature_review_<YYYYMMDD>.md` (start from `models/<model>/reference_bounds/` where it exists), with these sections:
 1. FATES (or model) community history — who set the default, when, with what justification
 2. Peer-reviewed evidence — papers reporting the parameter value for the relevant ecosystem/species
 3. Satellite/observational evidence (Step 3 below)
@@ -72,7 +74,7 @@ For ELM-FATES specifically, the site coordinates come from `use_cases/ELM-FATES_
 
 If the data file is paywalled or requires login, set up `.netrc` once with the user's credentials (chmod 600). Pattern documented in the originating dev/ana log §4.
 
-Document the extracted values in the same ana_log as Step 2.
+Document the extracted values in the same document as Step 2.
 
 ## Step 4 — Variant design with falsifiability + pre-committed thresholds
 
@@ -245,7 +247,7 @@ Use `create_case.sh --case-suffix` to name experiment cases. **NEVER invent out-
 
 Resulting case name: `<prefix>_PtCNPEn<base>PrescP_<variant>_<PHASE>` (e.g., `Kougarok_ELM-FATES_PtCNPEn1304PrescP_clump02_TRANS`).
 
-**Why this matters:** Morris analysis tools (`r5_auto_monitor.sh`, `screen_ensemble.py`, etc.) use the filename pattern `*PrescP_TRANS_*.nc` to identify Morris cases. Experiment case names include the suffix between `PrescP` and `_TRANS_`, so the literal substring `PrescP_TRANS` does NOT appear in the experiment filename — naturally excluded from Morris analysis without any case-number filtering.
+**Why this matters:** Morris analysis tools (`tools/ensemble_auto_monitor.sh`, which replaced the retired `r5_auto_monitor.sh`, `screen_ensemble.py`, etc.) use the filename pattern `*PrescP_TRANS_*.nc` to identify Morris cases. Experiment case names include the suffix between `PrescP` and `_TRANS_`, so the literal substring `PrescP_TRANS` does NOT appear in the experiment filename — naturally excluded from Morris analysis without any case-number filtering.
 
 The param filename follows the same pattern: `fates_params_..._En<base>_<variant>.nc` (e.g., `fates_params_..._En1304_clump02.nc`).
 
@@ -350,23 +352,23 @@ Compute the pre-committed metrics from Step 4. Apply the decision tree from the 
 
 | Outcome | Action |
 |---|---|
-| **CONFIRMED** (all thresholds met) | Execute companion KB-injection plan with `verified: true`, `confidence: ≥0.85`. Write ana_log documenting experimental confirmation. Recommend next-round parameter-space expansion. |
+| **CONFIRMED** (all thresholds met) | Execute companion KB-injection plan with `verified: true`, `confidence: ≥0.85`. Record the confirmation in the result log (Step 12). Recommend next-round parameter-space expansion. |
 | **PARTIAL** (some thresholds met, others borderline) | Execute KB-injection plan with `verified: true`, `confidence: 0.5-0.7`. Design follow-up experiment combining this parameter with adjacent candidates. |
-| **REFUTED** (thresholds not met OR falsifiability variant shows wrong direction) | DO NOT execute KB-injection plan. Update the source ana_log with refutation note. Redirect investigation to alternative hypotheses. |
+| **REFUTED** (thresholds not met OR falsifiability variant shows wrong direction) | DO NOT execute KB-injection plan. Record the refutation in the result log and point the source log at it (Step 12). Redirect investigation to alternative hypotheses. |
 
 The KB injection plan should be a companion dev_log that documents WHAT to add to `memory/gained_knowledge/discoveries.json` and the matching site-specific `gained_knowledge/` files. Example pattern: the originating dev/ana log is the companion to `20260519e`.
 
-## Step 12 — Write the result ana_log + cross-link
+## Step 12 — Write the result log + cross-link
 
-Per A2MC convention, the experiment's scientific outcome lives in `memory/ana_logs/<date>_<exp_name>_Results_<Confirms|Refutes>_<Hypothesis>.md`. Include:
+The experiment's scientific outcome goes in the case's calibration log, through `calibration-log`: the Phase 5 (testing) and Phase 6 (refinement) logs when the experiment runs inside a calibration cycle, otherwise a free-style calibration log. `memory/ana_logs/` is retired and takes no new files. Include:
 - Quantitative results table (one row per variant, all pre-committed metrics)
-- Comparison plot (use `use_cases/{Model}_{Case}/analysis/<plot_script>.py`)
+- Comparison plot from Step 10's `tools/extract_and_plot_selected_cases.py plot`, saved in the log's `use_cases/{Model}_{Case}/memory/phase_results/{stem}/` with its caption and data
 - Decision outcome + which KB injection (if any) was triggered
 - Manuscript implications (how this changes the methods/discussion framing)
 
 Cross-link from:
-- The experiment plan dev_log (add a "Result" section pointing at the ana_log)
-- The source ana_log (the one that proposed the hypothesis — add a Resolution note)
+- The experiment plan (add a "Result" section pointing at the result log)
+- The log that proposed the hypothesis (add a pointer to the result)
 - `memory/gained_knowledge/discoveries.json` (if KB injection occurred)
 
 ## Anti-patterns (what to NOT do)

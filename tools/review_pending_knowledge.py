@@ -9,9 +9,10 @@ interactive (human-in-the-loop) agent review those staged proposals and promote 
 vetted ones into the curated KB, or discard the rest.
 
 Why this exists: the curated KB shapes the AI's diagnoses. A misunderstood or
-failed-experiment "lesson" written unattended can poison every subsequent cycle (see
-memory/dev_logs/20260519a_*). Gating curated writes behind human review closes that
-loop. Design + rationale: memory/dev_logs/20260612d_Memory_Write_Gate_Interactive_Only_Curated.md
+failed-experiment "lesson" written unattended can poison every subsequent cycle -- which
+happened in May 2026 and is what prompted this gate. Gating curated writes behind human
+review closes that loop. Design + rationale: the `curate-knowledge` skill, which documents
+propose mode and the `auto_discovered_pending.json` staging queue.
 
 Usage:
     python tools/review_pending_knowledge.py list [--memory-dir DIR] [--all]

@@ -13,8 +13,9 @@ modes:
 # Log Calibration Work (phase log or free-form session log)
 
 Records the interactive agent's calibration/exploration work for a site under
-`use_cases/{Model}_{Case}/memory/logs/`, so it lives alongside the autonomous agent's logs and
-`tools/session_report.py` / synthesis reporting can process everything for a session together.
+`use_cases/{Model}_{Case}/memory/logs/`, so it lives alongside the autonomous agent's logs. Synthesis
+(`tools/session_report.py`) folds in the PHASE logs of both agents; a free-form session log is read by
+whoever cites it, not by synthesis.
 
 ## Step 1 — pick the log type
 
@@ -23,9 +24,9 @@ Records the interactive agent's calibration/exploration work for a site under
 | **phase log** | The work maps to a Phase 0–7 activity (diagnosis, screening, experiment design/result, refinement, …) | `PhaseLogger` — identical format/naming to the autonomous agent |
 | **session log** | Free-form / exploratory work that does **not** follow the phases exactly (an ad-hoc analysis, a data check, an idea) — which is fine | a plain dated note using the `YYYYMMDDx_Topic.md` convention |
 
-Both land under the same session directory `use_cases/{Model}_{Case}/memory/logs/{stamp}/`, so synthesis
-sees one session in one place. `{stamp}` = the orchestrator `session_id` (`YYYYMMDD_HHMMSS`) when a
-run is active, otherwise a date stamp for the interactive session.
+Both live in `use_cases/{Model}_{Case}/memory/logs/`. A free-form log and an offline phase log sit
+directly in it; only an ONLINE orchestrator run nests its phase logs under the run's
+`{stamp}/phase{N}_{name}/` (below), where `{stamp}` is the orchestrator `session_id` (`YYYYMMDD_HHMMSS`).
 
 ## Type A — phase log (via PhaseLogger)
 
@@ -156,6 +157,13 @@ stays visible.
 
 **Phase 5 archives its JOB SCRIPTS into `phase_results/{stem}/submit_scripts/`** (PI, 2026-08-23). Copy, never move: the scheduler reads the operative copy from the run directory. The reason is that **the run directory is untracked scratch and gets cleaned**, while the submit script is where the **binary this run was bound to** and its **run-time hash assertion** are recorded. A log claiming its V0 gate passed, with no archived submit script, cannot show which executable produced the number, and on 2026-08-23 a cycle nearly ran against the wrong binary because the materializer emits the LIVE build path by default ([[feedback_bind_runs_to_archived_binaries]]). Archive one script per case plus one representative `runfile.nml`. **Phase 0 is deliberately EXEMPT.** Its job scripts are generated from the machine + round config by the materializer, and an ensemble is thousands of cases (one R3 round is 59,393), so archiving them would be both enormous and redundant: the config plus the generator already reproduces them exactly. Phase 5 is different because its handful of variants are hand-designed and hand-repointed, so nothing else records what actually ran.
 
+**ANY phase that put jobs on a scheduler archives its RUN-TRACKING artifacts into the same folder — phase 0 included, and this one has no exemption** (PI, 2026-10-10: *"you should keep the watch logs etc in the stem folder too"*). The submit-script exemption above is narrow and is about GENERATED per-case scripts; it says nothing about monitoring, which is generated from nothing. Archive two things:
+
+- **the watcher's `--state-file` JSON**, copied whole. It is a few hundred bytes and it is the heartbeat contract `tools/check_watcher_state.py` reads, so it is the only record that the layer which detects a DEAD WATCHER was ever in place — the layer that gets dropped, because a log that stops growing is byte-identical whether the job is running quietly or the watcher is gone;
+- **a de-duplicated DIGEST of the watcher log, never the raw log.** The status tool reprints every case line each poll, so the raw log is the same list over and over: measured at 1.87 MB after FOUR polls on an 8193-case ensemble, about 134 MB/day. Keep the per-poll summary lines with consecutive duplicates collapsed, which is the same filter the event monitor uses, and the transitions survive at a few hundred bytes.
+
+**And archive the submit command when it OVERRODE the script**, even in phase 0. The exemption's premise is that the config plus the generator reproduces what ran; a flag passed on the command line is reproduced by neither. Measured the same day: an ensemble was launched with `--array` and `--job-name` both overriding the committed script's own directives, one of them because `%x` forms the output filename and the script still named the PREVIOUS round. `check_offline_log_evidence.py` WARNs when a phase-0 or phase-5 log SAYS monitoring was armed and no state snapshot is archived (non-retroactive from `20261010`).
+
 **Update the STATE before you write the log — the order is load-bearing.** `PhaseLogger` **bakes the
 `## Reasoning chain` block into the file at write time**, rebuilding it from
 `workflow_state_offline_r{RR}.json`. Nothing rewrites a log afterwards, so:
@@ -183,7 +191,7 @@ looks like a chain and resolves to nothing) and warns on a `Sections not provide
 pre-commit hook runs it on **staged** calibration logs.
 
 > **Do NOT use `tools/check_log_conformance.py` here.** That one governs the DEVELOPMENT streams
-> (`memory/dev_logs*/`, `memory/ana_logs/`) and its contract is different — it wants
+> (`memory/dev_logs*/`, and the frozen `memory/ana_logs/`) and its contract is different — it wants
 > `Summary`/`Problem`/`Solution`/`Files Changed`/`Verification` and a `Version`/`Branch` header,
 > none of which a calibration log has. Pointed at a calibration log it reported 6 errors demanding
 > sections that do not belong (measured 2026-08-14). Both tools now refuse the other's stream
@@ -196,13 +204,15 @@ data file — clear those warnings too (the self-documenting-folder discipline a
 
 ## Type B — session log (free-form)
 
-For exploratory work that doesn't fit a phase. Write a plain dated markdown note at the **session
-root** (no `phase{N}` subdir):
+For exploratory work that doesn't fit a phase. Write a plain dated markdown note **directly in the
+case's logs folder**, beside the phase logs, with no subfolder:
 ```
-use_cases/{Model}_{Case}/memory/logs/{stamp}/YYYYMMDDx_Topic.md
+use_cases/{Model}_{Case}/memory/logs/YYYYMMDDx_Topic.md
 ```
-- `YYYYMMDDx` = date + a sequential letter (`a`, `b`, `c`, … for same-day notes — check existing
-  files so you don't reuse a letter), `Topic` = Title_Case with underscores. Past `z` (27th+
+Its figures and the scripts behind them go in `phase_results/{stem}/` and are embedded the same way as a
+phase log's (above).
+- `YYYYMMDDx` = date + a sequential letter (`a`, `b`, `c`, … for same-day notes — check the existing
+  files in `logs/`, phase logs included, since the two kinds share one folder and one letter sequence), `Topic` = Title_Case with underscores. Past `z` (27th+
   same-day), append a second letter keeping the `z` prefix: `za, zb, …, zz` (sort-stable — the
   offline stem does this automatically in `tools/phase_logger.py`; never `aa`, it sorts before `b`).
 - Keep it light: a short header (**Date**, **Author**, **Type:** exploration/analysis) followed by
@@ -309,7 +319,7 @@ the autonomous agent's format. For a Type B session log, just append it before y
 ```markdown
 ## Skills and memory invoked
 
-- **Skills:** `phase3-diagnosis`, `plotting`
+- **Skills:** `phase3-diagnosis`, `query-knowledge-base`, `plotting`
 - **Memory:** `feedback_timeseries_plots_during_diagnosis`, `reference_l2fr_is_fineroot_per_leaf`
 - **Memory written:** `feedback_new_thing_learned_here`  *(memories this log CREATED or CHANGED — distinct from **Memory:** above, which lists memories APPLIED. Each one's `**Source:**` must name this log back; both checkers verify the pair.)*
 - **Knowledge consulted:** RAG `api-43-1` (2 queries on ECA uptake); curated discovery

@@ -8,7 +8,7 @@ modes:
   requires_fates: false      # covers ELM and/or FATES source; model-dev, not a calibration phase
   nutrient_pathway: any
   scope: [model-dev]
-  summary: "The disciplined workflow for changing ELM/FATES source — branch, default-off, paired verify, log both streams, fork-only push."
+  summary: "The disciplined workflow for changing ELM/FATES source — branch, default-off, paired verify, log in the case's memory/model_evolution stream, fork-only push."
 ---
 
 # model-evolution — evolving a model's SOURCE under the reproducibility discipline
@@ -20,7 +20,7 @@ for the FATES "add a tunable knob" case. Read the model-tree contract first: the
 `CLAUDE.md` §1 (paths recorded in [[feedback_model_source_push_fork_only]]).
 
 **Applies to EVERY onboarded model, not only ELM/FATES.** The *workflow* is generic — branch, preserve the
-baseline, switch-gate default-off, paired verify, log both streams, push fork-only. What is per-model is the
+baseline, switch-gate default-off, paired verify, log in the case's `use_cases/{Model}_{Case}/memory/model_evolution/` stream, push fork-only. What is per-model is the
 **artifact handling**: the build system (step 3.5), where a tunable knob lives (step 3), and the fork
 remotes (step 7). FATES supplies most worked examples below because it has the longest history here; EcoSIM
 ([[reference_ecosim_fork_and_anchor]]) and PFLOTRAN ([[reference_pflotran_repos_and_clones]]) follow the
@@ -41,6 +41,28 @@ baseline rebuildable and never edit the anchor in place. (Contract: `E3SM_FATES_
 is main's working-model policy; the frozen manuscript branch (demo/api-31) is stricter — always an
 experiment branch.)
 
+**0b. RE-ANCHORING on a new upstream version — the fork's own `main` IS the delta.** A distinct
+operation from step 0's two cases, and the one with no recipe until 2026-10-10. Upstream has moved
+and the fork's accumulated changes must come forward onto it.
+
+**Take the fork's `main`; never reconstruct the delta by replaying individual commits.** `main` is
+where the fork's changes have been maintained — including every correction made since they were
+first written. A replay of the original commits silently reverts those corrections, because a
+correction lives only on the branch that received it. Measured 2026-10-10: a re-anchor rebuilt from
+five pre-merge commits reinstated a comment style the PI had corrected two months earlier, and also
+dropped an upstream declaration the real merge keeps.
+
+1. **Merge, don't replay.** `git merge <upstream-tag>` into a branch off the fork's `main`, resolve,
+   and treat the result as the reference TREE.
+2. **Drop what upstream has since adopted.** A fork change upstream has independently made is one
+   fewer file in the delta and one fewer conflict every future re-anchor. Dropping it is a
+   MAINTENANCE decision with a cost either way — surface it rather than deciding silently.
+3. **Check what upstream CHANGED under you.** Resolve each conflict as a union by default, but a
+   shared declaration upstream has widened or retyped takes upstream's version; the fork's older
+   copy is stale. A duplicate here is caught by the build, a wrong-width array may not be.
+4. **Then reshape for readability per step 7**, and verify the reshaped tree is byte-identical to
+   the merged one (`git diff` empty) before trusting any build made from either.
+
 **1. Mechanism-first — GATE the build on evidence, don't assume.** *Wiring is easy; the control point is
 where it fails.* Before paying for a structural change, verify **on existing data (cheap, no HPC)** that
 the mechanism can actually move the target.
@@ -54,7 +76,7 @@ the mechanism can actually move the target.
 - Do not escalate to model-dev on an unverified assumption ([[feedback_performance_experiment_is_the_objective]]
   — earn model-dev only after the calibration loop is provably exhausted).
 
-**2. Scope from source, THEN implement (comment `!Jing Tao:`).** *The real scope is routinely bigger than
+**2. Scope from source, THEN implement (annotate per THE FORM at the end of this step).** *The real scope is routinely bigger than
 the sketch — read before you write.* (demo #17: the "redimension a scalar + a phenology tweak" sketch was,
 in the source, a ~6-file refactor + a restart-format change.)
 - **Map the subsystem from the CODEBASE WIKI first — in-repo, free, and no traversal at all.**
@@ -68,7 +90,7 @@ in the source, a ~6-file refactor + a restart-format change.)
   ([[feedback_nersc_no_recursive_traversal]]). When you don't yet know the symbol's name, enter through
   RAG (`HybridRetriever.get_targeted_context()`).
   **Check the pin before trusting a line number** — `git -C "$A2MC_MODEL_PATH" rev-parse --short HEAD`
-  (and the submodule's own HEAD) against the wiki directory's commit suffix. Drifted is the *normal*
+  (and the submodule's own HEAD) against the commit the wiki describes: the directory's commit suffix, or, for an adapter profile patched in place (`generate-codebase-wiki` Workflow P), its last patch (`kb` in `python tools/kb_profile.py --model <m> --list`, and each page's `**Source pin:**` line). Drifted is the *normal*
   state mid-experiment. The wiki's **file names and symbols still hold**; its **line numbers may not**.
   Tier the damage rather than distrusting the whole wiki, and note that "page cites a changed file" is
   the WRONG filter — core modules are cited nearly everywhere (measured 2026-08-14: **55 of 56** FATES
@@ -84,7 +106,7 @@ in the source, a ~6-file refactor + a restart-format change.)
   `git grep` — the branch may yet be reworked or abandoned, so pinning a wiki to it is churn. Once it
   has passed paired verification (step 5) and merged to the fork's `main`, the change is permanent in
   the tree `A2MC_MODEL_PATH` resolves to, and the wiki is now wrong about the model you actually run:
-  that is the moment for `generate-codebase-wiki` **Workflow C** (targeted drift refresh). Do not wait
+  that is the moment to bring the knowledge base along: `generate-codebase-wiki` **Workflow P** (patch the round's profile in place) when a round adopts the change on top of its base binary, for an adapter model only since FATES has no P, **Workflow C** (targeted drift refresh) when it becomes a new round's base. Do not wait
   for an api-epoch milestone — those are rare and expensive in FATES, so milestone-gating would leave
   the wiki stale for months against a model that has moved.
 - **THEN grep EVERY consumer** of the symbol/state — now scoped by the files the wiki named, not the
@@ -131,8 +153,26 @@ in the source, a ~6-file refactor + a restart-format change.)
   `grep -r`/`find`). A subagent runs its own tool loop and inherits neither this rule nor the harness's
   traversal hook if it shells out from a different working directory.
 
-Then implement; every edited/added line gets a detailed `!Jing Tao:` comment — mechanism, units, value
-choice, follow-ups ([[feedback_model_code_comment_jing_tao]]). This is the in-source audit trail.
+Then implement, annotating every edit. This is the in-source audit trail.
+
+**THE FORM — two of them, chosen only by LENGTH (PI, finalized 2026-10-10).**
+
+```
+! ONE LINE:
+!Jing Tao (2026-10-10, branch exp/my-change): short one line comment
+
+! MULTI-LINE: the header sits ON TOP of the paragraph; continuations are PLAIN comments
+! --- Jing Tao (2026-10-10, branch exp/my-change) ---
+! The mechanism this targets, the units of any value, why that value, any follow-up.
+! Further lines stay plain.
+```
+
+Use the language's own comment character (`!` Fortran, `#` CMake/shell). **"a comment on every
+edit" means the ONE-LINE form — it does NOT mean prefixing every line of a block.** A repeated
+per-line prefix is the anti-pattern: it makes one explanation read as many and buries the content.
+Corrected twice ([[feedback_model_code_comment_jing_tao]]). **Existing annotations are NOT retroactively
+reformatted** (PI, 2026-10-10): this governs future edits, and a reformatting pass over
+published source is explicitly not wanted.
 
 **3. Switch-gate — DEFAULT-OFF = bit-for-bit baseline.** For a **reproducibility-sensitive or exploratory**
 change, make it **default-off**: a no-op value or a switch such that a switch-off build reproduces the
@@ -186,6 +226,14 @@ this. **(b)** Never derive an archive label from the *checked-out branch*: after
 the tree is restored to one branch while the build dir still holds the other's binary, so branch-derived
 labelling mislabels it. Label explicitly.
 
+**(b2) If the branch is later REWRITTEN, the archive's label points at a commit nobody can reach.**
+An archive is filed `<label>_<shortsha>`, so a rebase, amend or reshape leaves it naming a dead
+commit while the binary is still correct. **Re-file it under the new head and prove the bytes are
+the same (`cmp`) rather than rebuilding** — a rebuild is a different artifact and forfeits any
+verification already run against the old one. Then repoint the round config, the round ledger's
+`model_change_ledger.round_binaries`, and the model-evolution record, and re-run
+`binary_archive_manifest.py --verify`.
+
 **(c) Archiving is only half the job — POINT THE RUNS AT THE ARCHIVE.** Preserving the baseline stops
 you *losing* an artifact; it does not stop a later rebuild *swapping* the artifact a run resolves. A
 queued job resolves its executable at **run** time, and on a shared tree the rebuild need not even be
@@ -233,6 +281,24 @@ run confirms V0-at-equality (build/env/seed drift otherwise masquerades as signa
 >   would have "passed" perfectly.
 > - **Record both arms' binary hashes and assert they DIFFER**, as part of the pass. Identical outputs
 >   plus provably different executables is evidence; identical outputs alone is not.
+
+> **⚠ A SUPPRESSING GUARD CANNOT BE VALIDATED BY ITS OWN SILENCE — trace the boolean, and test the case
+> it must still catch.** "ON ran, nothing crashed" tells you nothing about whether a new condition that
+> disables part of an existing check is scoped correctly: an over-broad guard and a correctly-scoped one
+> are indistinguishable by that observable on every case that isn't the exact boundary
+> ([[feedback_a_check_that_cannot_fail]] — the same shape, one gate over). Two things close this,
+> neither of which is a run:
+> - **Trace the compiled expression against the stated invariant, not the comment describing it.** A
+>   multi-term `.and.`/`.or.` reads as "skip B when C" in prose but may silence A too — write out what the
+>   expression evaluates to with the suppressing term TRUE, term by term, before trusting a comment that
+>   asserts otherwise.
+> - **Construct and run the case the guard must still catch** — the new condition true, but the original
+>   error large enough the check should still fire — and confirm it still does. A pilot that never
+>   exercises that exact boundary proves nothing about the guard, however many ordinary cases pass.
+- **Read the whole subroutine end-to-end, not just the edited hunk, before trusting the edit.** A
+  locally-correct condition can still be unreachable or ineffective because of an ENCLOSING
+  `if`/`do`/`associate` the edit never touched — the nesting is only visible by reading the subroutine as
+  a whole, never by re-reading the cited lines alone.
 - **If the change alters the restart or history I/O layout** (e.g. promoting a scalar to per-PFT changes
   the restart variable's *shape*), the V0-at-equality check **must be a fresh COLD-START chain** (a spin-up
   *is* a cold start), NOT a warm restart across the format boundary — and an old-format restart cannot be
@@ -275,7 +341,8 @@ run confirms V0-at-equality (build/env/seed drift otherwise masquerades as signa
   - **`## Skills and memory invoked`, naming `model-evolution`.** Writing one of these means invoking this skill, so a record that does not claim it was written without the source of truth open — the same reasoning as the dev-log claims check one level down.
   - `## Cross-references` and a commit-like identifier are expected (warnings); the round's `model_change_ledger` copies a commit out of this record.
 - **The ledger row is a COPY of this record, and the copy is checked.** `model_log` points at the record; write it **case-relative** (`memory/model_evolution/<stem>.md`) — it is resolved against the case first, then the repo root, so the retired repo-root archive stays expressible. `python3 tools/check_model_change_ledger.py` asserts the pointer resolves to a FILE, that the record carries the row's `commit`, and that every record is named by some row. Pre-commit check (25). The record is the SOURCE; when they disagree, the row is what changed.
-- **Check it before committing:** `python3 tools/check_model_evolution_conformance.py <record.md>` (exit 0 clean / 1 warn / 2 error), which the pre-commit hook runs on a staged record as check (24). It is the third sibling beside `check_log_conformance.py` (dev logs) and `check_calibration_log_conformance.py` (calibration logs), and each refuses the others' streams by name rather than mis-checking them — this stream has its own stem and a `**Round:**` header, and deliberately no `Summary`/`Files Changed`/`Verification`. Records dated before 2026-09-24 are exempt and counted, not blocked.
+- **Check it before committing:** `python3 tools/check_model_evolution_conformance.py <record.md>` (exit 0 clean / 1 warn / 2 error), which the pre-commit hook runs on a staged record as check (24). It is the third sibling beside `check_log_conformance.py` (dev logs) and `check_calibration_log_conformance.py` (calibration logs), and each refuses the others' streams by name rather than mis-checking them — this stream has its own stem and a `**Round:**` header instead of `Version`/`Branch`, REQUIRES `## Summary`, `## Files Changed` and `## Verification` (M7-M9, errors), and adds the V0-at-equality evidence above. Records dated before 2026-09-24 are exempt and counted, not blocked.
+- **Record what the record establishes in the case's offline state, in the SAME commit.** Each finding a record adds or updates (a measured mechanism, a V0 verdict, a fix made the round's base) is also a decision in the case's active `workflow_state_offline_r{RR}.json` (when the case has one): `WorkflowStateOffline.load(calibration_round=RR, site_dir=...).add_decision(finding, rationale).save()`. The state is what the next session resumes from and what `PhaseLogger` rebuilds its reasoning chain from, and a model-evolution record is not read at resume. The commit-msg hook refuses a commit that changes a record without staging the state, unless the message carries `State-Unchanged: <why>` (a typo, a cross-reference).
 
 **7. Push — fork only, NEVER upstream.** Push to your **own fork** of the model repo (your fork of
 `NGEET/fates` for FATES, of `E3SM-Project/E3SM` for ELM), **never** the upstream repos themselves. On the
@@ -283,6 +350,23 @@ model clone the fork is the `fork` remote and `origin`'s push URL is a `DISABLE`
 `git push fork <branch>`; verify with `git -C <tree> remote -v` (origin push must be the DISABLE sentinel).
 Full setup: the model checkout's `CLAUDE.md` §1a; [[feedback_model_source_push_fork_only]]. Contributing
 upstream is a separate, deliberate PR.
+
+**THE BRANCH IS READ AS A COMPARISON AGAINST UPSTREAM — shape it that way (PI, 2026-10-10).** What a
+reader opens is `upstream/main...your-branch`, so the branch's HISTORY is part of the deliverable,
+not just its tree:
+
+- **One commit per substantive change**, each with its annotations correct from the first line.
+- **No merge commits**, and none of the fork's internal development: an intermediate merge, a
+  build-artifact `.gitignore` commit, or a commit that only FIXES earlier comments are all noise
+  against upstream. A style-fix commit in particular is incoherent on a branch whose comments were
+  right from the start — if one is needed, the comments were written wrong.
+- **Order so each commit is self-consistent** (declare a switch before the commit that reads it).
+- **Say whether intermediate commits are individually build-tested.** Usually only the final tree
+  is; that is fine and worth stating rather than implying.
+
+Measured: a re-anchor merged from the fork's `main` put ELEVEN commits in the comparison — two
+merges, two artifact-ignore commits and a comment-style commit — for a net change of 8 files.
+Rebuilt as six, the comparison reads as the change itself.
 
 ## Footguns
 
@@ -306,6 +390,7 @@ upstream is a separate, deliberate PR.
   the failures — a wrong fix, a build and a full gate cycle. Confirm the exception class too, from
   MXCSR under `gdb` (`info registers mxcsr`), not from the signal name.
 - **Reading a V0 pass as proof without checking the arms differed** — same binary twice passes perfectly.
+- **Trusting an ON run's "nothing crashed" for a SUPPRESSING guard** — that observable is identical whether the guard is correctly scoped or over-broad; it proves nothing unless the run specifically exercises the boundary the guard must still reject. Step 5.
 - **Editing the anchor in place for a repro-sensitive change** — breaks the reproducibility baseline. Use an
   experiment branch for those; keep the anchor rebuildable.
 - **Skipping default-off on a switch-gated change** — a change that alters baseline even when "off" makes the
@@ -334,7 +419,7 @@ upstream is a separate, deliberate PR.
 
 ## Notes
 
-- **Branch fit:** the *workflow* (branch-by-intent, default-off, paired verify, log-both-streams, fork-only
+- **Branch fit:** the *workflow* (branch-by-intent, default-off, paired verify, log in the case's `use_cases/{Model}_{Case}/memory/model_evolution/` stream, fork-only
   push) is generic model-dev. The specific forks/paths are Jing's; the frozen-manuscript branch (demo) is
   stricter on step 0 (always an experiment branch).
 

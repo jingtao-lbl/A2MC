@@ -20,7 +20,8 @@ Two guards (both proven on the api-31->api-43 migration, dev_logs 20260710s/v):
 Exit 0 = pass (or graceful skip if the embedding model is unavailable);
 exit 1 = a content/count assertion failed.
 
-Usage: a2mc_env/bin/python tools/check_ecosim_rag_queries.py [--profile ecosim-2dea74d9]
+Usage: a2mc_env/bin/python tools/check_ecosim_rag_queries.py [--profile <name> | --model <m>]   (default: the profile
+tools/kb_profile.py resolves for --model, default ecosim, from the commit in use)
 
 Author: Jing Tao with Claude
 """
@@ -36,7 +37,14 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-DEFAULT_PROFILE = "ecosim-2dea74d9"
+def _resolved_profile(model: str) -> str:
+    """The profile covering the commit in use (tools/kb_profile.py); with no checkout at all, the
+    model's single non-legacy milestone. Never a name written here."""
+    from tools.kb_profile import NoMatch, resolve_or_default
+    try:
+        return resolve_or_default(model).profile
+    except NoMatch as e:
+        raise SystemExit(f"ERROR: {e}\nPass --profile to check a registered profile explicitly.")
 
 
 def _skip(msg: str) -> int:
@@ -46,9 +54,13 @@ def _skip(msg: str) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Model RAG golden-query + count guard (profile-aware).")
-    ap.add_argument("--profile", default=DEFAULT_PROFILE,
-                    help=f"RAG profile to check (default {DEFAULT_PROFILE}); must have a golden_queries.yaml entry with a `collection`")
-    PROFILE = ap.parse_args().profile
+    ap.add_argument("--profile", default=None,
+                    help="RAG profile to check (default: the profile tools/kb_profile.py resolves for "
+                         "--model); must have a golden_queries.yaml entry with a `collection`")
+    ap.add_argument("--model", default="ecosim", help="model whose profile to resolve when --profile "
+                                                       "is not given (default ecosim)")
+    _args = ap.parse_args()
+    PROFILE = _args.profile or _resolved_profile(_args.model)
 
     cfg = yaml.safe_load((REPO / "rag/golden_queries.yaml").read_text()) or {}
     spec = (cfg.get("profiles") or {}).get(PROFILE)

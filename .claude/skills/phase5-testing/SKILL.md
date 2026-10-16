@@ -143,18 +143,36 @@ contains no observations, while still producing plausible-looking numbers.
    `check_offline_log_evidence.py` WARNs when a phase-5 stem folder has no `submit_scripts/`
    (non-retroactive from `20260823`). Phase 0 is exempt, as above.
 2c. **RECORD EVERY SIMULATION IN THE RUN LEDGER, as it happens — this is a Phase-5 duty, not a
-   reporting one.** `use_cases/{Model}_{Case}/memory/run_records.json`, via
+   reporting one.** `use_cases/{Model}_{Case}/memory/run_records_r<NN>.json` (one file PER
+   ROUND since 2026-10-13), via
    `tools/record_run_status.py`. One record per case: its cycle, its stem, its job id, the
    parameter values it staged, its status, and its scores once they exist.
 
+   **A run submitted with `sbatch` (the standalone-binary models) goes THROUGH
+   `tools/submit_run.py`, which registers it in the same step.** It runs `sbatch` and writes the
+   record (status `submitted`, job id, binary with its md5, purpose, differences, and where the run
+   lives), and it refuses a submission missing any of those. A bare `sbatch` is refused by the
+   agent's PreToolUse hook, which points here; a job the ledger does not record (an extraction, a
+   build) declares itself on the command with `A2MC_UNTRACKED_JOB="<why>"`.
+
    ```bash
-   # at BUILD/SUBMIT, per case -- idempotent on (round, case), so call it again at every transition
-   python tools/record_run_status.py upsert --case-dir "$A2MC_USE_CASE_DIR" --round 1 --cycle 19 \
-       --case <case> --status submitted --job-id <id> --stem <stem>
-   # once the cycle's scoring artifact exists, fold the whole cycle in at once
+   # SUBMIT + REGISTER, per case (stdout is only the job id)
+   J=$(python tools/submit_run.py --case-dir "$A2MC_USE_CASE_DIR" --round 1 --cycle 19 \
+       --case <case> --stem <stem> --purpose "..." --differences "<base> EXCEPT <what> = <value>" \
+       --binary <archived exe> --run-dir <case dir> --job-id-file <case dir>/job_id.txt \
+       -- <the sbatch arguments and script>)
+   # when its job ends: the MODEL's verdict (a watcher can run this for you, below)
+   python tools/record_run_status.py settle --case-dir "$A2MC_USE_CASE_DIR" --round 1 --job-id "$J"
+   # once the cycle's scoring artifact exists, fold the scores in at once
    python tools/record_run_status.py from-ladder --case-dir "$A2MC_USE_CASE_DIR" --round 1 \
        --cycle 19 --data <stem>/R1_c19_ladder.data.json --stem <stem> --status completed
    ```
+
+   A pilot, a gate or a rerun of many cases is ONE ROW for the whole submission: pass
+   `--run-root <root>` instead of `--run-dir` (narrowed with `--field case_prefix=...` and
+   `--field case_range=LO-HI` when the root holds more than this submission). `settle` then
+   records the per-case counts, and `check` treats every case directory the row covers as
+   registered.
 
    **Status is the MODEL's verdict, never the scheduler's.** `pending / submitted / running /
    completed / failed / restarted / void`, where `completed` means the model's own success check
@@ -162,9 +180,50 @@ contains no observations, while still producing plausible-looking numbers.
    ([[feedback_never_parse_a_cli_default_output]]); `tools/model_ensemble_status.py` already
    reconciles the two, so pass its verdict.
 
-   **The natural real-time caller is the watcher you already run.** `watch_slurm_array.sh -x <cmd>`
-   fires a command on each poll; pointing that at the recorder means the ledger tracks the runs
-   without a second process to keep alive.
+   **The watcher you already run settles the record when the job ends.** Give it the `settle`
+   command that `submit_run.py` prints as its on-end hook: `watch_slurm_array.sh ... -X '<settle>'`
+   or `model_ensemble_status.py ... --watch N --on-end '<settle>'`. It runs once at the terminal
+   state, its output lands in the watch log, and `end_hook_status` in the state file says whether it
+   worked. A record left open after its job ended is caught by the agent's Stop hook, which blocks
+   the end of the turn until it is settled.
+
+   **A CASE IS NOT CREATED UNTIL IT IS REGISTERED, and its status comes from the SCHEDULER, never
+   from memory** (PI, 2026-10-10, adopted from a sibling project's track-simulations skill). Two
+   subcommands enforce that half of the contract, and without them the ledger could only ever be as
+   complete as whoever remembered to call `upsert`:
+
+   ```bash
+   # states read BACK from the scheduler, reconciled with the model's own success check
+   python tools/record_run_status.py refresh --round <N> --run-root <run root> --model <model>
+   # a case that actually RAN and is not registered; a recorded status that disagrees; thin records
+   python tools/record_run_status.py check   --round <N> --run-root <run root> --model <model>
+   ```
+
+   `refresh` delegates to `tools/model_ensemble_status.scan()` rather than reading `sacct` itself,
+   so the ledger and the watcher share ONE reconciliation; a second copy here would be a second
+   contract to drift. It will not overwrite a `void` or `restarted` record, because those are human
+   judgements about a run rather than scheduler states -- a deliberately cancelled arm must not be
+   re-reported as `failed` and chased by a restart.
+
+   **`--purpose` and `--differences` are the reproducibility fields.** `differences` says how the
+   case departs from the base, in the form `<base> EXCEPT <what> = <value>`; `check` warns when it
+   is absent, because a case whose departure is not written down cannot be rebuilt. Record
+   `--binary` too: on a shared build tree the submit script is the only record of which executable
+   a run was bound to ([[feedback_bind_runs_to_archived_binaries]]).
+
+   **The READABLE view is `table --per-case`, and it is a different question from `table`.** The
+   plain `table` is a per-CYCLE aggregate, which answers "how did the round progress" and collapses
+   a set of hand-designed arms into one row; `--per-case` gives one row per SIMULATION with its
+   status, job, binary, purpose and differences. It lives beside the ledger as
+   `memory/SIMULATIONS_r<NN>.md`, and `record_run_status.py` REWRITES IT ON EVERY LEDGER WRITE, so
+   it is never a separate step. Never hand-edit it: the next write overwrites the edit, and the Stop
+   hook reports a table whose rows disagree with the ledger.
+
+   **This is worth running for TESTING runs and not for a large Phase-0 ensemble** (PI): the value
+   is a readable table of a handful of hand-designed variants, and 8192 config-generated cases are
+   already reproducible from the config plus the generator, with their full record in the round's
+   Phase-0 stem folder -- the same reasoning that exempts Phase 0 from the submit-script archive in
+   step 2b. Such an ensemble gets no ledger row; its `sbatch` carries `A2MC_UNTRACKED_JOB`.
 
    **This is a RECORD, so it is UNGATED and it is not knowledge.** It goes nowhere near
    `gained_knowledge/experiments.json`, which is curated, human-gated, and holds the *interpreted*

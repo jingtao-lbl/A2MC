@@ -380,3 +380,139 @@ def test_C9_softens_to_a_warning_on_the_boundary_day(tmp_path):
     p = _write(tmp_path, "20260823z_phase6_refinement_r03_c09_x.md", body)
     f = _c9(ccl.check_file(p))
     assert f and f[0].level == "warn", f
+
+
+# --------------------------------------------------------------------------- C11 (KB) + C13: the KB was QUERIED
+# A Phase 3 or 4 log must name `query-knowledge-base` and cite a STAMPED kb_network artifact
+# (tools/kb_network.py). Account: memory/dev_logs_adapterkit/20261015h_Phase_3_And_4_Query_The_Knowledge_Base_Before_The_Source.md
+def _phase3_log(tmp_path, date, skills, cite=""):
+    secs = ccl.load_expected_sections()[3]
+    body = "\n".join("## %s\nx\n" % s for s in secs)
+    text = ("# A Phase 3 Log\n\n**Site:** EcoSIM_Lusignan\n**Phase:** 3 - Diagnosis\n"
+            "**Round:** 2 | **Cycle:** 1 | **Iteration:** 1\n**Date:** 2026-10-16 10:00:00\n\n---\n\n"
+            + body + "\n" + cite + "\n## Skills and memory invoked\n- **Skills:** " + skills + "\n")
+    logs = tmp_path / "memory" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    return _write(logs, "%sa_phase3_diagnosis_r02_c01_iter01_probe.md" % date, text)
+
+
+_SK = "`calibration-log`, `phase3-diagnosis`, `query-knowledge-base`"
+
+
+def _stamp(p, payload=None):
+    d = p.parent.parent / "phase_results" / p.stem
+    d.mkdir(parents=True, exist_ok=True)
+    import json
+    (d / "kb_network.json").write_text(json.dumps(payload if payload is not None
+                                                  else {"kb_network": 1, "profile": "ecosim-cb243228"}))
+
+
+def test_C13_a_phase3_log_with_the_skill_and_a_stamped_artifact_passes(tmp_path):
+    p = _phase3_log(tmp_path, "20261016", _SK)
+    _stamp(p)
+    codes = _codes(ccl.check_file(p))
+    assert "C13" not in codes and "C11" not in codes, codes
+
+
+def test_C13_no_artifact_is_an_error(tmp_path):
+    p = _phase3_log(tmp_path, "20261016", _SK)
+    assert "C13" in _codes(ccl.check_file(p), "error")
+
+
+def test_C13_an_unstamped_file_is_not_an_artifact(tmp_path):
+    """A hand-made kb_network.json without the tool's stamp must not satisfy the rule."""
+    p = _phase3_log(tmp_path, "20261016", _SK)
+    _stamp(p, {"note": "I looked at the KB"})
+    f = [x for x in ccl.check_file(p) if x.code == "C13"]
+    assert f and "no tools/kb_network.py stamp" in f[0].msg, f
+
+
+def test_C13_a_cited_artifact_from_another_stem_counts(tmp_path):
+    """Phase 4 may cite the query its Phase 3 ran."""
+    other = tmp_path / "memory" / "phase_results" / "20261016a_phase3_x"
+    other.mkdir(parents=True)
+    import json
+    (other / "kb_network.json").write_text(json.dumps({"kb_network": 1, "profile": "p"}))
+    p = _phase3_log(tmp_path, "20261016", _SK, cite="Evidence: `phase_results/20261016a_phase3_x/kb_network.md`\n")
+    assert "C13" not in _codes(ccl.check_file(p))
+
+
+def test_C11_the_query_skill_must_be_named(tmp_path):
+    p = _phase3_log(tmp_path, "20261016", "`calibration-log`, `phase3-diagnosis`")
+    _stamp(p)
+    f = [x for x in ccl.check_file(p) if x.code == "C11" and "query-knowledge-base" in x.msg]
+    assert f and f[0].level == "error", f
+
+
+def test_C13_is_a_warning_on_the_boundary_day_and_absent_before(tmp_path):
+    p = _phase3_log(tmp_path, "20261015", "`calibration-log`, `phase3-diagnosis`")
+    f = ccl.check_file(p)
+    assert "C13" in _codes(f, "warn") and "C13" not in _codes(f, "error"), _codes(f)
+    q = _phase3_log(tmp_path / "old", "20261014", "`calibration-log`, `phase3-diagnosis`")
+    assert "C13" not in _codes(ccl.check_file(q)), "the rule must not be retroactive"
+
+
+def test_C13_applies_to_a_phase6_log_too(tmp_path):
+    """Phase 6 interprets an experiment and traces the mechanism behind a rejection (20261015i)."""
+    logs = tmp_path / "memory" / "logs"
+    logs.mkdir(parents=True)
+    text = GOOD_PHASE.replace("- **Skills:** `phase6-refinement`",
+                              "- **Skills:** `calibration-log`, `phase6-refinement`, `query-knowledge-base`")
+    p = _write(logs, "20261016a_phase6_refinement_r02_c01_probe.md", text)
+    assert "C13" in _codes(ccl.check_file(p), "error")
+    _stamp(p)
+    codes = _codes(ccl.check_file(p))
+    assert "C13" not in codes and "C11" not in codes, codes
+
+
+def test_C13_does_not_apply_to_other_phases(tmp_path):
+    """Phase 5 runs experiments; it does not reason about mechanisms and is not held to the rule."""
+    assert 5 not in ccl._KB_QUERY_PHASES and 6 in ccl._KB_QUERY_PHASES
+
+
+# --------------------------------------------------------------------------- forensics (20261015j)
+def _free_log(tmp_path, skills, cite=""):
+    logs = tmp_path / "memory" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    text = GOOD_FREE.replace("- **Skills:** none.", "- **Skills:** " + skills).replace("## What I looked at\nx\n",
+                                                                                       "## What I looked at\nx\n" + cite)
+    return _write(logs, "20261016a_Why_Case_163_Collapsed.md", text)
+
+
+def test_C13_a_free_form_forensics_log_must_cite_the_query(tmp_path):
+    p = _free_log(tmp_path, "`calibration-log`, `diagnose-forensics`")
+    codes = _codes(ccl.check_file(p), "error")
+    assert "C13" in codes and "C11" in codes, codes
+
+
+def test_C13_a_free_form_forensics_log_with_the_query_passes(tmp_path):
+    other = tmp_path / "memory" / "phase_results" / "20261016a_forensics"
+    other.mkdir(parents=True)
+    import json
+    (other / "kb_network.json").write_text(json.dumps({"kb_network": 1, "profile": "p"}))
+    p = _free_log(tmp_path, "`calibration-log`, `diagnose-forensics`, `query-knowledge-base`",
+                  cite="Evidence: `phase_results/20261016a_forensics/kb_network.md`\n")
+    codes = _codes(ccl.check_file(p))
+    assert "C13" not in codes and "C11" not in codes, codes
+
+
+def test_CONTROL_a_free_form_log_without_forensics_is_not_held_to_it(tmp_path):
+    p = _free_log(tmp_path, "`calibration-log`")
+    assert "C13" not in _codes(ccl.check_file(p))
+
+
+def test_C13_a_phase5_log_naming_forensics_is_covered(tmp_path):
+    secs = ccl.load_expected_sections()[5]
+    body = "\n".join("## %s\nx\n" % s for s in secs)
+    text = ("# A Phase 5 Log\n\n**Site:** EcoSIM_Lusignan\n**Phase:** 5 - Testing\n**Round:** 2 | **Cycle:** 1\n"
+            "**Date:** 2026-10-16 10:00:00\n\n---\n\n" + body
+            + "\n## Skills and memory invoked\n- **Skills:** `calibration-log`, `phase5-testing`, `diagnose-forensics`\n")
+    logs = tmp_path / "memory" / "logs"
+    logs.mkdir(parents=True)
+    p = _write(logs, "20261016a_phase5_testing_r02_c01_probe.md", text)
+    assert "C13" in _codes(ccl.check_file(p), "error")
+
+
+def test_a_phase3_log_naming_forensics_is_flagged_once_not_twice(tmp_path):
+    p = _phase3_log(tmp_path, "20261016", "`calibration-log`, `phase3-diagnosis`, `diagnose-forensics`")
+    assert _codes(ccl.check_file(p)).count("C13") == 1

@@ -33,7 +33,7 @@ the validation gates, and reaches every trigger path — the mechanics that fail
 
 Before injecting, satisfy yourself — and state the basis in the entry's `references`:
 
-- **Is it actually true / supported?** A site finding needs the run+figure+ana_log it came
+- **Is it actually true / supported?** A site finding needs the run, figure and calibration log it came
   from; a mechanism claim needs RAG / `docs/fates-knowledge-base/` or primary literature.
   Do **not** inject a plausible-sounding guess — that is the exact contamination failure mode.
 - **Is it already in the KB?** Grep `discoveries.json` / `parameters.json` / the YAML. Don't
@@ -81,7 +81,7 @@ Add one entry keyed by a descriptive `snake_case` name (schema matches existing 
   "implications": ["..."],
   "parameters_involved": ["fates_rad_leaf_clumping_index"],
   "do_not_repeat": [],
-  "references": ["memory/ana_logs/<the log>", "<source.F90 or paper>"]
+  "references": ["use_cases/{Model}_{Case}/memory/logs/<the log>", "<source.F90 or paper>"]
 }
 ```
 
@@ -100,7 +100,7 @@ Add under `["parameters"]["<fates_name>"]`:
   "mechanism": "Canopy_Radiation_Extinction",
   "calibration_lever_for": ["FATES_GPP_PF", ...],
   "asymmetry_warning": "understory PFT's own clumping is inert; only canopy-PFT clumping matters",
-  "added": "2026-06-17", "added_from": "memory/ana_logs/<log>"
+  "added": "2026-06-17", "added_from": "use_cases/{Model}_{Case}/memory/logs/<log>"
 }
 ```
 
@@ -115,7 +115,7 @@ modes find it:
 - **`categories:`** — add the parameter under its category (create the category if new).
 - **`mechanisms:`** — `description`, `code_reference` (`Module.F90::routine (FATES api-31)`),
   `doc_reference`, `parameters: [...]`, `affects: [...]`, multiline `notes: |` (formula,
-  caveats, the site finding with an ana_log cross-ref).
+  caveats, the site finding with a calibration-log cross-ref).
 - **`parameters:`** — `category`, `controls: [...]`, `affects: [...]`, `related_to: [...]`,
   multiline `calibration_notes: |`.
 
@@ -146,12 +146,12 @@ $PY scripts/build_rag_index.py --rebuild --graph-only --test
 $PY -c "from rag import HybridRetriever; r=HybridRetriever(auto_build=False); print(r.get_targeted_context(param_names=['fates_rad_leaf_clumping_index'])[:1200])"
 ```
 
-> **THE COMMAND ABOVE IS FATES'S — route by model (`rebuild-rag` Step 0).** EcoSIM is
+> **THE COMMAND ABOVE IS FATES'S — route by model (`rebuild-rag` Step 0).** Every knowledge-base BUILD step's tool for every model, in one table: [[reference_per_model_kb_build_tools]]. EcoSIM is
 > `$PY scripts/build_ecosim_rag.py --graph-only`; **PFLOTRAN has no `--graph-only`**, so a curated
-> edit there is a full `--rebuild`. The retrieval spot-check is FATES-shaped too: `HybridRetriever`
+> edit there is a full `source <a PFLOTRAN case config> && $PY scripts/build_pflotran_rag.py --rebuild` (the input deck comes from the case config; `rebuild-rag` Step 0). The retrieval spot-check is FATES-shaped too: `HybridRetriever`
 > is the FATES plumbing, and an adapter profile is verified with
-> `$PY tools/check_ecosim_rag_queries.py --profile <profile>` — model-generic despite its filename,
-> and carrying both a count-regression check and the golden-query assertions.
+> `$PY tools/check_ecosim_rag_queries.py --profile <profile>` (or `--model <model>`, which resolves it) — model-generic despite its filename,
+> and carries both a count-regression check and the golden-query assertions. An injected entry that cites source is then checked by the model's citation checker, `tools/check_ecosim_seed_citations.py` or `tools/check_pflotran_seed_citations.py`.
 >
 > **And the file you edited is not in the same place for every model.** Adapters keep the curated
 > overlay at `models/<model>/curated_seed.yaml`; only the FATES profiles use

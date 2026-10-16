@@ -24,8 +24,8 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
 ## When to fire
 
 - The user asks to add/create/scaffold a skill, or to distill an existing procedure into one.
-- The agent recognizes a **recurring** pattern (across ≥2 `memory/dev_logs/` or
-  `memory/ana_logs/`) worth making reusable — propose it; don't self-create silently.
+- The agent recognizes a **recurring** pattern (across ≥2 dev logs, under `memory/dev_logs*/`, or
+  calibration logs, under `use_cases/{Model}_{Case}/memory/logs/`) worth making reusable — propose it; don't self-create silently.
 
 ## Procedure
 

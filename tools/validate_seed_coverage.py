@@ -9,7 +9,8 @@ partial seed reads as a finished one. This is the gate that makes that loud.
 Two checks, mirroring the bar set by the EcoSIM seed (9/9 categories, 32/32 parameters):
 
     C1  category coverage    -- every category with parameters has >=1 mechanism
-    C2  parameter coverage   -- every calibratable parameter is named by >=1 mechanism
+    C2  parameter coverage   -- every calibratable parameter is named by >=1 mechanism; a parameter
+                                the seed declares `inert: true` is exempt and must be named by NONE
 
 Works on EITHER shape:
   * builder work-in-progress -- a stage_b_categories.yaml + stage_c_mechanisms.yaml pair
@@ -151,12 +152,20 @@ def main() -> int:
     # A category with no parameters at all is vacuous, not a failure -- report it separately.
     empty = [c for c in cats if not members.get(c) and not by_cat.get(c)]
 
-    # C2: every parameter named by some mechanism.
+    # C2: every parameter named by some mechanism -- except one the seed declares `inert: true`
+    # (not read on the live path, or read and never reaching physics). An inert parameter must NOT
+    # be named by a mechanism: that would put a knob that does nothing on a lever list. EcoSIM's
+    # RSRA at cb243228 is the case that added this (its only read is in an uncalled routine).
+    inert = set()
+    if a.seed:
+        inert = {_norm(k) for k, v in (_load(a.seed).get("parameters") or {}).items()
+                 if isinstance(v, dict) and v.get("inert")}
     covered = {_norm(p) for m in mechs.values() for p in (m or {}).get("parameters", [])}
     c2_bad: list[tuple[str, str]] = []
+    inert_named = sorted(p for p in covered if p in inert)
     for c, ps in members.items():
         for p in ps:
-            if _norm(p) not in covered:
+            if _norm(p) not in covered and _norm(p) not in inert:
                 c2_bad.append((c, p))
 
     print(f"\n  categories : {len(cats)}")
@@ -175,13 +184,17 @@ def main() -> int:
           f"   ({ntot - len(c2_bad)}/{ntot} reachable)")
     for c, p in c2_bad:
         print(f"       UNREACHABLE  [{c}] {p}")
+    if inert:
+        print(f"       (exempt) {len(inert)} parameter(s) declared inert: {sorted(inert)}")
+    for p in inert_named:
+        print(f"       INERT BUT NAMED BY A MECHANISM  {p}")
 
     # Orphans are a wiring error rather than a coverage hole: warn, do not fail.
     orphans = sorted(set(mechs) - {m for ms in by_cat.values() for m in ms})
     if orphans:
         print(f"\n  [WARN] {len(orphans)} mechanism(s) not attached to any category: {orphans}")
 
-    ok = not c1_bad and not c2_bad
+    ok = not c1_bad and not c2_bad and not inert_named
     print(f"\nOVERALL: {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1
 

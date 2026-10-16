@@ -23,10 +23,112 @@ Author: Jing Tao with Claude on Perlmutter.
 """
 import json
 import os
+import re
 import sys
 
 ROOT = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+# Memories bound to the SHAPE of what is being written.
+#
+# WHY these arrive unbidden instead of being recalled. Measured 2026-10-01 over this repo: 131
+# memories, of which 95 are named by no checker, hook or gate -- they exist only as text the agent
+# must decide to consult. The three below are the most-missed in the bucket, counted by how many of
+# the 18 reflection logs name them as a lesson that did not fire: 12, 8 and 8. Writing a fourth
+# memory about the same thing has the same expected effect as the 95. Arriving at the moment of the
+# action is the one thing a reminder does that a document cannot.
+#
+# ONE LIMIT, stated because it is not obvious: `dont_assert_absence_from_one_grep` is really about a
+# grep that returns nothing, which is a Bash call this hook does not see. It is bound here to where
+# an absence claim gets RECORDED -- a log or a report -- which is the last point before the claim
+# becomes durable, not the first point it could be caught.
+# `dev_logs` carries a BRANCH SUFFIX on every branch but main (`dev_logs_adapterkit`), so the
+# bare alternative matched nothing here -- caught by testing each shape rather than assuming,
+# which is the failure mode of the very memory bound below.
+_LOGS_AND_REPORTS = (r"^(memory/(dev_logs[a-z_]*|ana_logs|model_logs)"
+                     r"|use_cases/[^/]+/(memory/logs|memory/model_evolution|reports))/")
+
+# The knowledge-base files where a per-model tool gets CHOSEN: the KB skills, the builders and
+# extractors, the registry and golden queries, and the curated seeds. Bound 2026-10-15 (PI) after a
+# review found the KB skills naming FATES tools only. Wiki pages are deliberately left out: a wiki
+# rewrite touches dozens of them, the reminder would fire on each, and no tool is chosen there.
+_KB_FILES = (r"^(\.claude/skills/(generate-codebase-wiki|build-rag-from-scratch|rebuild-rag"
+             r"|validate-rag-chain|wire-knowledge-graph|inject-knowledge|onboard-model)/SKILL\.md"
+             r"|scripts/(build_rag_index|build_\w+_rag|extract_\w+_outputs|curated_seed_builder)\.py"
+             r"|rag/(milestones\.json|golden_queries\.yaml|data/curated_relationships[\w-]*\.yaml)"
+             r"|models/[^/]+/curated_seed[\w-]*\.yaml)$")
+
+MEMORY_BY_SHAPE = (
+    (r"^(tests/test_.*|tools/(check|validate)_.*)\.py$",
+     "feedback_a_check_that_cannot_fail",
+     "name what would make this FAIL before writing it, and prove it fails against the OLD code "
+     "-- a test that passes without reaching the branch under test is worse than no test"),
+    (_LOGS_AND_REPORTS,
+     "feedback_verify_derived_numbers_not_just_citations",
+     "every count in here is READ from a command, never recalled; be most suspicious of a number "
+     "you produced yourself"),
+    (_LOGS_AND_REPORTS,
+     "feedback_dont_assert_absence_from_one_grep",
+     "an absence claim needs a POSITIVE CONTROL -- prove the matcher fires on something that IS "
+     "there before trusting its silence"),
+    (r"^use_cases/[^/]+/",
+     "feedback_case_artifacts_correct_in_place_no_notes",
+     "a case folder is delivered as ONE document set, so a wrong fact is rewritten as the correct "
+     "statement and nothing announces the change -- no banner, no dated note. THE TELL is a "
+     "sentence whose subject is the previous version rather than the subject matter, which passes "
+     "unnoticed because it need not contain the word correction"),
+    (_KB_FILES,
+     "reference_per_model_kb_build_tools",
+     "every knowledge-base BUILD step (wiki, registry, seed, index and graph, validation, patch) has a "
+     "DIFFERENT tool per model (FATES/ELM, EcoSIM, PFLOTRAN, ATS) -- find this model's row before the "
+     "command, never assume the FATES tool covers the others; the profiles listed there are an inventory, "
+     "and the profile a command uses is resolved by tools/kb_profile.py. QUERYING the KB is the "
+     "query-knowledge-base skill"),
+    (r"^\.claude/(settings\.json|hooks/[^/]+\.(py|sh))$",
+     "feedback_registered_hook_filename_is_an_interface",
+     "a hook .claude/settings.json registers is an INTERFACE -- never mv or rm its file, because a running "
+     "session keeps the old registration for an unknown while and would fail EVERY matching tool call (Bash "
+     "included, the undo too); change the content, keep the name"),
+)
+
+# This one reminder fires only when the target ALREADY EXISTS. The other three apply to any write
+# -- a new log owes verified numbers and a positive control just as much as an edited one -- but
+# "correct it in place" presupposes text to correct, so on a brand-new case file it would be crying
+# wolf. Declared as a set rather than widening every tuple to four fields, so the three entries
+# above stay untouched.
+_ONLY_IF_EXISTS = frozenset({"feedback_case_artifacts_correct_in_place_no_notes"})
+
+
+# When a cited note is not in this tree it is one of the maintainer's internal development
+# notes, which do not ship. The RULE is the part that travels; the name is provenance. Said in
+# the output rather than left to be puzzled over, and stated for readers in AGENTS.md too.
+_NOT_HERE = ("  (The notes cited above are the maintainer's internal development notes and do not "
+             "ship with A2MC; the rule is the part that matters. Contact jingtao@lbl.gov if you "
+             "want the source note.)")
+
+
+def memory_lines(rel):
+    """Reminders for the shape of `rel`.
+
+    The rule is emitted whether or not this tree carries the note it came from: the discipline is
+    generic and useful to any reader, while `.claude_memory/` is excluded from every sync leg. A
+    tree without the note gets one line saying so, so an unresolvable citation reads as a policy
+    rather than as a broken pointer. That the named notes EXIST here is asserted by
+    tests/test_remind_governing_checks_memory_binding.py, which is what catches a typo or a rename.
+    """
+    out, missing = [], False
+    for pattern, name, why in MEMORY_BY_SHAPE:
+        if not re.search(pattern, rel):
+            continue
+        if name in _ONLY_IF_EXISTS and not os.path.isfile(os.path.join(ROOT, rel)):
+            continue
+        out.append("  REMEMBER %s: %s" % (name, why))
+        if not os.path.isfile(os.path.join(ROOT, ".claude_memory", name + ".md")):
+            missing = True
+    if missing:
+        out.append(_NOT_HERE)
+    return out
 
 
 def already_said(session, rel):
@@ -70,12 +172,18 @@ def main():
 
     # Say nothing when there is nothing to say. Most of this tree IS governed, so the dedupe above
     # is what keeps this from becoming wallpaper -- but an ungoverned path must stay silent outright.
-    if not gated and not is_skill:
+    if not gated and not is_skill and not memory_lines(rel):
         return
     if already_said(payload.get("session_id"), rel):
         return
 
-    lines = ["GOVERNS %s -- these refuse the commit, so satisfy them while you are here:" % rel]
+    # The header must match what follows. A path can now reach here with a bound memory and NO
+    # gated check, and "these refuse the commit" would then be a promise with nothing behind it.
+    if gated:
+        lines = ["GOVERNS %s -- these refuse the commit, so satisfy them while you are here:" % rel]
+    else:
+        lines = ["GOVERNS %s -- nothing gates this path at commit time; the notes below are habits, "
+                 "not gates:" % rel]
     for num, tool in gated:
         lines.append("  (%s) tools/%s.py" % (num, tool))
     for a, b, lab in recip:
@@ -92,6 +200,7 @@ def main():
                      "CLAUDE.md, AGENTS.md, .claude/skills/README.md and "
                      "docs/a2mc_reference/skills_catalog.md must move in and out of the private "
                      "blocks with it, and `## Changelog` must stay the LAST section.")
+    lines.extend(memory_lines(rel))
     lines.append("  Full picture: python3 tools/harness_query.py --touches %s" % rel)
 
     print(json.dumps({"hookSpecificOutput": {
@@ -99,8 +208,14 @@ def main():
         "additionalContext": "\n".join(lines)}}))
 
 
-try:
-    main()
-except Exception:
-    pass          # a reminder must never break the tool call it precedes
-sys.exit(0)
+# Guarded so the module can be IMPORTED -- by a test, or by a probe reading MEMORY_BY_SHAPE --
+# without running. Unguarded, an import executed main(), which read an already-exhausted stdin and
+# exited 0, taking the importing process with it; that killed a probe on 2026-10-09 and is why the
+# regex had to be re-tested by hand. The fail-open contract is unchanged: both the swallow and the
+# exit(0) stay inside the guard, so running it as a hook behaves exactly as before.
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        pass      # a reminder must never break the tool call it precedes
+    sys.exit(0)

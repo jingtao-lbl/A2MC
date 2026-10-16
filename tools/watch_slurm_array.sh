@@ -7,7 +7,12 @@
 #
 # Usage:
 #   nohup tools/watch_slurm_array.sh -j <jobid> -n <ntasks> -s <state-file> [-i <sec>] \
-#         [-l <logs-dir>] > <watch.log> 2>&1 &
+#         [-l <logs-dir>] [-X '<on-end cmd>'] > <watch.log> 2>&1 &
+#
+# -X runs ONCE when the watch reaches a terminal state (ENDED or ENDED_UNACCOUNTED), with its output
+# in this log and its outcome in the state file as `end_hook_status`. Its intended use is
+# `tools/record_run_status.py settle ... --job-id <jobid>`, which `tools/submit_run.py` prints, so
+# the run ledger learns the model's verdict when the job ends rather than when someone remembers.
 #
 # ---------------------------------------------------------------------------
 # WHY A STATE FILE (the failure this exists to prevent)
@@ -46,13 +51,13 @@
 set -u
 
 INTERVAL=300; LOGS=""; JOB=""; NTASKS=""; STATE=""
-HOOK=""; HOOK_EVERY=1; HOOK_TIMEOUT=600
-while getopts "j:n:s:i:l:x:e:t:" o; do case "$o" in
+HOOK=""; HOOK_EVERY=1; HOOK_TIMEOUT=600; END_HOOK=""
+while getopts "j:n:s:i:l:x:e:t:X:" o; do case "$o" in
   j) JOB=$OPTARG ;; n) NTASKS=$OPTARG ;; s) STATE=$OPTARG ;;
   i) INTERVAL=$OPTARG ;; l) LOGS=$OPTARG ;;
-  x) HOOK=$OPTARG ;; e) HOOK_EVERY=$OPTARG ;; t) HOOK_TIMEOUT=$OPTARG ;;
+  x) HOOK=$OPTARG ;; e) HOOK_EVERY=$OPTARG ;; t) HOOK_TIMEOUT=$OPTARG ;; X) END_HOOK=$OPTARG ;;
   *) echo "usage: $0 -j <jobid> -n <ntasks> -s <state-file> [-i sec] [-l logs-dir]" \
-          "[-x 'refresh cmd'] [-e every-Nth-poll] [-t hook-timeout-sec]" >&2; exit 2 ;;
+          "[-x 'refresh cmd'] [-e every-Nth-poll] [-t hook-timeout-sec] [-X 'on-end cmd']" >&2; exit 2 ;;
 esac; done
 [ -n "$JOB" ] && [ -n "$NTASKS" ] && [ -n "$STATE" ] || {
   echo "ERROR: -j, -n and -s are all required" >&2; exit 2; }
@@ -96,6 +101,7 @@ LAST_DECILE=-1
 FINISHED=0
 
 HOOK_STATUS="NONE"; HOOK_EPOCH=0; HOOK_FAILS=0; POLL=0
+END_HOOK_STATUS="NONE"; TERMINAL_STATUS=""
 
 write_state() {   # status pending running complete failed
   # Written to a temp file and moved, so a reader never sees a half-written state.
@@ -103,7 +109,8 @@ write_state() {   # status pending running complete failed
 {"ts": "$(date '+%F %T')", "epoch": $(date +%s), "status": "$1", "job": "$JOB",
  "pending": $2, "running": $3, "complete": $4, "failed": $5, "total": $NTASKS,
  "interval_s": $INTERVAL, "watcher_pid": $$, "logs": "$LOGS",
- "hook_status": "$HOOK_STATUS", "hook_epoch": $HOOK_EPOCH, "hook_fail_streak": $HOOK_FAILS}
+ "hook_status": "$HOOK_STATUS", "hook_epoch": $HOOK_EPOCH, "hook_fail_streak": $HOOK_FAILS,
+ "end_hook_status": "$END_HOOK_STATUS"}
 EOF
   mv -f "$STATE.tmp" "$STATE"
 }
@@ -251,14 +258,14 @@ while true; do
          "$((PEND + RUN)) live -- holding until they agree"
   fi
   if [ "$FINAL_STREAK" -ge 2 ] && [ "$QUEUE_LISTS_LIVE" -eq 0 ]; then
-    FINISHED=1; write_state "ENDED" "$PEND" "$RUN" "$OK" "$BAD"
+    FINISHED=1; TERMINAL_STATUS="ENDED"; write_state "ENDED" "$PEND" "$RUN" "$OK" "$BAD"
     echo "[$(date '+%F %T')] ARRAY ENDED complete=$OK failed=$BAD of $NTASKS (final status from sacct)"
   elif [ "$SQUEUE_OK" -eq 1 ] && [ "$EMPTY_STREAK" -ge 2 ] && [ "$SACCT_OK" -eq 1 ] \
        && [ "$((OK + BAD))" -lt "$NTASKS" ]; then
     # The queue is confirmed empty by two SUCCESSFUL polls, and a SUCCESSFUL sacct read shows some
     # tasks with no final status. That is not a finish, and it is published as one that is not: the
     # checker fails it. A FAILED sacct read proves nothing either way, so it holds instead.
-    FINISHED=1; write_state "ENDED_UNACCOUNTED" "$PEND" "$RUN" "$OK" "$BAD"
+    FINISHED=1; TERMINAL_STATUS="ENDED_UNACCOUNTED"; write_state "ENDED_UNACCOUNTED" "$PEND" "$RUN" "$OK" "$BAD"
     echo "[$(date '+%F %T')] ARRAY ENDED UNACCOUNTED complete=$OK failed=$BAD of $NTASKS --" \
          "$((NTASKS - OK - BAD)) tasks have no final status in sacct; inspect ${LOGS:-<logs>}"
   fi
@@ -272,3 +279,17 @@ while true; do
   # command returns, so a bare `sleep 300` delays the DIED stamp by up to the full interval.
   sleep "$INTERVAL" & wait $!
 done
+
+# ---- The on-end hook (-X): once, after a terminal state, logged, its outcome published. ----------
+# Output goes to this log rather than /dev/null, unlike the periodic -x hook: it runs once, and when
+# it fails the reason is the thing a reader needs.
+if [ "$FINISHED" -eq 1 ] && [ -n "$END_HOOK" ]; then
+  echo "[$(date '+%F %T')] END HOOK running: $END_HOOK"
+  timeout "$HOOK_TIMEOUT" bash -c "$END_HOOK" </dev/null 2>&1 | sed 's/^/[END HOOK] /'
+  _end_rc=${PIPESTATUS[0]}
+  if [ "$_end_rc" -eq 0 ]; then END_HOOK_STATUS="OK"
+  elif [ "$_end_rc" -eq 124 ]; then END_HOOK_STATUS="TIMEOUT"
+  else END_HOOK_STATUS="FAILED"; fi
+  echo "[$(date '+%F %T')] END HOOK $END_HOOK_STATUS (rc=$_end_rc)"
+  write_state "$TERMINAL_STATUS" "$PEND" "$RUN" "$OK" "$BAD"
+fi

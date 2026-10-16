@@ -56,6 +56,65 @@ _SOURCE_PATH = re.compile(
 _SOURCE_LINE = re.compile(r"^\*\*Source:\*\*(.+?)(?:\n\n|\Z)", re.M | re.S)
 
 
+# Artifact trees a `**Source:**` may legitimately cite. A Source is not limited to a dev log: the
+# bucket's own CLAUDE.md allows a calibration log under a case, and a report is cited in practice.
+_REFS = None
+
+
+def _refs():
+    """Every local and remote ref, once. Empty when git is unavailable -- then judge nothing."""
+    global _REFS
+    if _REFS is None:
+        try:
+            _REFS = subprocess.run(
+                ["git", "-C", str(ROOT), "for-each-ref", "--format=%(refname)",
+                 "refs/heads", "refs/remotes"],
+                capture_output=True, text=True).stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            _REFS = []
+    return _REFS
+
+
+def _cited_paths(block):
+    """Full repo-relative artifact paths named in a `**Source:**` block."""
+    return re.findall(r"(?:memory|use_cases)/[^\s`'\")]+\.md", block)
+
+
+def _resolve_cited_path(rel_path):
+    """(resolved, where) for a cited path: this branch, some other ref, or nowhere.
+
+    Asked across every ref, not of the checked-out branch, because logs are branch-scoped: a
+    memory citing a sibling branch's log is legitimate and citing the RETIRED demo branch is
+    explicitly allowed (PI, 2026-10-09 -- the maintainer's agent can read it). Judging from this
+    branch alone is the defect `feedback_a_gate_must_measure_the_branch_not_the_disk` names.
+
+    One `cat-file --batch-check` per unresolved citation rather than an `ls-tree` of every ref.
+    Measured over 15 refs and today's 3 cross-branch citations: 0.40s -> 0.09s, both agreeing on
+    all three. That is 4.4x but only 0.31s absolute, which is nothing beside this checker's ~5s
+    `_retired_stems()` history scan -- so the gain is scaling and simplicity, NOT a saving anyone
+    will feel. (An earlier comment here claimed 4.85s -> 0.6s; that compared this checker against
+    a throwaway probe script and was wrong. `feedback_verify_derived_numbers_not_just_citations`.)
+    The cost is per unresolved citation, so the fixed `ls-tree` index would win past roughly 13 of
+    them; revisit if a bucket ever cites that many sibling-branch logs.
+    Paid only when a path is absent HERE, so a bucket whose citations all resolve locally is free.
+    """
+    if (ROOT / rel_path).is_file():
+        return True, "this branch"
+    refs = _refs()
+    if not refs:
+        return False, None
+    try:
+        out = subprocess.run(["git", "-C", str(ROOT), "cat-file", "--batch-check"],
+                             input="".join(f"{r}:{rel_path}\n" for r in refs),
+                             capture_output=True, text=True).stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return False, None
+    for line, r in zip(out, refs):
+        if " blob " in line:
+            return True, r
+    return False, None
+
+
 def _source_logs(text):
     """Yield (stem, [every log with that stem]) for each stem on a memory's `**Source:**` line.
 
@@ -281,9 +340,24 @@ def main():
         # mode — on 2026-08-07 two memories cited 20260807c, a real log that contains none
         # of their content, and every gate stayed green. A pointer that resolves but lies
         # is worse than an absent one, because a reader follows it and is misled.
+        # A cited PATH must be real on one of the maintainer's branches (PI, 2026-10-09). The
+        # previous behaviour skipped a log it could not find here, which left a Source pointer
+        # free to rot: nothing anywhere checked that a cited log resolved. Checked across every
+        # ref rather than against this branch, so a legitimate cross-branch citation still passes
+        # while a citation to nothing fails.
+        for blk in _SOURCE_LINE.findall(text):
+            for cited in _cited_paths(blk):
+                ok, _where = _resolve_cited_path(cited)
+                if not ok:
+                    errors.append(
+                        f"{rel}: `**Source:**` cites `{cited}`, which exists on NO branch "
+                        f"(checked every local and remote ref). A citation that resolves to "
+                        f"nothing sends a reader nowhere -- repoint it at the artifact that "
+                        f"exists, or remove it.")
+
         for stem, logs in _source_logs(text):
             if not logs:
-                continue          # cross-branch reference — legitimate, see _source_logs
+                continue          # resolved above by path, or cited only as a bare stem
             if any(f.stem in p.read_text(encoding="utf-8", errors="replace") for p in logs):
                 continue          # some log with that stem claims it — link satisfied
             where = logs[0].relative_to(ROOT) if len(logs) == 1 else f"{len(logs)} logs share this stem"

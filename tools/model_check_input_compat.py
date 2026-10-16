@@ -48,11 +48,100 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 
+def _is_list_numeric(body: bytes) -> bool:
+    """True when a record is the comma-separated numeric kind a list-directed READ consumes."""
+    if b"," not in body:
+        return False
+    fields = body.decode(errors="replace").split(",")
+    parsed = 0
+    for f in fields:
+        try:
+            float(f)
+        except ValueError:
+            return False      # one non-numeric field and it is not a numeric record
+        parsed += 1
+    return parsed >= 2
+
+
+def _mixed_char_padding(path: Path) -> list[str]:
+    """Character variables in a NetCDF input whose records disagree about the pad byte.
+
+    A Fortran model reads a fixed-length character record and ``trim()``s it, and ``trim()``
+    removes trailing BLANKS only -- a NUL survives into the last field, so the list-directed
+    read of a NUL-padded record fails with "Bad real number in item N of list input". This is
+    model-agnostic: no Fortran ``trim()`` strips a NUL.
+
+    The check is for DISAGREEMENT rather than for NULs as such, because a uniformly NUL-padded
+    file may be what its author intended and its reader may handle. A variable whose records
+    use both conventions was written by two tools, and the records departing from the file's
+    own convention are the ones the binary cannot read.
+
+    It is also restricted to records a LIST-DIRECTED READ consumes -- comma-separated numeric
+    fields -- because only those break. A plain name string tolerates a NUL: it is read whole
+    and never scanned for a numeric field, so a shipped parameter file can carry a NUL-padded
+    name beside a space-padded one and run correctly. Judging padding alone condemns such a
+    file, which is worse than silence: it sends the next session after a defect that is not
+    there. The discriminator is read off the record's own content, not declared anywhere.
+
+    Reconstruct every record with ``.tobytes()``: numpy's ``'S'`` dtype treats a NUL as
+    padding, so ``b"".join(arr.tolist())`` silently erases the very bytes under test.
+    """
+    try:
+        import netCDF4 as nc
+        import numpy as np
+    except ImportError:
+        return []
+    problems: list[str] = []
+    try:
+        ds = nc.Dataset(path)
+    except Exception:
+        return []            # not NetCDF (e.g. an api-43 .json param file) -- nothing to check
+    try:
+        ds.set_auto_mask(False)
+        for name, var in ds.variables.items():
+            if var.dtype != np.dtype("S1") or var.ndim < 1:
+                continue
+            nchar = var.shape[-1]
+            flat = np.asarray(var[:]).reshape(-1, nchar)
+            if flat.shape[0] > 200_000:          # keep a pathological file cheap
+                flat = flat[:200_000]
+            nul = space = 0
+            first_nul = None
+            for i in range(flat.shape[0]):
+                rec = flat[i].tobytes()
+                if not rec.strip(b"\x00 "):
+                    continue                      # an unused slot, never read
+                body = rec.rstrip(b" ")
+                if not _is_list_numeric(body.rstrip(b"\x00")):
+                    continue                      # a name string; a NUL in it is harmless
+                if body.endswith(b"\x00"):
+                    nul += 1
+                    if first_nul is None:
+                        first_nul = (i, body.rstrip(b"\x00")[:60])
+                elif len(body) < nchar:
+                    space += 1
+            if nul and space:
+                idx, sample = first_nul
+                problems.append(
+                    f"{name}: {space} record(s) space-padded but {nul} NUL-padded, so the "
+                    f"NUL-padded ones survive trim() and fail the read. First at flat index "
+                    f"{idx}: {sample.decode(errors='replace')!r}")
+    finally:
+        ds.close()
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", required=True, help="onboarded model name (e.g. ecosim)")
     ap.add_argument("--checkout", help="model source-tree root (the built version)")
     ap.add_argument("--param-file", help="input/parameter file to check against the binary's reads")
+    ap.add_argument("--padding-only", action="store_true",
+                    help="run ONLY the char-record padding check and skip the variable-compat "
+                         "contract. Use this for any surface other than the primary one: the "
+                         "compat contract is declared against the primary surface's reader, so "
+                         "pointing it at a management or microbial file reports every primary "
+                         "variable as missing. Padding applies to every surface.")
     args = ap.parse_args()
 
     # ---- Dispatch: import the model package (self-registers its backend) ----
@@ -75,6 +164,28 @@ def main() -> int:
         print("       (a brand-new model needs the `onboard-model` skill first)", file=sys.stderr)
         return 2
     spec = backend.spec
+
+    # ---- 0. Char-record padding. Runs before the compat contract, because a model that
+    # declares no REQUIRES contract is just as unable to read a NUL-padded record. ----
+    if args.param_file and Path(args.param_file).exists():
+        pad_problems = _mixed_char_padding(Path(args.param_file))
+        if pad_problems:
+            print(f"UNREADABLE — {len(pad_problems)} character variable(s) in the input are padded "
+                  f"inconsistently, and the binary aborts on the records that disagree:")
+            for p in pad_problems:
+                print(f"    {p}")
+            print("  → Pad every record with the byte the file's own records use (derive it from a "
+                  "record, do not choose one), then read the file back and confirm each record "
+                  "parses before submitting.")
+            return 2
+        if args.padding_only:
+            print(f"PADDING OK — every LIST-READ character record in {Path(args.param_file).name} "
+                  f"uses one pad convention, so the binary's trim() reaches a clean field. A "
+                  f"name string is not checked, because a NUL in one is harmless.")
+            return 0
+    elif args.padding_only:
+        print("ERROR: --padding-only needs --param-file.", file=sys.stderr)
+        return 1
 
     # ---- 1. REQUIRES set (graceful no-op if the model declares no contract) ----
     if not (spec.input_reader_sources and spec.input_read_pattern):

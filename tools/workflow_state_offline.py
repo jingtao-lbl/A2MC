@@ -47,7 +47,7 @@ def limit_from_config(var, files=None, root=None):
     number instead disagrees with the online agent the moment the PI changes one.
 
     Measured 2026-09-07: `set_phase6_decision` defaulted `max_experiments=10` while
-    `a2mc_noncime_config.sh` exports 20, so an adapter case's Phase-6 decision recorded
+    `a2mc_noncime_config.sh` then exported 20, so an adapter case's Phase-6 decision recorded
     `experiment_count 12 of 10` -- a routing gate reading as exhausted eight cycles early.
 
     Returns None when no config states the value, leaving the caller's own fallback as the last
@@ -368,9 +368,19 @@ class WorkflowStateOffline:
         return self
 
     def add_decision(self, decision, rationale="", date=None):
-        self.data["decisions"].append({
-            "date": date or datetime.now().strftime("%Y-%m-%d"),
-            "decision": decision, "rationale": rationale})
+        """Append a decision. `at` is the time it was RECORDED, to the second.
+
+        A date alone cannot order a decision against the commits of the same day, and the
+        stale-findings check (`check_workflow_state_offline._check_decisions_current`) needs
+        exactly that comparison. `at` is stamped only when the decision is dated today: a
+        back-dated decision keeps its date and gets no invented time.
+        """
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        entry = {"date": date or today, "decision": decision, "rationale": rationale}
+        if entry["date"] == today:
+            entry["at"] = now.isoformat(timespec="seconds")
+        self.data["decisions"].append(entry)
         return self
 
     def set_round_close(self, report_path, summarize=True, compare=True, report=True, date=None):
@@ -445,7 +455,7 @@ class WorkflowStateOffline:
         Call validate_phase6_decision() before acting on the result.
 
         `max_experiments` defaults to the MACHINE CONFIG rather than to a literal. It used to
-        default to 10 while `a2mc_noncime_config.sh` exports 20, so an adapter case at cycle 12
+        default to 10 while `a2mc_noncime_config.sh` then exported 20, so an adapter case at cycle 12
         recorded `experiment_count 12 of 10` and the routing gate read as exhausted eight cycles
         early. The environment wins when it is set, then the config, then 10.
         """

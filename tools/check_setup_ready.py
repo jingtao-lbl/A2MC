@@ -279,6 +279,39 @@ def main() -> None:
         "site config sourced + overrides a2mc_config.sh",
         f"A2MC_SITE_CONFIG={Path(sc).name if sc else '<unset>'}, ENSEMBLE_NAME={env('A2MC_ENSEMBLE_NAME') or '<unset>'}")
 
+    # DERIVED-VARIABLE CONSISTENCY -- the RELATIONSHIPS, not the values.
+    #
+    # A site config computes A2MC_N_PARAMS from the param list, and ENSEMBLE_NAME / OUTPUT_DIR
+    # from N_PARAMS + N_SAMPLES + OUTPUT_ROOT, all at ITS source time. A per-round wrapper that
+    # overrides an INPUT afterwards -- a new param list, a version-tagged output root -- does not
+    # re-run the derivation, so the outputs keep the PREVIOUS round's values. Every variable then
+    # looks plausible read on its own, which is why the check above ("ENSEMBLE_NAME is set") passes
+    # and this one is needed: only the relationship between them is wrong.
+    #
+    # Measured on EcoSIM_Lusignan R2 (2026-10-09): the round resolved to
+    # ENSEMBLE_NAME=R1b_54Para_SobolSeq4096 with OUTPUT_DIR under the R1b output root, against a
+    # 59-row parameter list. Submitting it would have materialized 4096 cases INTO the completed,
+    # converged R1b directory while sampling 54 of 59 parameters. The site config's own comment
+    # had already named this gap: "check_setup_ready.py cannot catch it: it reports ENSEMBLE_NAME,
+    # which looks right, and never asserts OUTPUT_DIR contains it."
+    en, od, orr = env("A2MC_ENSEMBLE_NAME"), env("A2MC_OUTPUT_DIR"), env("A2MC_OUTPUT_ROOT")
+    if en and od and orr:
+        under_root = od == orr or od.startswith(orr.rstrip("/") + "/")
+        ends_with_name = od.rstrip("/").endswith(en)
+        both = under_root and ends_with_name
+        why = []
+        if not under_root:
+            why.append(f"OUTPUT_DIR is not under OUTPUT_ROOT ({orr})")
+        if not ends_with_name:
+            why.append(f"OUTPUT_DIR does not end in ENSEMBLE_NAME ({en})")
+        add("Config layering", PASS if both else FAIL,
+            "OUTPUT_DIR is derived from the CURRENT ENSEMBLE_NAME + OUTPUT_ROOT",
+            od if both else "; ".join(why) + " — a per-round override changed an input and the "
+                            "derivation downstream of it did not re-run")
+    else:
+        add("Config layering", NA, "OUTPUT_DIR derivation",
+            "ENSEMBLE_NAME / OUTPUT_DIR / OUTPUT_ROOT not all set")
+
     # targets.yaml valid -- DISPATCHED BY MODEL.
     #
     # There are two target validators and they are not interchangeable.
@@ -350,10 +383,55 @@ def main() -> None:
     pl = env("A2MC_PARAM_LIST_FILE")
     add("Parameters", PASS if pl and Path(pl).exists() else FAIL,
         "parameter list file exists", Path(pl).name if pl else "<unset>")
+    # N_PARAMS must equal the list's own row count. It is DERIVED in every shipped site config
+    # for exactly this reason, so a mismatch means a later override repointed the list without
+    # re-deriving -- and the sample would then be built in the WRONG DIMENSION, silently: the
+    # sampler takes the first N_PARAMS rows and the extra parameters never vary.
+    npar = env("A2MC_N_PARAMS")
+    if pl and Path(pl).exists() and npar:
+        rows = sum(1 for ln in Path(pl).read_text().splitlines()
+                   if ln.strip() and not ln.startswith("#") and not ln.startswith("name,"))
+        match = str(rows) == str(npar).strip()
+        add("Parameters", PASS if match else FAIL,
+            "A2MC_N_PARAMS equals the parameter list's row count",
+            f"{npar} rows" if match else
+            f"A2MC_N_PARAMS={npar} but {Path(pl).name} has {rows} data rows — the sample would be "
+            f"built in the wrong dimension and the surplus parameters would never vary")
+
     sp = env("A2MC_SALIB_PROBLEM_FILE")
     add("Parameters", PASS if sp and Path(sp).exists() else NA,
         "SALib problem file", (Path(sp).name if sp and Path(sp).exists()
                                else "not yet generated — Phase 0 create_parameter_sample.py writes it"))
+
+    # THE ENSEMBLE MATRIX BELONGS TO THIS ROUND, checked by its SHAPE rather than its name.
+    #
+    # A per-round config wrapper that overrides the parameter list but inherits
+    # A2MC_ENSEMBLE_MATRIX_FILE points the sampler at the PREVIOUS round's matrix, and the sampler
+    # writes there by default -- destroying the record of what that round sampled. Measured on
+    # EcoSIM_Lusignan R2 (2026-10-09): the wrapper resolved to R1b's `..._r1_matrix.txt`, a
+    # committed 4096 x 54 file cited by the round ledger, R1b's Phase-0 notes and two sensitivity
+    # artifacts, while R2 needs 61 columns.
+    #
+    # The shape is the right test, not the filename: a round-tagged name is a convention a case may
+    # not follow, while "this matrix has a different number of PARAMETERS than the list I am about
+    # to sample" is true by derivation and cannot be argued with. A matrix that does not yet exist
+    # is the normal pre-sampling state and is NOT an error.
+    mf = env("A2MC_ENSEMBLE_MATRIX_FILE")
+    if mf and Path(mf).is_file() and npar:
+        try:
+            first = next((ln for ln in Path(mf).read_text().splitlines()
+                          if ln.strip() and not ln.lstrip().startswith("#")), "")
+            cols = len(first.split())
+        except OSError:
+            cols = 0
+        if cols and str(cols) != str(npar).strip():
+            add("Parameters", FAIL, "the ensemble matrix matches THIS round's dimension",
+                f"{Path(mf).name} has {cols} columns but A2MC_N_PARAMS={npar} — this matrix "
+                f"belongs to a different round, and the sampler writes to this path BY DEFAULT, "
+                f"so generating a sample here would overwrite that round's record")
+        elif cols:
+            add("Parameters", PASS, "the ensemble matrix matches THIS round's dimension",
+                f"{Path(mf).name}: {cols} columns")
 
     # calibration_rounds.yaml present + consistent
     cr = root / "use_cases" / Path(env("A2MC_USE_CASE_DIR")).name / "config" / "calibration_rounds.yaml"
@@ -408,6 +486,69 @@ def main() -> None:
     else:
         add("FATES base file", NA, "FATES base parameter file", "FATES off — N/A")
 
+    # ---- the CONFIGURED base must be READABLE BY THE BUILT BINARY ----
+    # `tools/model_check_input_compat.py` has always been able to catch an input the binary cannot
+    # read, and every adapter skill names it -- but nothing RAN it against A2MC_BASE_PARAM_FILE, so
+    # it stayed a manual step and got skipped. Measured 2026-10-10 on EcoSIM_Lusignan R2: the round
+    # config pointed at the collaborator's latest bundle file, which is the right SCIENCE and is
+    # missing seven of the 132 variables `PlantInfoMod.F90` reads in a flat unconditional block.
+    # `ncd_getvar` takes no optional flag, so one missing name is an ENDRUN at plant-file read --
+    # all 8192 cases would have died at startup, and no pre-submit gate would have said so.
+    # This is cheap (it greps the checkout's reader and lists the file's variables) and it is the
+    # difference between losing a round at submission and losing it at the first case.
+    _base = env("A2MC_BASE_PARAM_FILE")
+    _checkout = env("A2MC_MODEL_PATH")
+    _compat = root / "tools" / "model_check_input_compat.py"
+    if active_model == "fates":
+        add("Base readable by binary", NA, "input file carries every variable the binary reads",
+            "FATES reads its parameter file through a different path — N/A")
+    elif not (_base and _checkout and _compat.exists()):
+        add("Base readable by binary", FAIL,
+            "input file carries every variable the binary reads",
+            "cannot check: " + ", ".join(
+                n for n, v in (("A2MC_BASE_PARAM_FILE", _base), ("A2MC_MODEL_PATH", _checkout),
+                               (str(_compat), _compat.exists())) if not v) or "unknown")
+    else:
+        rc, out = _run([py, str(_compat), "--model", active_model,
+                        "--checkout", _checkout, "--param-file", _base])
+        missing = ""
+        for line in (out or "").splitlines():
+            if "missing" in line or "INCOMPATIBLE" in line:
+                missing = line.strip(); break
+        add("Base readable by binary", PASS if rc == 0 else FAIL,
+            "input file carries every variable the binary reads",
+            Path(_base).name if rc == 0 else (missing or "INCOMPATIBLE — run model_check_input_compat.py"))
+
+    # ---- EVERY declared surface's character records must survive the binary's trim() ----
+    # The compat check above is declared against the PRIMARY surface's reader, so it can only be
+    # run on that one file. Padding is a property of any surface: a record padded with NULs where
+    # the file's others use blanks survives `trim()` and lands inside the last field, so the read
+    # fails at startup on a file every other gate calls well-formed.
+    _surfaces = [(n, env(v)) for n, v in (
+        ("primary", "A2MC_BASE_PARAM_FILE"), ("secondary", "A2MC_SECONDARY_PARAM_FILE"),
+        ("tertiary", "A2MC_BASE_PARAM_FILE_3"), ("quaternary", "A2MC_BASE_PARAM_FILE_4"))
+        if env(v)]
+    if active_model == "fates":
+        add("Surface records readable", NA, "character records use one pad byte per surface",
+            "FATES reads its parameter file through a different path — N/A")
+    elif not _surfaces:
+        add("Surface records readable", FAIL, "character records use one pad byte per surface",
+            "no surface declared (A2MC_BASE_PARAM_FILE unset)")
+    else:
+        _bad, _ok = [], []
+        for _name, _path in _surfaces:
+            _rc, _out = _run([py, str(_compat), "--model", active_model,
+                              "--padding-only", "--param-file", _path])
+            if _rc == 0:
+                _ok.append(_name)
+            else:
+                _detail = next((l.strip() for l in (_out or "").splitlines()
+                                if ":" in l and "record(s)" in l), "unreadable")
+                _bad.append(f"{_name} ({Path(_path).name}): {_detail}")
+        add("Surface records readable", PASS if not _bad else FAIL,
+            "character records use one pad byte per surface",
+            f"{len(_ok)} surface(s) clean: {', '.join(_ok)}" if not _bad else "; ".join(_bad))
+
     # protocol is INFORMATIONAL (read from config, not required)
     def yr(p):
         return env(f"A2MC_{p}_YEARS", "0")
@@ -421,8 +562,15 @@ def main() -> None:
     # ---- report ----
     order = ["Model + milestone", "Config layering", "Targets + cost fn", "Parameters",
              "Round record", "PFT inventory (PFT-level goal)", "PFT inventory", "FATES base file",
+             "Base readable by binary",
              "Simulation protocol", "Binary provenance"]
-    seen_groups = [g for g in order if any(r[0] == g for r in results)]
+    # Any group NOT named in `order` is appended rather than dropped. `seen_groups` used to be
+    # exactly `order`-filtered, so a check whose group was not listed was COUNTED in the verdict
+    # and never PRINTED -- the reader got "1 check(s) FAILED" with no failing row anywhere above
+    # it. Measured 2026-10-10 when "Base readable by binary" was added. A gate nobody can read is
+    # worse than no gate, because the count says something is wrong and the report says nothing is.
+    seen_groups = ([g for g in order if any(r[0] == g for r in results)]
+                   + [g for g in dict.fromkeys(r[0] for r in results) if g not in order])
     print(f"A2MC setup readiness — site '{Path(env('A2MC_USE_CASE_DIR')).name}' "
           f"({env('A2MC_MODEL') or ('FATES' if fates_on else 'ELM-only')}, "
           f"{'PFT-level' if pft_level else 'ecosystem-level'} targets)\n")

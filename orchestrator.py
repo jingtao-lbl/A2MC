@@ -134,7 +134,7 @@ class SamplingDesign:
     scheme: str = "morris"          # Sampling scheme (from A2MC_SAMPLING_SCHEME)
     n_parameters: int = 0           # Number of parameters (from A2MC_N_PARAMS)
     n_trajectories: int = 30        # For morris scheme (from A2MC_N_TRAJECTORIES)
-    n_samples: int = 1000           # For lhs/sobol schemes (from A2MC_N_SAMPLES)
+    n_samples: int = 1024           # For lhs/sobol schemes (from A2MC_N_SAMPLES; 2^10, as Sobol wants)
     n_levels: int = 8               # Grid levels for parameter space
     n_simulations: int = 0          # Total simulations (auto-calculated)
     parameter_file: str = ""        # Path to parameter bounds file

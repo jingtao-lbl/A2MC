@@ -41,7 +41,7 @@ fixed before the handoff**; staging, verification, the gate and submission are P
 So before framing a hypothesis, **construct the mechanism network for THIS CASE'S PROBLEM** — not a
 general reading of the model, but the sub-network that produces the specific miss the round is
 failing on. State the problem as a direction first ("the model underestimates standing biomass while
-maintaining production"), then assemble, from the five KB surfaces below:
+maintaining production"), then assemble it from the knowledge base's three tiers, which the five surfaces below make concrete (the wiki is Tier 1; RAG and the graph are Tier 2; the model and case gained knowledge are Tier 3). **Run `query-knowledge-base` first, and cite what it writes (required since 2026-10-15).** `python tools/kb_network.py --model <m> --params <the levers in question> --outputs <the scored targets> --case <Model_Case> --out-dir <this log's phase_results/<stem>>` queries the knowledge base's three tiers (technical documents and the codebase wiki; RAG and the two-layer graph; the model and case adaptive memory) and writes `kb_network.md`. Read it, cite it in this log, and name `query-knowledge-base` under **Skills**: `tools/check_calibration_log_conformance.py` C11 and C13 refuse a log without both. Go to model source after it, to CONFIRM. The network to assemble:
 
 - every **mechanism** that feeds the scored variables in that statement, traced
   `parameter -> controls -> mechanism -> affects -> output`;
@@ -122,13 +122,12 @@ scatter + fit, or the threshold split — as a figure (via the `plotting` skill)
 on a distribution/relationship that a table of numbers flattens ([[feedback_figures_over_tables_over_words]]).
 This is the 3↔4 inner loop: accumulate the evidence, and either
 
-- **confidence ≥ `--confidence-threshold` (**`$A2MC_CONFIDENCE_THRESHOLD`**, from the machine config;
-  0.95 if unset)** (or the pattern is clear) → conclude without
+- **confidence ≥ `--confidence-threshold` (**`$A2MC_CONFIDENCE_THRESHOLD`**, from the machine config)** (or the pattern is clear) → conclude without
   new simulations; or
 - **feed the insight back to `phase3-diagnosis`** and refine the next hypothesis (loop).
 
 **Inner-loop counter (enforce it — the online agent does so in code).** This is the `skip_testing_count`
-loop, capped at `--max-skip-testing` (**`$A2MC_MAX_SKIP_TESTING`**, from the machine config (`a2mc_noncime_config.sh` / `a2mc_config.sh`); 10 if unset). On each
+loop, capped at `--max-skip-testing` (**`$A2MC_MAX_SKIP_TESTING`**, from the machine config (`a2mc_noncime_config.sh` / `a2mc_config.sh`)). On each
 skip-test, **increment `skip_testing_count`** in
 `workflow_state_offline_r{RR}.json`. Exit the inner loop when **confidence ≥ `$A2MC_CONFIDENCE_THRESHOLD`**, OR `skip_testing_count`
 = `--max-skip-testing`, OR **no further question about this cycle's mechanism is answerable from
@@ -150,7 +149,7 @@ as the cycle's exit means: frame one hypothesis, skip-test it, discover its *exp
 simulations, and leave — spending the **expensive** loop while the **free** one still had questions.
 
 **Measured across one campaign's three rounds: 46 phase-3/4 logs at `iter01`, 4 at `iter02`, none
-higher, against the configured cap (`$A2MC_MAX_SKIP_TESTING`, 10 at the time of measurement).**
+higher, against the configured cap (`$A2MC_MAX_SKIP_TESTING`).**
 Every one of one round's ten cycles sits at `iter01`. The loop was not
 converging early; it was never entering.
 

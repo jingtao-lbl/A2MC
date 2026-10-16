@@ -150,7 +150,7 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
   figure template for biomass-vs-target time series.
 - **Standardized single-round / cross-round figures** → `summarize-calibration-round`,
   `compare-calibration-rounds` (they invoke the same Morris pipeline).
-- **A one-off sensitivity question with a figure + ana_log** → `scientific-analysis`.
+- **A one-off sensitivity question with a figure + write-up** → `scientific-analysis`.
 - **Next:** `phase2-screening` (rank the ensemble against targets).
 
 ## Before you finish

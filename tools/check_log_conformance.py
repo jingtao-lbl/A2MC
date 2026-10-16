@@ -434,9 +434,19 @@ def _check_memory_written(path: Path, text: str) -> list:
         # carries several -- `manage-auto-memory` §1 says "the log(s)" -- because one log can
         # create it and another extend it. Testing `cited_paths[0]` meant at most ONE of those
         # logs could satisfy the check, and which one depended on line order.
+        # Compare the REPO-RELATIVE PATH, not the basename. `path.name` alone treated two logs
+        # with the same filename in different stream directories as the same log, and the `log`
+        # skill PRESCRIBES that shape: a reflection log is COPIED between streams rather than
+        # moved, "so existing cross-references keep resolving". A log outside the repo (a test
+        # fixture) has no repo-relative form, so it falls back to <parent>/<name>, which still
+        # carries the stream and is what the fixtures exercise.
+        try:
+            rel = path.resolve().relative_to(REPO).as_posix()
+        except ValueError:
+            rel = f"{path.parent.name}/{path.name}"
         cited_paths = [ln for ln in mem_text.splitlines() if ln.startswith("**Source:**")
                        and "/" in ln]
-        matched = (any(path.name in ln for ln in cited_paths) if cited_paths
+        matched = (any(rel in ln for ln in cited_paths) if cited_paths
                    else stem in mem_text)
         if not matched:
             out.append(Finding(path, "L7", "warn",
@@ -487,13 +497,26 @@ def _staged_logs():
         if line.strip() in _pure:          # pure rename: nothing new to gate
             continue
         p = Path(line)
-        if p.suffix != ".md":
-            continue
-        if p.name in _NOT_LOGS:
-            continue
-        if any(part.startswith("dev_logs") or part == "ana_logs" for part in p.parts):
+        if _is_staged_log_path(p):
             keep.append(REPO / p)
     return keep
+
+
+def _is_staged_log_path(p: Path) -> bool:
+    """True for a staged path the hook must hold to the log contract."""
+    if p.suffix != ".md":
+        return False
+    if p.name in _NOT_LOGS:
+        return False
+    # A `<model>_wiki_audit_<commit>/` folder holds Workflow B's per-topic AUDIT REPORTS, which
+    # the codebase-wiki contract files under a dev-log tree on purpose
+    # (docs/a2mc_reference/codebase_wiki_generation_roadmap.md, the `generate-codebase-wiki`
+    # skill). They are numbered by topic, not dated, and carry an audit's sections rather than a
+    # session log's; the summary dev log that cites them is checked as usual. Exempted
+    # 2026-10-15, when the first audit folder staged since this gate existed was refused on L1.
+    if any(re.fullmatch(r"[A-Za-z0-9]+_wiki_audit_[0-9a-f]{7,40}", part) for part in p.parts[:-1]):
+        return False
+    return any(part.startswith("dev_logs") or part == "ana_logs" for part in p.parts)
 
 
 def main() -> int:

@@ -146,8 +146,10 @@ def test_max_experiments_fallback_also_comes_from_the_env(m, monkeypatch, tmp_pa
 
 # ---------------------------------------------------------------------------------------------
 # set_phase6_decision's own limit. Added 2026-09-07, after it recorded "experiment_count 12 of 10"
-# for an adapter case whose config exports 20 -- a ROUTING gate reading as exhausted eight cycles
-# early. These fail if that default ever goes back to a literal.
+# for an adapter case whose config then exported 20 -- a ROUTING gate reading as exhausted eight
+# cycles early. These fail if that default ever goes back to a literal. The configs they read are
+# their OWN, at a sentinel value, never the shipped ones: a shipped limit can equal the code's
+# last-resort fallback (10), and then a literal passes unnoticed (20261014c).
 # ---------------------------------------------------------------------------------------------
 
 def _p6_state(tmp_path):
@@ -168,16 +170,20 @@ def _p6_state(tmp_path):
 def test_phase6_decision_takes_its_limit_from_the_config_not_a_literal(tmp_path, monkeypatch):
     monkeypatch.delenv("A2MC_MAX_EXPERIMENTS", raising=False)
     mod, st = _p6_state(tmp_path)
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    for name in mod.CONFIG_FILES:
+        (cfg / name).write_text("export A2MC_MAX_EXPERIMENTS=37\n")
+    monkeypatch.setattr(mod, "CONFIG_ROOT", cfg)
     st.set_phase6_decision("rethink_6to3")
     mx = st.data["phase6_decision"]["max_experiments"]
-    from_cfg, _ = mod.limit_from_config("A2MC_MAX_EXPERIMENTS")
-    assert mx == from_cfg, (
-        f"set_phase6_decision recorded max_experiments={mx} while the machine configs state "
-        f"{from_cfg}. A hardcoded default here makes a Phase-6 routing gate disagree with the "
-        f"online agent, which reads the same variable from the same configs.")
+    assert mx == 37 == mod.limit_from_config("A2MC_MAX_EXPERIMENTS")[0], (
+        f"set_phase6_decision recorded max_experiments={mx} while the machine configs state 37. "
+        f"A hardcoded default here makes a Phase-6 routing gate disagree with the online agent, "
+        f"which reads the same variable from the same configs.")
     assert mx > st.data["experiment_count"], (
-        "the shipped non-CIME config exports 20 and this state is at cycle 12, so a correct "
-        "lookup must leave cycles remaining; 10 would declare the round exhausted")
+        "at cycle 12 against a configured 37, a correct lookup leaves cycles remaining; the "
+        "fallback 10 would declare the round exhausted")
 
 
 def test_the_environment_still_wins_over_the_config(tmp_path, monkeypatch):

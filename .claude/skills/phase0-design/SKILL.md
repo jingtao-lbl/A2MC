@@ -158,8 +158,10 @@ Arriving here from Phase 6 with the middle loop exhausted (or all candidates pin
 >   catches a broken array dispatcher before it fails every task, `20260716a`) + `tools/model_check_input_compat.py`
 >   (input↔binary). THEN submit — each case is a SERIAL standalone run (EcoSIM: `srun -n 1`, OMP=1), so
 >   parallelism is ACROSS cases: prefer a **SLURM job array** over 821 individual `sbatch`. The site ships one
->   at `use_cases/{Model}_{Case}/case_template/submit_ensemble_array.sh` — `sbatch …/submit_ensemble_array.sh`
->   (`--array=0-N%<conc>`; `--array=0` for the V0 baseline first). NO CIME, NO ADSP→RGSP→TRANS chain, NO
+>   at `use_cases/{Model}_{Case}/case_template/submit_ensemble_array.sh` —
+>   `A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem folder" sbatch …/submit_ensemble_array.sh`
+>   (`--array=0-N%<conc>`; `--array=0` for the V0 baseline first; the declaration is what the
+>   agent's sbatch hook asks of a job the run ledger does not record, Step 3). NO CIME, NO ADSP→RGSP→TRANS chain, NO
 >   shared `bld/`. (`backend.submit_ensemble` — loop-`sbatch` per case — is the fallback; the array is
 >   the efficient default. `cpus-per-task` adds NO speed to a 1-cell run — it's memory/node-slice only.)
 > **PFLOTRAN differs from EcoSIM on four of the steps above — verified 2026-08-27 while running the
@@ -328,6 +330,19 @@ It (3a) writes per-case scripts via `tools/create_case.sh --write-script`, (3b) 
 > **N/A** for a model declaring no compat contract, so read it as skipped rather than passed. Run what
 > applies green before `backend.submit_ensemble`.
 
+> **Pilots, gates, probes and reruns go in the RUN LEDGER; the full ensemble does not.** A Phase-0
+> round's thousands of config-generated cases have their full record in the round's Phase-0 stem
+> folder, so they are neither tabulated nor given a ledger row (PI); submit the ensemble with
+> `A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem folder"` (its own V0
+> case, `--array=0`, is part of it). Everything submitted AROUND it is a test someone designed: the
+> viability gate, a rerun of its failures, a debug-binary probe, a V0-at-equality arm for a model change.
+> Submit those through `tools/submit_run.py`, which registers each in
+> `memory/run_records_r<NN>.json` as it submits and refuses one without purpose, differences,
+> binary and run location; a submission of many cases is ONE row with `--run-root` (plus
+> `--field case_prefix=...` / `case_range=LO-HI`). A bare `sbatch` is refused by the agent's
+> PreToolUse hook, which points there. When each job ends, `record_run_status.py settle` records the
+> model's verdict, and `SIMULATIONS_r<NN>.md` rewrites itself on every write.
+
 > **Footgun — build-case reuse.** All cases share the build case's `bld/`. If the build case fails,
 > every dependent case is orphaned — confirm it completed before the batch. Restart it separately,
 > then `--skip-build-case --build-case N`.
@@ -410,6 +425,18 @@ which is where a pinned bound has to be re-sourced rather than just stretched.)
 > live/compounding base case — `20260715d`.)
 
 ## Who owns ensemble submission (read before reaching for another skill)
+
+**MEASURE THE TARGET PARTITION BEFORE SUBMITTING. One command, and it does not depend on anyone remembering a previous round:**
+
+```bash
+tools/check_partition_health.sh --capacity <partition> [n_tasks]     # exit 1 = CONTENDED
+```
+
+It prints the pool size, idle nodes, queued tasks from all users, and **queued tasks per node**, and refuses a partition where that ratio says a per-case job will sit at `Reason=Resources`. It deliberately does not predict a completion time -- achievable concurrency depends on backfill, fair-share and other users -- but it separates a usable pool from a hopeless one, which is the decision being made. Measured 2026-10-10 at one instant: `shared_milan_ss11` 70 nodes / **240 queued per node**, `regular_milan_ss11` 3002 nodes / **8**.
+
+**Why this exists rather than a line telling you to read the last round's handoff.** An 8193-case round was submitted as an array to the 70-node pool and got 10 concurrent against a `%512` throttle, projecting over a month; the same case had already measured exactly that in a previous round, written it in a handoff log, and recorded that its array attempts "are cancelled and neither should be resurrected". Step 0b lists what to read from the previous round and does not name the handoff or the launch mode, so the record existed and was not consulted. A check that reads the CLUSTER needs nobody to have read anything, and works for a first round that has no history to read.
+
+**A NODE-EXCLUSIVE allocation is not more expensive for a serial model -- it is usually cheaper, and the real risk is elsewhere.** `shared` charges the cores each case asks for; a packed node charges one node for (cores/workers) cases at once. For a serial model at 2 cores per case on `shared` against 128 workers on a 128-core node, packing is about HALF the cores per case. What it does buy is contention for one node's memory bandwidth, which is why the packed path is gated on a one-node measurement against the solo reference rather than scaled straight out.
 
 **This skill owns HOW an ensemble reaches the scheduler, including the choice of launch mode.**
 Four skills touch this surface and it used to be unclear which decided what, so a launch-mode

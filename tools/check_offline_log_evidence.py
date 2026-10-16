@@ -52,9 +52,34 @@ CITED_RE = re.compile(r"`([^`]+?\.(?:py|png|pdf|csv|txt|nc|json|npy|npz))`|"
 #: predate it; the count of exempt folders is not printed here because this check reports per-log.
 SUBMIT_ARCHIVE_SINCE = "20260823"
 #: Since this date a phase-5 stem's cases must also appear in the case's RUN LEDGER
-#: (`memory/run_records.json`, written by `tools/record_run_status.py`). Non-retroactive for the
-#: same reason as the line above: a permanently-red check is one nobody reads.
+#: (`memory/run_records_r<NN>.json`, one file PER CALIBRATION ROUND since 2026-10-13 -- the
+#: round is read off the stem's own `_r{RR}_` token via STEM_RE, not guessed. Written by
+#: `tools/record_run_status.py`. Non-retroactive for the same reason as the line above: a
+#: permanently-red check is one nobody reads.
 RUN_LEDGER_SINCE = "20260908"
+
+#: Since this date, a phase that put jobs on a scheduler and SAYS it armed monitoring must archive
+#: the watcher's STATE-FILE snapshot in its stem folder (PI, 2026-10-10: "you should keep the watch
+#: logs etc in the stem folder too"). Non-retroactive, like the two rules above.
+#:
+#: WHY THE STATE FILE SPECIFICALLY, and not the watcher log. The log is the same case list
+#: reprinted every poll -- measured at 1.87 MB after four polls on an 8193-case ensemble, roughly
+#: 134 MB/day -- so tracking it whole is wrong and a digest of its TRANSITIONS is the useful form.
+#: The state file is a few hundred bytes and is the heartbeat contract `check_watcher_state.py`
+#: reads, which makes it the proof that layer (c) existed at all. Layer (c) is the one that gets
+#: dropped, because layers (a) and (b) cannot see the watcher die: a log that stops growing is
+#: byte-identical whether the array is running quietly or the watcher is gone.
+#:
+#: THIS IS NOT A PHASE-5 RULE EXTENDED TO PHASE 0. The self-documenting stem folder applies to
+#: every phase, and Phase 0's own expected sections include Monitoring Armed. What is scoped to
+#: phase 5 is only the PER-CASE submit-script archive above, from which phase 0 is exempt because
+#: thousands of generated scripts are reproducible from the config. A watcher state file is
+#: reproducible from nothing.
+WATCH_ARCHIVE_SINCE = "20261010"
+
+#: A "## Monitoring Armed" section carrying real content rather than the generated placeholder.
+MONITORING_SECTION = re.compile(
+    r"(?ms)^##+\s*Monitoring Armed\s*$(.*?)(?=^##+\s|\Z)")
 
 def cited_artifacts(text):
     out = set()
@@ -241,6 +266,27 @@ def check_log(path, repo_root):
     # redundant -- the config plus the generator reproduces them exactly. Phase 5's handful
     # of variants are hand-designed and hand-repointed onto a specific binary, so nothing
     # else records what actually ran. Corrected by the PI the day the rule landed.
+    # --- WARN: a phase that SAYS it armed monitoring must archive the heartbeat snapshot ---
+    # Applies to both scheduler-running phases, because the artifact is not generated from
+    # anything and the run root it lives in is untracked scratch.
+    m_watch = re.search(r"_phase([05])_", stem)
+    if m_watch and stem[:8] >= WATCH_ARCHIVE_SINCE:
+        sec = MONITORING_SECTION.search(text)
+        body = (sec.group(1) if sec else "").strip()
+        claims = bool(body) and "not provided" not in body.lower()
+        if claims:
+            folder = site_dir / "memory" / "phase_results" / stem
+            snaps = [p for p in folder.rglob("*state*.json")] if folder.is_dir() else []
+            if not snaps:
+                warnings.append(
+                    f"{name}: the log says monitoring was armed, but no watcher STATE-FILE "
+                    f"snapshot is archived under phase_results/{stem}/ — copy the "
+                    f"`--state-file` JSON there (and a de-duplicated DIGEST of the watcher log, "
+                    f"never the raw log: it is the same case list reprinted each poll). The run "
+                    f"root is untracked scratch, and the state file is the heartbeat contract "
+                    f"`check_watcher_state.py` reads, so it is the only record that the layer "
+                    f"which detects a DEAD WATCHER was ever in place.")
+
     m_ph = re.search(r"_phase(5)_", stem)
     if m_ph and stem[:8] >= SUBMIT_ARCHIVE_SINCE:
         sub = (site_dir / "memory" / "phase_results" / stem) / "submit_scripts"
@@ -265,32 +311,39 @@ def check_log(path, repo_root):
             submitted = sorted({f.name[:-len("_submit.sh")] if f.name.endswith("_submit.sh")
                                 else f.name[:-len(".submit.sh")]
                                 for f in sub.glob("*submit.sh")})
-            ledger = site_dir / "memory" / "run_records.json"
+            # The ledger is PER ROUND since 2026-10-13; the round is the stem's own `_r{RR}_`
+            # token (already captured as m.group(3), the same group `phase` is read from a line
+            # up) rather than re-derived or guessed -- a log always names the round it is in.
+            rnd_num = int(m.group(3))
+            ledger_name = f"run_records_r{rnd_num:02d}.json"
+            ledger = site_dir / "memory" / ledger_name
             if not submitted:
                 pass  # nothing named a case; the archive check above already spoke
             elif not ledger.exists():
                 warnings.append(
                     f"{name}: phase 5 submitted {len(submitted)} case(s) but "
-                    f"{ledger.parent.name}/run_records.json does not exist — record them with "
-                    f"`python tools/record_run_status.py`. The ledger is a RECORD, not curated "
-                    f"knowledge: it is ungated and Phase 5 fills it as the runs progress.")
+                    f"{ledger.parent.name}/{ledger_name} does not exist — record them with "
+                    f"`python tools/record_run_status.py upsert --round {rnd_num} ...`. The "
+                    f"ledger is a RECORD, not curated knowledge: it is ungated and Phase 5 fills "
+                    f"it as the runs progress.")
             else:
                 try:
                     recorded = {r.get("case") for r in
                                 json.loads(ledger.read_text()).get("records", [])}
                 except (ValueError, OSError) as exc:
-                    warnings.append(f"{name}: could not read run_records.json ({exc})")
+                    warnings.append(f"{name}: could not read {ledger_name} ({exc})")
                     recorded = None
                 if recorded is not None:
                     missing = [c for c in submitted if c not in recorded]
                     if missing:
                         warnings.append(
                             f"{name}: {len(missing)} of {len(submitted)} submitted case(s) are "
-                            f"absent from memory/run_records.json — "
+                            f"absent from memory/{ledger_name} — "
                             f"{', '.join(missing[:4])}{' ...' if len(missing) > 4 else ''}. "
                             f"Record them with `python tools/record_run_status.py from-ladder "
-                            f"--case-dir <case> --round <R> --cycle <C> --data <scoring .json> "
-                            f"--stem {stem}` (or `from-submits` if the cycle has no scoring JSON).")
+                            f"--case-dir <case> --round {rnd_num} --cycle <C> "
+                            f"--data <scoring .json> --stem {stem}` (or `from-submits` if the "
+                            f"cycle has no scoring JSON).")
 
     if phase not in ANALYSIS_PHASES:
         return errors, warnings

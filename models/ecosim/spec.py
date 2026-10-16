@@ -32,6 +32,7 @@ ECOSIM_SPEC = ModelSpec(
     # EcoSIM has a second parameter file (the stand-management pft_mgmt NetCDF,
     # holding planting density PPI in its pft_pltinfo string). A per-case
     # secondary file is repointed at this namelist input in the runfile.
+    primary_namelist_var="pft_file_in",
     secondary_namelist_var="pft_mgmt_in",
 
     # ---- Tertiary parameter surface ----

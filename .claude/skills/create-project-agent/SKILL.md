@@ -163,7 +163,7 @@ So, at seeding time: **have the leg write a marker into the destination** identi
 
 **Soften only what the tree cannot carry.** Everything about what it *does* carry must still block — registry parity, frontmatter validity, unbalanced private markers — or the check becomes an off switch and A13's detection-beats-instruction is lost. Verify by injecting a real violation into the filtered tree and confirming it still fails.
 
-**And a new framework test or tool should declare whether it ships at all**, since `tools/` and `tests/` are whole INCLUDE paths and a file ships the moment it is committed. One header line (`visibility: public|private`) that the leg derives an exclusion from, mirroring whatever the framework already does for skills. Note the ceiling: a tool the shipped `pre-commit` invokes cannot be private unless that hook first learns to skip a missing tool.
+**And a new framework test or tool should declare whether it ships at all**, since `tools/` and `tests/` are whole INCLUDE paths and a file ships the moment it is committed. One header line (`visibility: public|private`) that the leg derives an exclusion from, mirroring whatever the framework already does for skills. A tool the shipped `pre-commit` invokes can be private too: the hook calls every tool through `run_tool`, which skips a missing tool in a tree marked `.a2mc-downstream` and fails on one in the development repo.
 
 ---
 
@@ -370,7 +370,7 @@ What lands, and what you must now do to it:
 | `<Project>/CLAUDE.md` | the session contract | add what an agent must know here that is not generic |
 | root `README.md`, `CLAUDE.md`, `AGENTS.md` | `--calibration yes`: a banner placeholder above A2MC's own document; `no`: the project's own placeholder | **Step 5b** — they are the repository's face and nothing can detect that they are still generic |
 | `TODO.md` | generated from the board | **never hand-edit**; regenerate with the project's own `todo.py` |
-| `scripts/` | `state.py` `todo.py` `check_log.py` `check_setup.py` | extend, do not rewrite — the pre-commit hook calls them by name |
+| `scripts/` | `state.py` `todo.py` `check_log.py` `check_setup.py` | extend, do not rewrite — the pre-commit hook calls them by name. The generated `check_log.py` is filename-and-header only; a project that wants the framework's fuller contract ADOPTS it, Step 10 |
 | `logs/README.md` | the log contract | adjust the header fields if the project needs more |
 | `.claude/hooks/session-start.py` | prints the board | add what a session here must see first |
 | `.githooks/pre-commit` | project checks, then **chains** the framework's | add project rules above the chain, never below it |
@@ -472,6 +472,14 @@ Four independent layers, because the failure mode is drift rather than miscommun
 
 Alongside it, name the three things that are **not the agent's to close**: a decision with a named owner (*do not resolve it because the analysis pointed one way — that is the one place an agent working ahead does real damage*), a verification gate that an exit code does not pass, and a task whose work is done but whose checkable evidence does not exist.
 
+**A fifth layer is available, not generated: the framework's dev-log sections and its skill claim, PORTED rather than shared (PI, 2026-10-08).** The scaffold's `check_log.py` checks only the filename and the header — deliberately, because the four layers above are enough for a solo project with nobody else to confuse. A project that wants more — several contributors, a board other people read, work worth holding to the same bar as this repo's own — adopts `tools/check_log_conformance.py` and `tools/check_skill_claims.py` as its **own** copies, not a chained call into this repo's, because the header differs (a project's own fields, not `Type`/`Version`/`Branch`) and so does the skill universe (the project's `.claude/skills/` plus this repo's, not this repo's alone). Three changes, together:
+
+- **The sections**, adapted to the project's header, checked on logs the project **adds** — never on an edit to an old one, which is how a supersede banner would otherwise fail a log that predates the rule.
+- **The skill claim**, checked against the session transcript exactly as `check_skill_claims.py` does here: a skill named but never invoked is an error, and so is one invoked only before the session's newest compaction, since a compaction discards the skill's text while leaving its invocation in the transcript.
+- **An EFFECTIVE DATE**, named once, so the project's whole existing log record is exempt and nothing already written has to change to pass. Without it, adopting the contract mid-project fails every log written before the decision.
+
+**This is adoptable, not generated — the scaffold's default stays four layers.** A solo project inherits no benefit from the fifth and pays its cost in full: the earlier anti-pattern this skill already states (*"Do not add a stream, a roster or a commit-debt rule because the reference project has them… ceremony with no conflict to prevent"*) applies here exactly as it does there. Realized and tested end to end — a conforming log, a missing-section log, an edit to a pre-existing log, a never-invoked skill claim, a nonexistent skill claim, all run through the actual hook on a scratch index before anything was committed: `memory/dev_logs_adapterkit/20261008a_A_Project_May_Adopt_The_Dev_Log_Contract_As_Its_Own_Copy.md`.
+
 ## Step 11 — prove the assembly  **[M1-M12, then G5]**
 
 Run M1 through M12 **in order**, all before anything irreversible. Then, and only then, the first real sync.
@@ -546,6 +554,7 @@ Add the project's own negatives beside them — no data in a text folder, no per
 - `a2mc-init` (per CLONE), `onboard-model` (per MODEL), `onboard-case` (per CASE), `setup-discipline` (their definition-of-done collector, routed by `tools/check_stage_ready.py`, whose four stages have **no** project concept — so this skill carries its own definition of done and cross-references that one rather than adding a stage there).
 - The `add-skill` skill — governs FRAMEWORK skills and their four-way registry parity. A project skill is directory-scoped, carries only `name` and `description`, and must never be routed through it.
 - The `log` and `calibration-log` skills — the framework's streams. The project gets its own light checker precisely because the framework's fails rather than skips an unrecognised one.
+- `tools/check_log_conformance.py`, `tools/check_skill_claims.py` — Step 10's optional fifth layer ports these, not chains them, for the same reason: the header and the skill universe are the project's own.
 - `scripts/wrap_for_project_agent.sh` — the mechanism: `--init` builds a destination, `--refresh` keeps it current, and it refuses a development clone as its source.
 - `scripts/_wrap_scaffold.sh` — the project half, generated rather than copied from a donor.
 - `tools/check_clone_setup.py`, `scripts/setup_clone.sh`, `tests/test_clone_setup_project_hooks.py` — the worked example of a framework check taught to ACCEPT a project's arrangement while still failing five negative cases.

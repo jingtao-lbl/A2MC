@@ -132,7 +132,7 @@ Then say the things **no single cycle report can**, which is the whole reason th
 > **These three are the TOOL-produced artifacts** — figures, an evaluation, a sensitivity ranking. Guarantee 8, the mechanism inventory, is written rather than computed, so it has no tooling row here; its home is item 4 of the report structure below and its sources are the round's diagnoses and its offline state file.
 
 ### 1. Whole-ensemble graphs (combined + TRANS)
-`tools/plot_ensemble_cases.py` (`--combined` for the 519-yr ADSP+RGSP+TRANS axis; default for the TRANS-only zoom) — or the round wrapper `regen_ensemble_milestone_plot.sh` / `use_cases/{Model}_{Case}/analysis/regen_milestone_plot.sh`. Combined needs ADSP(1-200)+RGSP(201-400)+TRANS NCs per case (extract all 3 phases). Output: `R{N}_{combined,TRANS}_{count}cases_ensemble.png`.
+`tools/plot_ensemble_cases.py` (`--combined` for the 519-yr ADSP+RGSP+TRANS axis; default for the TRANS-only zoom) — or the round wrapper `tools/regen_ensemble_milestone_plot.sh`, which replaced the per-site script in the retired `use_cases/{Model}_{Case}/analysis/`. Combined needs ADSP(1-200)+RGSP(201-400)+TRANS NCs per case (extract all 3 phases). Output: `R{N}_{combined,TRANS}_{count}cases_ensemble.png`.
 - **Per-round graphs are UNCAPPED**: include the round's own legitimate extra cases (e.g. R3 + its 51 model-swap reruns = 4941, merged via offset case numbers). Do NOT pass a case cap here.
 
 ### 2. Evaluation report (screening)

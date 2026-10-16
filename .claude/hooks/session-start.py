@@ -520,7 +520,7 @@ def main():
                     "_cwso", os.path.join(root, "tools", "check_workflow_state_offline.py"))
                 _cwso = importlib.util.module_from_spec(_sp)
                 _sp.loader.exec_module(_cwso)
-                _errs, _ = _cwso.check_one(best[1])
+                _errs, _warns = _cwso.check_one(best[1])
                 if _errs:
                     lines.append("⚠ Offline state INVALID (%d error%s) — run "
                                  "tools/check_workflow_state_offline.py before driving: %s"
@@ -528,6 +528,12 @@ def main():
                     relay.append("The offline calibration state for %s is invalid (%s), so the "
                                  "calibration cannot safely resume until it is fixed."
                                  % (st.get("site", "?"), _errs[0]))
+                # The one WARNING worth a cold start: findings committed that the state never
+                # recorded. Every other warning stays with the checker; this one says the resume
+                # brain is behind the work, which is what a resuming session must know first.
+                for _w in _warns:
+                    if "commit(s) touching this case" in _w or "no decisions recorded" in _w:
+                        lines.append("⚠ State behind the work: %s" % _w)
             except Exception:
                 pass
         except Exception:

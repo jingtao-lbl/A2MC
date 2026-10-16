@@ -93,6 +93,66 @@ profiles:
     # assert plant-axis presence via the graph-node count in the checker, not names.
     pft_identity: {}
 
+  # EcoSIM @ cb243228 (active since 2026-10-15). The seven queries above carried over,
+  # plus one per source fact the 2dea74d9 knowledge base had wrong or lacked. Each new
+  # assertion names text only a correct index holds (a reader routine, a derived
+  # variable, a sentinel rule), never the parameter's own name, which any index
+  # retrieves.
+  ecosim-cb243228:
+    collection: ecosim_knowledge
+    queries:
+      - name: campbell_hydraulics
+        query: "How does EcoSIM represent soil water retention and hydraulic conductivity?"
+        must_contain_any: ["Campbell", "retention", "conductivity", "macropore"]
+      - name: rubisco_photosynthesis
+        query: "What controls C3 photosynthetic capacity in EcoSIM (rubisco carboxylation)?"
+        must_contain_any: ["VCMX", "rubisco", "carboxylase", "Grant"]
+      - name: stomatal_conductance
+        query: "How is stomatal conductance determined in EcoSIM under water stress?"
+        must_contain_any: ["turgor", "cuticular", "RSMX", "osmotic", "diffusion"]
+      - name: decomposition_temperature
+        query: "What temperature function governs microbial decomposition in EcoSIM?"
+        must_contain_any: ["Johnson-Lewin-Eyring", "microbial", "Arrhenius", "inactivation"]
+      - name: p_sorption
+        query: "How does EcoSIM represent phosphorus sorption in soil?"
+        must_contain_any: ["Langmuir", "phosph", "sorption"]
+      - name: allocation
+        query: "How does EcoSIM allocate carbon among plant organs?"
+        must_contain_any: ["stage", "prescribed", "partition", "allocation"]
+      - name: p_uptake_calibration
+        query: "Which EcoSIM parameters control plant phosphorus uptake for calibration?"
+        must_contain_any: ["UPMXPO", "UPKMPO", "H2PO4", "uptake"]
+      # RSRA is read only in ReadPlantTraitsNC, which nothing calls.
+      - name: rsra_is_not_read
+        query: "Is the axial root resistivity RSRA read from the EcoSIM plant parameter file?"
+        must_contain_any: ["ReadPlantTraitsNC", "NOT READ from the parameter file"]
+      # The live root axial lever, and its two mappings.
+      - name: arsra_axial_resistance
+        query: "How does ARSRA set root axial hydraulic resistance in EcoSIM?"
+        must_contain_any: ["NumVessels", "RootSingleVesselRstAxial", "per-vessel"]
+      # Phrased with a description, as the carried-over queries are: the bare "What does PTSHT
+      # control in EcoSIM?" retrieves the PTSHTR_pft OUTPUT first and never the parameter (MiniLM
+      # embeddings, measured 2026-10-15), a retrieval limit on bare acronyms, not missing content.
+      - name: ptsht_shoot_root_exchange
+        query: "What does the shoot-root transfer parameter PTSHT control in EcoSIM?"
+        must_contain_any: ["ShootRootElmTransfer", "transfer conductance"]
+      - name: ztypi_temperature_offset
+        query: "How does the thermal adaptation zone ZTYPI change plant temperature responses?"
+        must_contain_any: ["TempOffset", "2.667"]
+      - name: npp_pft_is_gross
+        query: "Is NPP_pft net or gross primary production in EcoSIM?"
+        must_contain_any: ["gross fixation", "GrossResp_pft", "ECO_NPP_col"]
+      - name: conserve_root_clamp
+        query: "What does the conserve_root_clamp switch do in the EcoSIM plant mass balance?"
+        must_contain_any: ["conserve_root_clamp"]
+      - name: fc_wp_sentinel
+        query: "When does EcoSIM use the field capacity and wilting point given in the grid file?"
+        must_contain_any: ["isoi_unset", "SetColdRunSoilStates", "both are recomputed"]
+      - name: ground_albedo
+        query: "What does the grid-file soil albedo ALBS control in EcoSIM?"
+        must_contain_any: ["AlbedoGrnd", "SoilAlbedo_col"]
+    pft_identity: {}
+
   # ---------------------------------------------------------------------------
   # PFLOTRAN @ 157a26f7 (miniLEO). Added 2026-08-07 after the profile was found
   # to have NO entries at all -- check_rag_queries.py reported "not in

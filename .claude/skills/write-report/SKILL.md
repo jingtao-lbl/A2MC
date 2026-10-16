@@ -86,7 +86,7 @@ structure + discipline for that; the pieces (figures, PDF) come from sibling ski
    date, and an **author/provenance line**. The author line is REQUIRED and is exactly `**Author:** Jing
    Tao with A2MC` (no host / machine suffix). The report-specific author is **A2MC**, not Claude, because
    these `reports/` are public-facing A2MC deliverables and credit the framework that produced them. This
-   is deliberately DISTINCT from every other artifact (dev/ana logs, scripts, commits), which keep the
+   is deliberately DISTINCT from every other artifact (dev logs, scripts, commits), which keep the
    `CLAUDE.md` author-field convention (`Jing Tao with Claude` / `Jing Tao`). The `with A2MC` form applies
    ONLY to `reports/` written by this skill. Note the companion report/log it complements so the reader
    knows the boundary.
@@ -174,8 +174,8 @@ checkable against, all four of:
    throws away the reasoning that selected it, and leaves a reader unable to tell a well-aimed
    experiment from a lucky one. **State per iteration:** what was investigated, what the skip-test
    returned, and whether it confirmed, refuted or refined the hypothesis. Measured across one
-   campaign's three rounds: 46 phase-3/4 logs at `iter01` and 4 at `iter02`, none higher, against a
-   cap of 10 — so a report covering "the iteration" was silently covering all there was, and the
+   campaign's three rounds: 46 phase-3/4 logs at `iter01` and 4 at `iter02`, none higher, against the
+   configured cap (`$A2MC_MAX_SKIP_TESTING`) — so a report covering "the iteration" was silently covering all there was, and the
    under-use of the free loop was invisible in every report written.
 2. **Every hypothesis tested, and with which simulations.** Name the hypothesis, its falsification
    bar as Phase 4 recorded it, the variants that tested it with their actual parameter values, and
@@ -419,7 +419,7 @@ use_cases/{Model}_{Case}/reports/<YYYYMMDDx>_<topic>/            # timestamp-fir
   └── make_report_figures.py     # canonical ONLY for report-native (fresh) figures
 ```
 `reports/` is the **synthesis layer** — a report here distills the **key results from the logs** for a
-reader, cross-referencing (not duplicating) the `memory/*_logs/` and `phase_results/{stem}/` it rests on.
+reader, cross-referencing (not duplicating) the case's calibration logs under `use_cases/{Model}_{Case}/memory/logs/` and the `phase_results/{stem}/` folders it rests on.
 
 **Naming — timestamp-first `{YYYYMMDDx}_{topic}/`, the same-day letter REQUIRED.** `x` is a sequential
 letter (`a`, `b`, `c`, …) for reports written the same day — use the **next free** one (check existing
@@ -436,7 +436,7 @@ shareable PDF with the **`markdown-to-pdf`** skill.
 **Graduating a single figure (not a full report).** `reports/` is also the home for a **graduated durable
 figure** — a headline result cleared for public that doesn't need a full narrative. Drop the figure `*.png`
 + its exact producing `*.py` + a `NOTES.md` (what it shows / key finding / why durable / provenance: source
-round, case set, the `phase_results/{stem}/` it came from, the calibration log + ana_log) into a
+round, case set, the `phase_results/{stem}/` it came from, the calibration log) into a
 `{YYYYMMDDx}_{topic}/` folder (same-day letter required) — same tracked + public-synced layer, and copying
 the producing `.py` here IS allowed (a deliberate frozen public snapshot, the one exception to "one
 canonical script"). Graduate **only cleared-for-public**
@@ -466,7 +466,7 @@ artifacts (embargoed results stay in gitignored `phase_results/`).
   `tools/check_report_references.py`: an entry with no resolvable identifier is the shape a fabricated one
   takes, because there is no DOI to give for a paper that was never opened.
 - **Stale placeholders** — a "TBD" left in after the result landed. Update the report when the run closes.
-- **Duplicating a companion doc** — cross-reference `summarize-calibration-round` / an ana_log rather than
+- **Duplicating a companion doc** — cross-reference `summarize-calibration-round` / a calibration log rather than
   restating it; keep each report's boundary clear. **This applies to NARRATIVE, never to a mechanism.**
   A finding about how the system works is carried, with its numbers and citations, at every level that
   claims to summarise the work; only the blow-by-blow of how it was reached stays in the document below.
@@ -486,7 +486,7 @@ artifacts (embargoed results stay in gitignored `phase_results/`).
   `feedback_logs_cite_explicit_evidence` (name the figure/table/statistic/data file behind every claim — in
   reports as in logs).
 - Pieces: `plotting` (figures — the A2MC ensemble figure template), `markdown-to-pdf` (render to PDF/docx),
-  `scientific-analysis` (the investigation→figure→ana_log that often feeds a report).
+  `scientific-analysis` (the investigation→figure→calibration log that often feeds a report).
 - **Reciprocal skills** — `manuscript-writing-style`: this skill borrows its Rigor / Transparency /
   Self-check layer for report prose, and it points back here for non-journal reports. Register and
   section scaffold stay its own. `literature-review`: it owns the no-fabrication and DOI-validation

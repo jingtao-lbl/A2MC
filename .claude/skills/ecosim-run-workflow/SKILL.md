@@ -156,8 +156,9 @@ stat -c %s "$A2MC_OUTPUT_DIR/<case>/runfile.nml"        # must be < 4096, with h
 ```
 
 Other namelist facts worth not rediscovering: input paths must be **absolute** (the shipped sample's
-relative paths do not resolve from a case dir); `create_case` repoints only `pft_file_in`, by
-basename; `hist_nhtfrq` is **per-tape**, so a second hourly tape leaves the daily tape alone.
+relative paths do not resolve from a case dir); `create_case` repoints `pft_file_in` by the
+spec-declared namelist variable and RAISES if it is absent, so the base's basename need not match
+anything (`20261010e`); `hist_nhtfrq` is **per-tape**, so a second hourly tape leaves the daily tape alone.
 
 ## Step 3 — sample and materialize
 
@@ -228,8 +229,17 @@ one. Raising `--cpus-per-task` cannot speed up a 1-grid-cell run and multiplies 
 ```bash
 source use_cases/<Case>/config/<site>_config_r<N>.sh
 mkdir -p "$A2MC_OUTPUT_DIR/logs"        # SLURM fails a task outright if it cannot open its log
-sbatch use_cases/<Case>/case_template/submit_ensemble_array.sh
+A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem folder" \
+    sbatch use_cases/<Case>/case_template/submit_ensemble_array.sh
 ```
+
+**A test run, pilot, gate, probe, rerun or model-change V0 arm is submitted through
+`tools/submit_run.py` instead**, which runs `sbatch` and registers the run in the case's run ledger
+in one step (`--run-dir` for one simulation, `--run-root` for one row covering a submission of many
+cases) and prints the `settle` command to give its watcher as the on-end hook (`phase5-testing`
+step 2c). A bare `sbatch` is refused by the agent's PreToolUse hook. The full config-generated
+ensemble above is the exception: its full record is the round's Phase-0 stem folder, so it gets no
+ledger row and carries the `A2MC_UNTRACKED_JOB` declaration shown.
 
 **`shared` enforces `MaxSubmitJobsPU = 5000`, and SLURM counts array TASKS individually.** Measured
 ceiling: **4,995 pass `sbatch --test-only`**; 14,849 is rejected outright with
@@ -260,9 +270,12 @@ Arm monitoring the moment anything is submitted, on YOUR launches only
 
 ```bash
 nohup tools/watch_slurm_array.sh -j <jobid> -n <ntasks> -s <stem>/watch_state.json \
-      [-x "<extract-and-plot refresh command>"] > <stem>/watch.log 2>&1 &
+      [-x "<extract-and-plot refresh command>"] [-X "<settle command>"] > <stem>/watch.log 2>&1 &
 python tools/check_watcher_state.py <stem>/watch_state.json     # ALIVE/FINISHED/STALE/DIED
 ```
+
+`-X` runs once when the job ends; for a run `submit_run.py` registered, give it the `settle` command
+that tool printed, so the ledger records the model's verdict without a second step.
 
 **Liveness is the heartbeat, not a shell trap** — SIGKILL cannot be trapped, so a log that stops
 growing is indistinguishable from a quiet run. Filter on milestone CROSSINGS, never exact counts:
@@ -377,6 +390,9 @@ scored on, and it should say so instead of plotting.
 - Assuming the secondary surface is fixed. It is per-case whenever the param list samples it.
 - Submitting more than **4,995** array tasks to `shared`: rejected, not queued.
 - `--qos=regular_1`: listed by `sacctmgr`, rejected by `sbatch`. Use `regular`.
+- **Calling an ensemble materialized without running Step 4.** The materializer validates its
+  INPUTS; neither it nor `check_setup_ready` reads what was written into each `runfile.nml`.
+  Verify by reading back from disk (`20261010e`).
 - Editing a staged base in place — a new base means a new round directory.
 - Stdout volume: EcoSIM can write tens of MB per case. At ensemble scale that dominates disk; trim
   or redirect at source before launching.

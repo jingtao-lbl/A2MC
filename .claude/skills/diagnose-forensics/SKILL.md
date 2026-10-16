@@ -33,7 +33,9 @@ If any triage check fires it is a tooling or data bug, not a discovery. **Fix it
 
 ## Step 2 — root-cause (only after triage passes)
 
-**Check the knowledge base before asserting a mechanism, then confirm in the source.** The KB is five surfaces and they are not interchangeable: the codebase wiki `docs/<model>-knowledge-base/`, the RAG vector index `rag/chroma_db/<profile>/`, the knowledge graph `rag/graphs/<profile>.json`, the MODEL-level adaptive memory `memory/<model>/gained_knowledge/`, and the SITE-level adaptive memory `use_cases/{Model}_{Case}/memory/gained_knowledge/`. Then open the `file:line` the KB gives you in the checkout at `$A2MC_MODEL_PATH` and read the code that USES the value. **Never name a mechanism from a parameter name** — a `description`, a `long_name` or a `units` string can be wrong ([[feedback_param_description_can_lie_verify_in_source]]).
+**Run `query-knowledge-base` before asserting a mechanism, and cite what it writes (required since 2026-10-15).** `python tools/kb_network.py --model <m> --params <the case's suspect levers> --outputs <the anomalous targets> --case <Model_Case> --out-dir <the log's phase_results/<stem>>` queries the knowledge base's three tiers and writes `kb_network.md`; cite it in the log the finding goes into (Step 3) and name `query-knowledge-base` under **Skills**. `tools/check_calibration_log_conformance.py` C11 and C13 refuse any calibration log that names this skill without both, phase log or free-form.
+
+**Check the knowledge base before asserting a mechanism, then confirm in the source.** The three tiers are five surfaces on disk and they are not interchangeable: the codebase wiki `docs/<model>-knowledge-base/` (Tier 1), the RAG vector index `rag/chroma_db/<profile>/` and the knowledge graph `rag/graphs/<profile>.json` (Tier 2), the MODEL-level adaptive memory `memory/<model>/gained_knowledge/` and the SITE-level adaptive memory `use_cases/{Model}_{Case}/memory/gained_knowledge/` (Tier 3). Then open the `file:line` the KB gives you in the checkout at `$A2MC_MODEL_PATH` and read the code that USES the value. **Never name a mechanism from a parameter name** — a `description`, a `long_name` or a `units` string can be wrong ([[feedback_param_description_can_lie_verify_in_source]]).
 
 **The tooling splits by model family. Do not inherit the wrong one.**
 
@@ -51,7 +53,7 @@ Several FATES tools dispatch through `phases/phase3_diagnosis/run_diagnostics_sc
 
 ## Step 3 — write it up, into the right stream
 
-- **A finding inside a calibration round** → that round's phase log under `use_cases/{Model}_{Case}/memory/logs/`, via `calibration-log`. This is the common case and it is where the round's own reader will look.
+- **A finding inside a calibration round** → that round's phase log under `use_cases/{Model}_{Case}/memory/logs/`, via `calibration-log`. This is the common case and it is where the round's own reader will look. Whichever calibration log it lands in, phase or free-form, names both this skill and `query-knowledge-base` and cites the `kb_network.md` from Step 2.
 - **A tooling, contamination or framework bug** → a `dev_log` recording root cause and fix, plus a supersede banner on any analysis it invalidated.
 - **A vetted, generalizable lesson** → propose it for the curated KB via `curate-knowledge`. **Site-level first**: a finding measured at one site, at one base, is site knowledge; promotion to `memory/<model>/gained_knowledge/` is a separate, later decision on evidence from more than one case.
 
@@ -59,5 +61,5 @@ Several FATES tools dispatch through `phases/phase3_diagnosis/run_diagnostics_sc
 
 - The order is load-bearing: **triage, then root-cause, then write-up.** Reading a pattern as science before triage is how the contamination episodes happened.
 - **A deterministic model with a different output had a different input.** If a case will not reproduce, re-check the inputs by checksum rather than reasoning by elimination about the execution path.
-- Related skills: [`phase3-diagnosis`](../phase3-diagnosis/SKILL.md) (the whole round, proactive), `restart-failed-jobs` and `restart-adapter-ensemble` (once infra-versus-model is settled), `plotting` (any figure this produces), `curate-knowledge` (to land a confirmed lesson), `log` and `calibration-log` (write-up and supersede).
+- Related skills: [`query-knowledge-base`](../query-knowledge-base/SKILL.md) (Step 2's required query), [`phase3-diagnosis`](../phase3-diagnosis/SKILL.md) (the whole round, proactive), `restart-failed-jobs` and `restart-adapter-ensemble` (once infra-versus-model is settled), `plotting` (any figure this produces), `curate-knowledge` (to land a confirmed lesson), `log` and `calibration-log` (write-up and supersede).
 

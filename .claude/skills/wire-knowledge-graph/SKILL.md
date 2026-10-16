@@ -33,7 +33,7 @@ A seed field that **no builder pass reads** is inert. It passes `tools/validate_
 | PFLOTRAN | `scripts/build_pflotran_rag.py:build_graph` | `(seed, deck, mas)` | `models/pflotran/curated_seed.yaml` |
 | ATS | none on this branch | — | — |
 
-**One builder per model is deliberate and is not to be merged** (PI, `dev_logs_adapterkitats/20260801h`). Only the DATA STRUCTURE is shared: every builder constructs `rag/knowledge_graph.py::FATESKnowledgeGraph` with the same four relations (`contains`, `controls`, `affects`, `depends_on`).
+**One builder per model is deliberate and is not to be merged** (PI, `dev_logs_adapterkitats/20260801h`). Every knowledge-base BUILD step's tool for every model, in one table: [[reference_per_model_kb_build_tools]]. Only the DATA STRUCTURE is shared: every builder constructs `rag/knowledge_graph.py::FATESKnowledgeGraph` with the same four relations (`contains`, `controls`, `affects`, `depends_on`).
 
 **The parallelism is load-bearing because NODE IDENTITY differs per model**, which is the thing a merged builder could not carry:
 
@@ -157,6 +157,8 @@ That single assertion covers two different regressions — a pass removed or nev
 - a **minting** test: a driver name existing as a node with neither description nor units is what a minted node looks like;
 - an **unresolved-names** assertion holding the count at its known value, so the next dangling reference fails the suite instead of joining a crowd.
 
+**To read the result as a person**, `tools/render_kg_html.py --profile <p>` renders the profile's graph as a browsable page, and with `--param-list` / `--targets` a case's slice of it.
+
 **Run the negative control both ways** — restore the pre-fix graph, confirm the tests fail, restore the new one, confirm they pass and the file is byte-identical. A test written after the fix and never seen red is not evidence.
 
 ## Guardrails
@@ -164,7 +166,7 @@ That single assertion covers two different regressions — a pass removed or nev
 - **Do not edit `rag/graph_builder.py` to fix an adapter defect.** It serves FATES only; no adapter builder imports it. This was the first diagnosis of the 2026-09-08 audit and it was wrong.
 - **Read the builder that runs.** Measuring the graph tells you what came out, never which code produced it. Two answers in that audit were built from correct measurements and an invented causal chain.
 - **A graph-only rebuild leaves the VECTOR STORE behind**, and nothing reports it: three such rebuilds left EcoSIM's store with 18 of 21 mechanism chunks stale and one missing, while `chunk_count` never moved. If the seed's PROSE changed and not only its relations, a full rebuild is owed — `rebuild-rag` owns that.
-- **Adding an edge is a claim about the model's SOURCE.** Confirm it in the code before wiring it, and cite `file:line` in the seed entry. A relation that is true of a run is case knowledge and belongs in `use_cases/{Model}_{Case}/memory/gained_knowledge/`.
+- **Adding an edge is a claim about the model's SOURCE.** Confirm it in the code before wiring it, and cite `file:line` in the seed entry; the model's citation checker, where it has one, then proves the citation resolves (`tools/check_ecosim_seed_citations.py`, `tools/check_pflotran_seed_citations.py`). A relation that is true of a run is case knowledge and belongs in `use_cases/{Model}_{Case}/memory/gained_knowledge/`.
 
 ## Cross-references
 

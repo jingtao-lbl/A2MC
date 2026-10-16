@@ -92,6 +92,10 @@ fi
 mkdir -p "$DEST"
 cp -p "$EXE" "$DEST/"
 MD5=$(md5sum "$EXE" | cut -d' ' -f1)
+# SHA256 too, because tools/binary_archive_manifest.py reads a `SHA256:` line out of this
+# file and WARNs when it is absent -- one tool writing a field another matches is a contract,
+# and md5 alone left every archive this script made unverifiable by the manifest.
+SHA256=$(sha256sum "$EXE" | cut -d' ' -f1)
 {
   # Report the commit this binary is FILED under, which is $SHA -- not necessarily the tree's
   # HEAD, since the caller may have overridden both. Writing `git log -1` unconditionally would
@@ -102,6 +106,7 @@ MD5=$(md5sum "$EXE" | cut -d' ' -f1)
   echo "tree:    $TREE"
   echo "binary:  $EXE"
   echo "md5:     $MD5"
+  echo "SHA256:  $SHA256"
   echo "archived: $(date)"
 } > "$DEST/PROVENANCE.txt"
 

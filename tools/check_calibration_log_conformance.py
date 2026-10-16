@@ -36,6 +36,7 @@ Usage:
 Author: Jing Tao with Claude.
 """
 import ast
+import json
 import os
 import re
 import sys
@@ -58,6 +59,15 @@ PHASE_SECTIONS_SINCE = "20260801"
 # The day the PI required a phase log to NAME the skills it must have invoked (C11) and the chain
 # to be checked for cumulativeness (C12).
 MUST_INVOKE_SINCE = "20260822"
+# C11 + C13 for the knowledge base: a Phase 3, 4 or 6 log must name `query-knowledge-base` AND cite the stamped
+# artifact `tools/kb_network.py` writes. Not retroactive; boundary-day softening as above (20261015h; Phase 6
+# added the same day, 20261015i).
+KB_QUERY_SINCE = "20261015"
+_KB_QUERY_SKILL = "query-knowledge-base"
+_KB_QUERY_PHASES = (3, 4, 6)
+# ... and any calibration log, phase or free-form, that names this skill: a forensics finding is mechanism
+# reasoning too, and it is written into whichever log the round reads (20261015j).
+_KB_QUERY_SKILLS = ("diagnose-forensics",)
 CHAIN_CUMULATIVE_SINCE = "20260822"
 
 #: A Phase-6 log that ROUTES 6->3 must carry the rethink, not just the routing decision.
@@ -311,6 +321,14 @@ def check_file(path, expected_sections=None):
     # Shared: the "record what you CONSULTED" block, both types, non-retroactive.
     m = _PHASE_STEM.match(path.name) or _FREE_STEM.match(path.name)
     date = m.group("date") if m else None
+
+    # C11 (KB) + C13 for a FORENSICS finding, in either log type. A phase 3/4/6 log was already
+    # checked above, so it is not checked twice.
+    pm = _PHASE_STEM.match(path.name)
+    covered = bool(pm) and int(pm.group("phase")) in _KB_QUERY_PHASES
+    named = [s for s in _KB_QUERY_SKILLS if s in _claimed_skills(text)]
+    if date and date >= KB_QUERY_SINCE and named and not covered:
+        out += _kb_query_findings(path, text, date, "a log naming `%s`" % named[0])
     if date and date >= CAPABILITY_SECTION_SINCE and "Skills and memory invoked" not in secs:
         boundary = date == CAPABILITY_SECTION_SINCE
         out.append(Finding(
@@ -407,6 +425,14 @@ def _check_phase(path, text, secs, hdrs, expected_sections):
                        " (boundary day: may predate the rule reaching this branch)" if boundary
                        else "")))
 
+    # C11 (KB) + C13 — a diagnosis, hypothesis or refinement must have QUERIED the knowledge base, not only
+    # mentioned it. Grepping the log for a mention was considered and rejected before
+    # (tools/check_workflow_state_offline.py::_check_site_kb_populated): a word satisfies it without
+    # the work. So two things a sentence cannot fake: the skill claim, which check_skill_claims.py
+    # verifies against the session transcript, and the stamped artifact tools/kb_network.py writes.
+    if date >= KB_QUERY_SINCE and phase in _KB_QUERY_PHASES:
+        out += _kb_query_findings(path, text, date, "phase %d log" % phase)
+
     # C12 — the reasoning chain must be CUMULATIVE. PhaseLogger rebuilds it from
     # workflow_state_offline_r{RR}.json at write time, so every decision a log stands on must still
     # be in that state. An entry present in a log and absent from the state means the state LOST it
@@ -458,6 +484,60 @@ def _claimed_skills(text):
                          text, re.M | re.S):
         out.update(re.findall(r"`([A-Za-z0-9][A-Za-z0-9._-]*)`", m.group(1)))
     return out
+
+
+def _kb_query_findings(path, text, date, what):
+    """C11 (the query skill named) and C13 (a stamped kb_network artifact) for one log."""
+    boundary = date == KB_QUERY_SINCE
+    lvl = "warn" if boundary else "error"
+    soft = " (boundary day: may predate the rule)" if boundary else ""
+    out = []
+    if _KB_QUERY_SKILL not in _claimed_skills(text):
+        out.append(Finding(path, "C11", lvl,
+                           "%s does not name `%s` under '**Skills:**' — a diagnosis, hypothesis, refinement "
+                           "or forensics finding queries the three-tier knowledge base before reasoning from "
+                           "source%s" % (what, _KB_QUERY_SKILL, soft)))
+    ok, why = _kb_network_artifact(path, text)
+    if not ok:
+        out.append(Finding(path, "C13", lvl,
+                           "%s has no kb_network artifact: %s. Run `python tools/kb_network.py --model <m> "
+                           "--params ... --outputs ... --out-dir <its phase_results/%s>` and cite the "
+                           "kb_network.md it writes%s" % (what, why, path.stem, soft)))
+    return out
+
+
+_KB_ARTIFACT = re.compile(r"[\w./-]*kb_network\.(?:md|json)")
+
+
+def _kb_network_artifact(path, text):
+    """(ok, why): is there a STAMPED kb_network artifact for this log?
+
+    Looked for in the log's own paired folder (phase_results/<stem>/), and at any kb_network path
+    the log cites, resolved from the case's memory directory, the case directory or the repo root,
+    so a Phase 4 log may cite the query its Phase 3 ran. Stamped means the JSON beside it carries
+    `kb_network` (the schema) and `profile`, which tools/kb_network.py always writes and a hand-made
+    file would have to imitate on purpose.
+    """
+    mem = path.parent.parent
+    cands = [mem / "phase_results" / path.stem / "kb_network.json"]
+    for tok in _KB_ARTIFACT.findall(text):
+        for base in (mem, mem.parent, REPO):
+            q = (base / tok).with_suffix(".json")
+            if q not in cands:
+                cands.append(q)
+    seen_file = False
+    for q in cands:
+        if not q.is_file():
+            continue
+        seen_file = True
+        try:
+            d = json.loads(q.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(d, dict) and isinstance(d.get("kb_network"), int) and d.get("profile"):
+            return True, ""
+    return False, ("a kb_network.json exists but carries no tools/kb_network.py stamp" if seen_file
+                   else "none in phase_results/%s/ and none cited" % path.stem)
 
 
 def _has_figure(path, text):

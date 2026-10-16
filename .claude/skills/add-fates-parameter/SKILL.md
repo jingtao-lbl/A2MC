@@ -56,7 +56,7 @@ yours beside each:
 **Use it** in the consuming module (e.g. `EDPhysiologyMod`, which already imports EDParamsMod):
 `use EDParamsMod, only : ED_val_<name>`
 
-Annotate every edit with a `!Jing Tao:` comment ([[feedback_model_code_comment_jing_tao]]).
+Annotate every edit: a ONE-LINE `!Jing Tao (YYYY-MM-DD, branch): note`, or a `! --- Jing Tao (YYYY-MM-DD, branch) ---` header above a multi-line block. Never a per-line prefix ([[feedback_model_code_comment_jing_tao]]).
 
 ## (B) Recipe — add the parameter to the FILE (the step that's easy to forget)
 

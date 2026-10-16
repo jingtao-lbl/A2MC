@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Build the PFLOTRAN RAG index (profile pflotran-157a26f7).
+"""Build the PFLOTRAN RAG index for the profile covering the commit in use (tools/kb_profile.py), or --profile.
 
 Mirrors `scripts/build_ecosim_rag.py` -- the established per-model build path for
 a non-FATES adapter. It reuses the generic building blocks (`rag.loader`,
@@ -54,7 +54,11 @@ import yaml  # noqa: E402
 from rag.loader import load_markdown_files, chunk_documents          # noqa: E402
 from rag.vector_store import FATESVectorStore                        # noqa: E402
 
-PROFILE = "pflotran-157a26f7"
+from tools.kb_profile import NoMatch, kb_commit, resolve_or_default  # noqa: E402
+
+# Never written here: `main()` takes `--profile`, else the milestone tools/kb_profile.py resolves for
+# the commit in use (the PFLOTRAN checkout at $A2MC_MODEL_PATH, which a PFLOTRAN case config sets).
+PROFILE: str | None = None
 COLLECTION = "pflotran_knowledge"
 
 
@@ -250,11 +254,22 @@ def build_graph(seed: dict, deck: Path, mas: Path) -> "FATESKnowledgeGraph":
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=f"Build the PFLOTRAN RAG index ({PROFILE}).")
+    ap = argparse.ArgumentParser(description="Build the PFLOTRAN RAG index for a registered profile.")
+    ap.add_argument("--profile", help="the milestone to build (default: the one tools/kb_profile.py "
+                                      "resolves for the commit in use)")
     ap.add_argument("--rebuild", action="store_true", help="Rebuild the vector store from scratch")
     ap.add_argument("--no-write-counts", action="store_true",
                     help="Do not write expected_counts back to milestones.json")
     args = ap.parse_args()
+
+    global PROFILE
+    try:
+        res = resolve_or_default("pflotran") if not args.profile else None
+    except NoMatch as e:
+        sys.exit(f"ERROR: {e}\nPass --profile to build a registered profile explicitly.")
+    PROFILE = args.profile or res.profile
+    if res is not None:
+        print(f"  profile {PROFILE} resolved ({res.via}{': ' + res.note if res.note else ''})")
 
     ms = load_milestone()
     kb_dir = _rel(ms["knowledge_base_dir"])
@@ -338,6 +353,8 @@ def main() -> int:
         "adapter": "pflotran",
         "built_at": datetime.now(timezone.utc).isoformat(),
         "model_commit_built": ms["model_commit_built"],
+        "kb_commit": kb_commit(ms),
+        "patches": [p["commit"] for p in (ms.get("patches") or [])],
         "wiki_subdir": ms["model_wiki_subdir"],
         "param_file": None,
         "output_cdl": None,

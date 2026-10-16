@@ -3,10 +3,10 @@
 PFT10 Establishment Experiment — Variant Param File Generator
 ==============================================================
 
-Implements the 6-variant PFT10-allocation experiment from
-`memory/dev_logs/20260531c_Offline_Experiment_Plan_PFT10_Establishment.md`,
-grounded in the completed-case donor analysis
-`memory/ana_logs/20260531b_R5_Completed_Case_PFT10_Tradeoff_Analysis.md`.
+Implements the 6-variant PFT10-allocation experiment, grounded in the completed-case
+donor analysis of R5. Both the design and the donor comparison are summarised below rather
+than cited: the logs that carried them are on a branch that is no longer maintained, and a
+citation that cannot be followed is worse than none.
 
 Base case = #488 (the only completed R5 case satisfying BOTH PFT9_leaf and
 PFT10_leaf within +-20%, but failing PFT10 fineroot: 4.1 vs 382 g/m2). The
@@ -24,7 +24,7 @@ Why allocation (not metabolism / P-uptake / phenology):
   already shares the donors' value -> not a usable, PFT10-specific lever.
 - The only active + PFT10-specific lever class is allocation.
 
-Convention (per feedback_phase5_case_naming_convention auto-memory):
+Convention (per the `offline-testing-workflow` skill, Step 8 "Case-suffix naming convention"):
 - Base case number preserved: param file = fates_params_..._En488_estab0X.nc
 - Case names (downstream): Kougarok_ELM-FATES_PtCNPEn488PrescP_estab0X_{PHASE}
 - Dedicated param dir keeps variants OFF the R5 Morris param dir.
@@ -37,7 +37,7 @@ Variant matrix (donor-anchored medians, all PFT10 = pft index 10 1-based):
     estab04: estab01+02+03 combined (full donor allocation transplant)
     estab05: storage_cushion_10     0.686 -> 3.15  ALONE (falsifier)
 
-Pre-committed success (per 20260531c):
+Pre-committed success (stated in full, so it stands without a citation):
     H1 confirmed: any variant reaches >= 4/6 targets, with PFT10 fineroot rising
                   toward 382 while PFT10 leaf stays >= 66 (0.8x) and PFT9 leaf >= 100.
     H2 (ceiling): if NO variant exceeds 3/6 -> structural equifinality ceiling.

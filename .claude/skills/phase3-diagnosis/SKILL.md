@@ -146,6 +146,8 @@ Any `test_*.py` in the folder exposing `test_hypothesis()` is **auto-discovered*
 
 ## Step 2 — pull evidence (RAG + Memory), verify before asserting
 
+**Run `query-knowledge-base` first, and cite what it writes (required since 2026-10-15).** `python tools/kb_network.py --model <m> --params <the levers in question> --outputs <the failing targets> --case <Model_Case> --out-dir <this log's phase_results/<stem>>` queries the knowledge base's three tiers (technical documents and the codebase wiki; RAG and the two-layer graph; the model and case adaptive memory) and writes `kb_network.md`. Read it, cite it in this log, and name `query-knowledge-base` under **Skills**: `tools/check_calibration_log_conformance.py` C11 and C13 refuse a log without both. Go to model source after it, to CONFIRM. The bullets below go deeper on each tier.
+
 - **RAG/GraphRAG + `docs/fates-knowledge-base/`:** confirm the mechanism behind any parameter
   BEFORE naming it. Never infer a FATES mechanism from a parameter name (root `CLAUDE.md` rule).
 - **Adaptive Memory — THE SITE STORE, and it has an API.** Open

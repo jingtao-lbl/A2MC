@@ -127,7 +127,7 @@ fi
 # ITERATION CONTROL   (mirrors a2mc_config.sh — keep in sync)
 # ========================
 export A2MC_MAX_SKIP_TESTING=10
-export A2MC_MAX_EXPERIMENTS=20
+export A2MC_MAX_EXPERIMENTS=10
 export A2MC_CONFIDENCE_THRESHOLD=0.95
 
 # ========================
@@ -136,7 +136,11 @@ export A2MC_CONFIDENCE_THRESHOLD=0.95
 export A2MC_SAMPLING_SCHEME="${A2MC_SAMPLING_SCHEME:-morris}"
 export A2MC_N_PARAMS=${A2MC_N_PARAMS:-100}
 export A2MC_N_TRAJECTORIES=${A2MC_N_TRAJECTORIES:-30}
-export A2MC_N_SAMPLES=${A2MC_N_SAMPLES:-1000}
+# 1024 = 2^10: Sobol wants a power of 2, and the adapter sampler falls back to 1024 when this is
+# unset, so the size calculator below and the draw agree by default. a2mc_config.sh still says
+# 1000 until main lands the same change (handoff 20261003b); this is the one deliberate
+# difference from the file this block mirrors.
+export A2MC_N_SAMPLES=${A2MC_N_SAMPLES:-1024}
 
 calculate_ensemble_size() {
     local scheme="${1:-$A2MC_SAMPLING_SCHEME}"
@@ -153,10 +157,11 @@ calculate_ensemble_size() {
         # error branch returned 0, which is worse than an error since a consumer sizing headroom
         # from it silently gets nothing. Measured 2026-08-27 on the live PFLOTRAN R1 config.
         sobol_seq) echo "$n_samp" ;;
-        # Sobol reads the CANONICAL A2MC_N_SAMPLES (the same N the samplers use --
-        # create_parameter_sample.py and create_adapter_parameter_sample.py both pass n_samples to
-        # sample_sobol AND sample_lhs, so N is generic across the two non-morris schemes; only
-        # morris is different, taking a trajectory count instead).
+        # Sobol reads the CANONICAL A2MC_N_SAMPLES, the same N create_adapter_parameter_sample.py
+        # passes to sample_sobol AND sample_lhs, so N is generic across the two non-morris schemes;
+        # only morris differs, taking a trajectory count instead. The FATES sampler,
+        # create_parameter_sample.py, does NOT read this variable: its --n-samples defaults to 1024
+        # on its own (handoff 20261003b asks main to make it read A2MC_N_SAMPLES).
         #
         # What IS sobol-specific is the second-order flag, and this branch used to ignore it --
         # hardcoding (2P+2) while the samplers honour --no-second-order and emit N(P+2). Measured

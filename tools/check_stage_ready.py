@@ -22,6 +22,7 @@ Exit 0 = no FAIL (NA/INFO never fail); exit 1 = at least one FAIL.
 Usage:
     python3 tools/check_stage_ready.py                 # auto-detect the stage
     python3 tools/check_stage_ready.py --model ecosim  # audit one model's onboarding (stage 2)
+    python3 tools/check_stage_ready.py --model ecosim --checkout <EcoSIM checkout>   # + profile resolution
     python3 tools/check_stage_ready.py --case EcoSIM_BioCON
     python3 tools/check_stage_ready.py --stage 2       # force a stage
 """
@@ -194,48 +195,162 @@ def _fork_guard_row(checkout: Path):
 
 
 # --------------------------------------------------------------------------- stage 2
-def stage2_rows(model: str):
+_CITATION = re.compile(r"[\w./-]+\.(?:F90|f90|F|f|c|cc|cpp|h|hh|hpp):\d+")
+
+
+def _seed_citation_row(model: str, entry: dict, tag: str = ""):
+    """A seed that cites source lines needs the model's own checker that the citations RESOLVE.
+    Model-specific by design (each seed has its own citation conventions), so the row looks for
+    `tools/check_<model>_seed_citations.py`, the name both precedents carry. It checks that the
+    checker EXISTS; whether it passes needs the checkout and is the human-confirmed half."""
+    label = "seed-citation checker" + tag
+    rel = entry.get("curated_yaml_path")
+    seed = ROOT / rel if rel else None
+    if seed is None or not seed.is_file():
+        return (NA, label, "no curated seed to read")
+    n = len(_CITATION.findall(seed.read_text(encoding="utf-8", errors="replace")))
+    if not n:
+        return (NA, label, "the seed cites no source lines")
+    chk = ROOT / "tools" / f"check_{model}_seed_citations.py"
+    if chk.is_file():
+        return (PASS, label, f"{chk.relative_to(ROOT)} ({n} citation(s) in the seed)")
+    return (FAIL, label, f"the seed cites {n} source line(s) and tools/check_{model}_seed_citations.py "
+                         f"does not exist, so nothing proves they resolve")
+
+
+def _golden_query_row(prof: str, tag: str = ""):
+    """The profile's block in rag/golden_queries.yaml, which `check_ecosim_rag_queries.py` (model-
+    generic despite its name) needs to run at all: without a block it has no collection and no
+    assertion, so a wrong-content index passes every other row."""
+    label = "golden queries" + tag
+    f = ROOT / "rag" / "golden_queries.yaml"
+    if not f.is_file():
+        return (FAIL, label, "rag/golden_queries.yaml absent")
+    try:
+        import yaml
+    except ImportError:
+        return (INFO, label, "not checked: PyYAML is not importable here")
+    try:
+        block = ((yaml.safe_load(f.read_text(encoding="utf-8")) or {}).get("profiles") or {}).get(prof)
+    except Exception as exc:                       # a hook calls this; never raise
+        return (FAIL, label, f"rag/golden_queries.yaml does not parse: {exc}")
+    if not block:
+        return (FAIL, label, f"no `{prof}` block in rag/golden_queries.yaml — "
+                             f"`check_ecosim_rag_queries.py` cannot check this index")
+    if not block.get("collection"):
+        return (FAIL, label, f"the `{prof}` block has no `collection`")
+    nq = len(block.get("queries") or [])
+    if not nq:
+        return (FAIL, label, f"the `{prof}` block has no queries")
+    return (PASS, label, f"{nq} quer{'y' if nq == 1 else 'ies'} on `{block['collection']}`")
+
+
+def _resolution_row(model: str, prof: str, entry: dict, live: list, checkout, tag: str = ""):
+    """`tools/kb_profile.py` must resolve the milestone's base commit, and every patch, to this
+    profile: that resolution is how every builder and checker finds the profile without a name.
+    It needs a checkout to read commits from; without one the row says what a fresh clone gets."""
+    label = "profile resolves (kb_profile)" + tag
+    import importlib.util
+    try:
+        spec = importlib.util.spec_from_file_location(
+            "_a2mc_kb_profile", Path(__file__).resolve().parent / "kb_profile.py")
+        kp = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = kp               # its @dataclass resolves annotations through sys.modules
+        spec.loader.exec_module(kp)
+    except Exception as exc:
+        return (INFO, label, f"not checked: tools/kb_profile.py did not load ({exc})")
+    commits = kp.chain(entry)
+    if not commits:
+        return (FAIL, label, "the milestone names no base commit (`model_commit_built`)")
+    fresh = (f"a clone with no checkout resolves to {prof}" if len(live) == 1
+             else f"{len(live)} live profiles, so a clone with no checkout needs --commit or a checkout")
+    explicit = checkout is not None
+    path = checkout or os.environ.get("A2MC_MODEL_PATH")
+    if not path:
+        return (INFO, label, f"not checked against a checkout ({fresh}); pass --checkout <the {model} checkout>")
+    try:
+        if not kp.full_sha(path, commits[0]):
+            msg = (f"{commits[0][:8]} is not a commit in {path}, so it is another model's tree or a "
+                   f"shallow clone")
+            return (FAIL if explicit else INFO, label, msg + ("" if explicit else "; pass --checkout"))
+        bad = []
+        for c in commits:
+            try:
+                got = kp.resolve(model, commit=c, model_path=path, repo=ROOT).profile
+            except kp.NoMatch as exc:
+                got = f"no match ({str(exc).splitlines()[0]})"
+            if got != prof:
+                bad.append(f"{c[:8]} -> {got}")
+    except Exception as exc:                       # a hook calls this; never raise
+        return (INFO, label, f"not checked: {exc}")
+    if bad:
+        return (FAIL, label, "; ".join(bad))
+    n = len(commits) - 1
+    return (PASS, label, f"base {commits[0][:8]}" + (f" and {n} patch(es) resolve" if n else " resolves") +
+            f" to {prof}; {fresh}")
+
+
+def stage2_rows(model: str, checkout=None):
     rows = []
     md = ROOT / "models" / model
     for f in ("spec.py", "parameter_parser.py", "output_parser.py"):
         rows.append((PASS if (md / f).is_file() else FAIL, f"models/{model}/{f}", ""))
 
+    # EVERY registered profile of the model, not the first one. A model gains a profile per base
+    # binary and keeps the older ones as `legacy` so the rounds that ran on them stay resolvable; this
+    # took `sorted(mine.items())[0]` until 2026-10-15, so EcoSIM was audited against its LEGACY
+    # profile, alphabetically first, and the live one was never looked at (20261015e).
     ms = milestones()
-    mine = {k: v for k, v in ms.items() if v.get("adapter") == model}
+    mine = {k: v for k, v in sorted(ms.items()) if v.get("adapter") == model}
+    live = [k for k, v in mine.items() if not v.get("legacy")]
+    legacy = [k for k in mine if k not in live]
     # Report EVERY row, never return early on a structural failure. An early return hides the
     # checks below it, so you fix one item, re-run, and meet the next -- and a reader reasonably
     # reads a short clean tail as "the rest is fine". Measured 2026-08-19: ATS's missing milestone
     # masked its missing adaptive-memory seed entirely.
-    prof, entry = (sorted(mine.items())[0] if mine else (None, {}))
-    if prof is None:
+    if not mine:
         rows.append((FAIL, "milestone registered",
                      f"no rag/milestones.json entry with adapter: {model} — every future clone "
                      f"will report this model as unsupported"))
+    elif not live:
+        rows.append((FAIL, "milestone registered",
+                     f"{len(mine)} registered ({', '.join(mine)}), every one legacy — no live profile "
+                     f"describes the model as it is run now"))
     else:
-        rows.append((PASS, "milestone registered", prof))
+        rows.append((PASS, "milestone registered",
+                     f"live: {', '.join(live)}" + (f"; legacy: {', '.join(legacy)}" if legacy else "")))
 
-    for label, key in (("knowledge base (wiki)", "knowledge_base_dir"),
-                       ("curated seed", "curated_yaml_path")):
-        if prof is None:
+    if not mine:
+        for label in ("knowledge base (wiki)", "curated seed"):
             rows.append((NA, label, "no milestone to read the path from"))
-            continue
-        rel = entry.get(key)
-        if not rel:
-            rows.append((FAIL, label, f"milestone has no `{key}`"))
-        else:
-            rows.append((PASS if (ROOT / rel).exists() else FAIL, label, rel))
-
-    if prof is None:
         rows.append((NA, "RAG index committed", "no milestone profile to locate the index"))
         rows.append((NA, "knowledge graph", "no milestone profile"))
-    else:
+    for prof, entry in mine.items():
+        tag = f" [{prof}{', legacy' if prof in legacy else ''}]" if len(mine) > 1 else ""
+        kb_dir = entry.get("knowledge_base_dir")
+        wiki = f"{kb_dir}/{entry['model_wiki_subdir']}" if kb_dir and entry.get("model_wiki_subdir") else kb_dir
+        for label, rel, key in (("knowledge base (wiki)", wiki, "knowledge_base_dir"),
+                                ("curated seed", entry.get("curated_yaml_path"), "curated_yaml_path")):
+            if not rel:
+                rows.append((FAIL, label + tag, f"milestone has no `{key}`"))
+            else:
+                rows.append((PASS if (ROOT / rel).exists() else FAIL, label + tag, rel))
         chroma = ROOT / "rag" / "chroma_db" / prof
-        rows.append((PASS if chroma.is_dir() else FAIL, "RAG index committed",
+        rows.append((PASS if chroma.is_dir() else FAIL, "RAG index committed" + tag,
                      str(chroma.relative_to(ROOT)) if chroma.is_dir()
                      else f"{chroma.relative_to(ROOT)} absent — note chroma.sqlite3 carries "
                           f"skip-worktree, so a rebuild that was never staged looks identical to this"))
         graph = ROOT / "rag" / "graphs" / f"{prof}.json"
-        rows.append((PASS if graph.is_file() else FAIL, "knowledge graph", f"rag/graphs/{prof}.json"))
+        rows.append((PASS if graph.is_file() else FAIL, "knowledge graph" + tag, f"rag/graphs/{prof}.json"))
+
+    # The three rows below exist since 2026-10-15 (setup-discipline Stage 2). Each is checked for the
+    # LIVE profiles only: a legacy profile is frozen, and its golden queries and resolution were
+    # settled when it was live.
+    for prof in live:
+        tag = f" [{prof}]" if len(mine) > 1 else ""
+        rows += [_seed_citation_row(model, mine[prof], tag),
+                 _golden_query_row(prof, tag),
+                 _resolution_row(model, prof, mine[prof], live, checkout, tag)]
 
     # Not just "the directory exists": four EMPTY scaffolds is exactly the half-done state, and the
     # consumer cannot tell you -- MemoryManager returns 0 chars for a missing store AND for an empty
@@ -383,6 +498,7 @@ _HUMAN = {
     2: ["a filled questionnaire was supplied, not assumed",
         "the codebase was characterized BEFORE scaffolding (Step 0c)",
         "V1/V2/V3/V4/V5 verdicts were read — a Yellow is a decision, not a pass",
+        "the seed-citation checker and check_ecosim_rag_queries.py --model <m> were RUN and passed (the rows above check they exist)",
         "the smoke test actually ran the reasoning phases"],
     3: ["target granularity was established FIRST, in the MODEL's own terms",
         "GATE 1: research_plan.md approved by the user",
@@ -398,6 +514,8 @@ def main() -> int:
     ap.add_argument("--model", help="audit this model's onboarding (stage 2)")
     ap.add_argument("--case", help="audit this case (stage 3)")
     ap.add_argument("--stage", type=int, choices=(1, 2, 3), help="force a stage")
+    ap.add_argument("--checkout", help="the model's source checkout, for the profile-resolution row "
+                                       "(default $A2MC_MODEL_PATH when it holds the milestone's commit)")
     a = ap.parse_args()
 
     stage, why = detect_stage()
@@ -437,7 +555,7 @@ def main() -> int:
         if not targets:
             print("\n  No adapted model yet — this IS stage 2. Start with the `onboard-model` skill.")
         for m in targets:
-            fails += _rows_out(stage2_rows(m), f"Stage 2 — onboard-model: {m}")
+            fails += _rows_out(stage2_rows(m, a.checkout), f"Stage 2 — onboard-model: {m}")
     elif stage == 3:
         targets = [a.case] if a.case else real_cases()
         for c in targets:

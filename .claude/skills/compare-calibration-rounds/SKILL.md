@@ -13,9 +13,11 @@ modes:
 # Compare Calibration Rounds
 
 Cross-round comparison of A2MC calibration rounds: best-achievable biomass per round vs the
-validation targets, and Morris μ* sensitivity per round. The canonical bundle lives under a
-site's analysis dir, `use_cases/{Model}_{Case}/analysis/multiround_*/` (self-locating scripts; figures
-versioned beside them; the Kougarok reference instance is `multiround_top50_sensitivity_20260606/`).
+validation targets, and Morris μ* sensitivity per round. The bundle (self-locating scripts, with the
+figures versioned beside them) lives with the report it serves, under the case's
+`use_cases/{Model}_{Case}/reports/<YYYYMMDDx>_<topic>/` (`write-report`); the retired
+`use_cases/{Model}_{Case}/analysis/` takes no new bundles. The original FATES instance,
+`multiround_top50_sensitivity_20260606/`, predates that rule.
 Read `README.md` there + the originating dev/ana log (findings) and
 the originating dev/ana log (procedure) first.
 
@@ -87,7 +89,7 @@ git -C $A2MC_MODEL_PATH merge-base --is-ancestor <change-commit> <binary-commit>
 
 **If the ledger block does not exist for this case, say so in the report rather than omitting the section**, and note that the comparison is therefore unverified on the model axis. An absent ledger is a finding about the case's provenance, not a licence to skip the question.
 
-**Not the same axis as the RAG milestone.** `rag/milestones.json` registers a model commit for **knowledge-base and RAG selection** (the EcoSIM entry is `ecosim-2dea74d9`). That is a different question from which binary produced an ensemble, and the two commits are routinely different. Do not read one for the other.
+**Not the same axis as the RAG milestone.** `rag/milestones.json` registers a model commit for **knowledge-base and RAG selection** (the EcoSIM entries are `ecosim-cb243228`, live, and `ecosim-2dea74d9`, legacy; `python tools/kb_profile.py --model <m> --commit <sha>` names the one covering a given binary's commit). That is a different question from which binary produced an ensemble, and the two commits are routinely different. Do not read one for the other.
 
 ## DELIVERABLE 1c — the CROSS-ROUND MECHANISM LEDGER: what the CAMPAIGN now knows about the system
 

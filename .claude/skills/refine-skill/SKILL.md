@@ -2,7 +2,7 @@
 name: refine-skill
 visibility: public
 category: meta
-description: Improve an existing A2MC skill from accumulated evidence, human-gated. Use when a skill missed a step or needs updating, when dev_logs/ana_logs/verify-pass findings in a skill's domain have piled up, or during a periodic skill review — "refine the X skill", "improve this skill", "the X skill should have caught Y", "review the skills". Gathers the signal (dev_logs, ana_logs, verify findings, explicit corrections), proposes a concrete SKILL.md diff with cited evidence, and STOPS for human approval; it never self-applies. After approval it edits, appends a dated Changelog line, runs the drift check if registries/name changed, and commits.
+description: Improve an existing A2MC skill from accumulated evidence, human-gated. Use when a skill missed a step or needs updating, when dev-log, calibration-log or verify-pass findings in a skill's domain have piled up, or during a periodic skill review — "refine the X skill", "improve this skill", "the X skill should have caught Y", "review the skills". Gathers the signal (dev logs, calibration logs, verify findings, explicit corrections), proposes a concrete SKILL.md diff with cited evidence, and STOPS for human approval; it never self-applies. After approval it edits, appends a dated Changelog line, runs the drift check if registries/name changed, and commits.
 allowed-tools: [Read, Glob, Grep, Write, Edit, Bash]
 modes:
   requires_fates: false
@@ -21,7 +21,7 @@ rewrites a skill on its own.**
 
 ## When to fire
 
-- **Reactive:** a `verify`-pass finding, a dev_log/ana_log trap, an explicit user
+- **Reactive:** a `verify`-pass finding, a dev-log or calibration-log trap, an explicit user
   correction, or a repeated failure in a skill's domain suggests its `SKILL.md` is missing
   or mis-stating a step.
 - **Periodic:** a "review the skills" pass.
@@ -31,8 +31,9 @@ rewrites a skill on its own.**
 
 1. **Pick the target skill** and read its current `.claude/skills/<name>/SKILL.md`.
 2. **Gather the signal** (don't act on noise):
-   - `grep memory/dev_logs/ memory/ana_logs/` for the skill's domain / name and for
-     verify-pass findings or corrections touching its recipes.
+   - Search the dev logs, every case's calibration logs and the frozen `memory/ana_logs/` archive
+     for the skill's domain / name and for verify-pass findings or corrections touching its recipes:
+     `git grep -l -i <term> -- 'memory/dev_logs*' memory/ana_logs ':(glob)use_cases/*/memory/logs/**'`.
    - Explicit user corrections in-session or in feedback memories.
    - **Threshold:** refine on a *repeated* trap (same issue ≥ ~2–3 times), an explicit human
      correction, or a clear failure pattern. A single one-off is usually not enough to change
@@ -40,7 +41,7 @@ rewrites a skill on its own.**
      `inject-knowledge`'s `phase=` kwarg bug and `rebuild-rag`'s stale doc-count — concrete,
      reproduced, evidence-backed.)
 3. **Propose a concrete diff**, not a vague suggestion: the exact new/edited step, gotcha, or
-   trigger wording, with the dev_log/ana_log/finding that justifies it cited inline.
+   trigger wording, with the dev log, calibration log or finding that justifies it cited inline.
 4. **STOP at the human gate.** Present the proposed diff + evidence; wait for approval. Skill
    edits are contract changes — human-reviewed, like `curate-knowledge` / `inject-knowledge`.
 5. **On approval:** apply the edit, **then re-read the ENTIRE `SKILL.md` end-to-end — not just
@@ -76,15 +77,16 @@ rewrites a skill on its own.**
 - **`description` (trigger) edits are the highest risk** — they change *when* the skill fires,
   so a careless edit silently mis-fires or hides the skill. Flag any trigger change
   prominently for the human and in the Changelog.
-- **Evidence-cited** — every proposed change names the dev_log / ana_log / finding /
+- **Evidence-cited** — every proposed change names the dev log / calibration log / finding /
   correction that justifies it. No speculative edits.
-- **Generic and concise, with the evidence CROSS-REFERENCED rather than inlined.** A skill states the rule and earns at most one clause of why; the measured episode belongs in the log, the numbers in the report, the procedure in the script, each named by path so a reader can go there. A rule buried in three lines of narrative is a rule that gets read past, and the case-specific detail is stale the moment another case needs the same rule.
+- **Generic and concise, with the evidence CROSS-REFERENCED rather than inlined — IN THE BODY. The `## Changelog` is exempt.** A skill's BODY states the rule and earns at most one clause of why; the measured episode belongs in the log, the numbers in the report, the procedure in the script, each named by path so a reader can go there. A rule buried in three lines of narrative is a rule that gets read past, and the case-specific detail is stale the moment another case needs the same rule.
+  **The changelog is a different artifact with a different audience** (PI, 2026-10-10): it is development history, it is STRIPPED on both sync legs from its heading to EOF, and its only reader is a maintainer asking why a contract changed. So a changelog entry SHOULD carry the measured episode — the numbers, what was invisible, who caught it — because that is the one place where inlining it costs a shipped reader nothing and buys the next maintainer the whole story. Signal: told to trim an inlined episode out of this kind of footgun, an agent trimmed the **changelog entry too**, which removed the record from the only place it belonged while the body was being correctly shortened. Over-correcting a scope is the twin failure of ignoring it, and the guardrail as written named no scope.
 - **Branch-scoped** — keep each branch's skills aligned to that branch's reality (a pinned
   API + manuscript flow vs generic `main`); don't import the other branch's assumptions.
 - **Case references need CONTEXT — skills SHIP.** `.claude/skills/` is on the public-sync INCLUDE
   list and the leak-scan gate checks host PATHS only, so case names and round labels pass through
   unchecked. This is NOT a ban on specifics: cross-references are what make a rule traceable, and
-  `[[memory_name]]` pointers, dev_log / ana_log filenames, and worked examples all belong here.
+  `[[memory_name]]` pointers, log filenames, and worked examples all belong here.
   What must not appear is a case-specific token dropped with no context — a reader outside this
   project cannot parse "the R2 ensemble" or "the XRLA lever", but can parse "a 258-task array",
   "one site's ten-cycle calibration round", or an explicit pointer they can go read. Rule of

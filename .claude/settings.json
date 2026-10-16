@@ -18,6 +18,41 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/block-ai-attribution.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/block-registered-hook-rename.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/remind-pipeline-exit-status.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/remind-per-model-kb-tools.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/remind-kb-before-source.py\"",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/block-unregistered-sbatch.py\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/remind-kb-before-source.py\"",
+            "timeout": 10
           }
         ]
       },
@@ -79,6 +114,17 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/remind-memory-bucket.py\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/check-records-on-stop.py\"",
+            "timeout": 30
           }
         ]
       }

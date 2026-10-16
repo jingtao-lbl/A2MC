@@ -290,11 +290,14 @@ def _check_decisions_current(path, d):
     if siblings and here != siblings[-1]:
         return warnings
 
-    newest = max((x.get("date", "") for x in decs), default="")
+    newest = newest_decision_time(decs)
     case_dir = Path(path).resolve().parent.parent          # <case>/memory/<state>.json -> <case>
     try:
+        # A TIME, never a bare date: git reads `--since 2026-10-14` as that date at the CURRENT
+        # clock time, so one decision dated today hid every commit made earlier the same day.
         out = subprocess.run(
-            ["git", "log", "--since", newest or "30 days ago", "--format=%h", "--", str(case_dir)],
+            ["git", "log", "--since", newest.replace("T", " ") if newest else "30 days ago",
+             "--format=%h", "--", str(case_dir)],
             capture_output=True, text=True, timeout=30, cwd=str(REPO))
         if out.returncode != 0:
             return warnings
@@ -302,16 +305,30 @@ def _check_decisions_current(path, d):
     except Exception:
         return warnings                      # (3) silent
 
+    case = case_dir.name
     if not decs:
         warnings.append(
-            f"no decisions recorded on an active round ({n} commit(s) touching this case) — "
+            f"{case}: no decisions recorded on an active round ({n} commit(s) touching this case) — "
             f"findings belong in the state as they are established, not only at Phase 6")
     elif n >= DECISION_STALE_COMMITS:
         warnings.append(
-            f"{n} commit(s) touching this case since the newest decision ({newest}) — "
+            f"{case}: {n} commit(s) touching this case since the newest decision ({newest}) — "
             f"record findings with add_decision(finding, rationale) as they are established; "
             f"next_action is the program counter, not the record")
     return warnings
+
+
+def newest_decision_time(decs) -> str:
+    """The newest decision as 'YYYY-MM-DDTHH:MM:SS'. A decision recorded with `at` (the time it
+    was written) uses it; an older one carrying only a date counts from that day's midnight, which
+    errs toward reporting commits rather than hiding them."""
+    best = ""
+    for x in decs or []:
+        if not isinstance(x, dict):
+            continue
+        t = x.get("at") or ((x.get("date") or "") + "T00:00:00" if x.get("date") else "")
+        best = max(best, t)
+    return best
 
 
 #: current_phase -> the skill that governs it. The mapping is the whole point: the skill carries

@@ -130,7 +130,18 @@ run recipe are what Step 0d **produces** with a user who does not have them yet;
       (`rebuild-rag`).
 - [ ] **Milestone registered** in `rag/milestones.json` — what `model_preflight` matches against;
       without it every later user gets NO MILESTONE. **Then `model_preflight --checkout "$CHECKOUT"`
-      reports match** (exit 0): the milestone resolves the checkout it was built from.
+      reports match** (exit 0): the milestone resolves the checkout it was built from. A model can carry
+      several profiles, one per base binary with the older ones `legacy`; at least one must be live, and
+      every registered one keeps its wiki, seed, index and graph (the checker audits them all).
+- [ ] **Seed citations resolve** — if the curated seed cites source lines, the model has its own
+      checker, `tools/check_<name>_seed_citations.py` (precedents: EcoSIM, PFLOTRAN; model-specific on
+      purpose), and it passes.
+- [ ] **Golden queries** — the live profile has a block in `rag/golden_queries.yaml` with its
+      `collection` and at least one query, and `tools/check_ecosim_rag_queries.py --model <name>`
+      (model-generic despite its name) passes.
+- [ ] **The profile resolves** — `tools/kb_profile.py` maps the milestone's base commit, and each
+      patch, to the profile: `python3 tools/check_stage_ready.py --model <name> --checkout "$CHECKOUT"`.
+      This is how every builder and checker finds the profile without being told its name.
 - [ ] **V3** RAG diff vs reference, including the FATES regression check.
 - [ ] **Adaptive memory seeded** — `memory/<name>/gained_knowledge/discoveries.json` carries entries
       (`check_stage_ready.py --model <name>` row).

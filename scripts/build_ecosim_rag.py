@@ -1,5 +1,9 @@
 #!/usr/bin/env python
-"""Build the EcoSIM RAG/GraphRAG index (profile ecosim-2dea74d9).
+"""Build the EcoSIM RAG/GraphRAG index for the profile covering the commit in use (tools/kb_profile.py), or --profile.
+
+The profile is the single EcoSIM milestone in rag/milestones.json not marked `legacy`
+(`active_profile()`); since 2026-10-15 that is `ecosim-cb243228`, and `ecosim-2dea74d9`
+is legacy. Earlier text below names 2dea74d9 because that is where this builder began.
 
 Adapter-kit dogfood, concrete-first (Doc 19 / onboard-model step 9). This is a
 DEDICATED EcoSIM build path that reuses the generic RAG building blocks
@@ -26,6 +30,8 @@ Outputs:
 Usage (Perlmutter): ~/a2mc_env/bin/python scripts/build_ecosim_rag.py --rebuild
 
 Author: Jing Tao with Claude
+
+The cb243228 re-anchor and the defects behind the dated notes above: `memory/dev_logs_adapterkit/20261015a_The_EcoSIM_Knowledge_Base_Moves_To_The_Binary_R2_Runs.md`.
 """
 from __future__ import annotations
 
@@ -46,8 +52,16 @@ from rag.knowledge_graph import FATESKnowledgeGraph
 from models.ecosim.parameter_parser import EcoSIMParameterParser
 from models.ecosim.output_parser import EcoSIMOutputParser
 
-PROFILE = "ecosim-2dea74d9"
 COLLECTION = "ecosim_knowledge"
+
+
+from tools.kb_profile import NoMatch, kb_commit, resolve_or_default  # noqa: E402
+
+# The profile to build is never written here. `main()` takes `--profile`, else asks
+# tools/kb_profile.py which registered milestone covers the commit in use ($A2MC_MODEL_PATH's HEAD,
+# matched against each milestone's base and patches), and only with no checkout at all falls back to
+# the single non-legacy EcoSIM milestone.
+PROFILE: str | None = None
 
 
 def _rel(p) -> Path:
@@ -99,19 +113,42 @@ def warn_unresolved_seed_params(seed: dict, params: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 # Definition chunks (params + outputs) — EcoSIM parser feeds the vector store.
 # ---------------------------------------------------------------------------
-def build_definition_chunks(params: dict, output_cdl: Path, seed: dict) -> list[dict]:
+def param_category(name: str, par, seed_params: dict, surface_categories: dict | None) -> str:
+    """One precedence for the graph node and its vector-store chunk: the curated category, then the
+    category the milestone declares for the parameter's SURFACE, then the parser's keyword guess."""
+    return (seed_params.get(name, {}).get("category")
+            or (surface_categories or {}).get(par.source_file) or par.category)
+
+
+def build_definition_chunks(params: dict, output_cdl: Path, seed: dict,
+                            status: tuple | None = None,
+                            surface_categories: dict | None = None) -> list[dict]:
+    """Definition chunks for the vector store, filtered by the SAME source classification as the
+    graph (`status` from `_source_status`). Until 2026-10-15 every variable of every surface got a
+    chunk, so a variable the graph drops as dead (CHL4, and the grid file's atmospheric gases) still
+    answered queries as an "EcoSIM parameter", and an unread one (RSRA) gave no hint that writing
+    it does nothing."""
     chunks: list[dict] = []
     seed_params = seed.get("parameters", {})
+    file_read, mentioned = (status[0], status[1]) if status else (set(), None)
     for name, par in params.items():
         if par.is_string:
             continue
+        unread = ""
+        if mentioned is not None and name not in file_read:
+            if name not in mentioned:
+                continue                      # dead: absent from every .F90, as in build_graph
+            unread = ("NOT READ from the parameter file at this model version: the name is live "
+                      "in the code, but writing it in the file is a silent no-op. ")
+        cat = param_category(name, par, seed_params, surface_categories)
         cal = seed_params.get(name, {}).get("calibration_notes", "")
         dims = ", ".join(par.dimensions) if par.dimensions else "scalar"
         content = (
-            f"EcoSIM parameter {name} ({par.category}). "
+            f"EcoSIM parameter {name} ({cat}). "
             f"{par.long_name or 'no long_name'}. "
             f"Units: {par.units}. Dimensions: {dims}. "
-            f"PFT-specific: {par.is_pft_specific}. "
+            f"PFT-specific: {par.is_pft_specific}. Surface: {par.source_file}. "
+            + unread
             + (f"Calibration: {cal.strip()}" if cal else "")
         )
         chunks.append({
@@ -121,7 +158,7 @@ def build_definition_chunks(params: dict, output_cdl: Path, seed: dict) -> list[
             "title": name,
             "format": "definition",
             "entity_type": "parameter",
-            "param_category": par.category,
+            "param_category": cat,
             "is_pft_specific": bool(par.is_pft_specific),
             "chunk_id": f"ecosim/param/{name}",
         })
@@ -187,7 +224,7 @@ def build_curated_chunks(seed: dict) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Knowledge graph — full param/output surface + curated relationships.
 # ---------------------------------------------------------------------------
-def _source_status() -> tuple:
+def _source_status(commit: str | None = None) -> tuple:
     """Classify every parameter-file variable against the source: (file_read, mentioned).
 
     THREE STATES, AND CONFLATING THE LAST TWO DELETES LIVE PHYSICS. The first cut of this helper
@@ -213,16 +250,33 @@ def _source_status() -> tuple:
     root = os.environ.get("A2MC_MODEL_PATH")
     if not root or not os.path.isdir(root):
         print("  NOTE: $A2MC_MODEL_PATH unset/missing -- cannot classify parameters against source")
-        return set(), None
-    out = subprocess.run(["git", "grep", "-h", "ncd_getvar"], cwd=root,
-                         capture_output=True, text=True).stdout
-    file_read = set(re.findall(r"ncd_getvar\([^,]+,\s*'([A-Za-z0-9_]+)'", out))
-    names = subprocess.run(["git", "grep", "-hoE", r"\b[A-Z][A-Z0-9_]{2,}\b", "--", "*.F90"],
-                           cwd=root, capture_output=True, text=True).stdout
-    return file_read, set(names.split())
+        return set(), None, {}
+    # Read the source AT THE PROFILE'S OWN COMMIT, not whatever the checkout has checked out: the
+    # working tree moves with the model's development, and a profile built from it would describe
+    # a commit it does not name. `git grep <commit>` is index-based, so this is also compliant with
+    # the NERSC no-recursive-traversal rule.
+    from tools.ecosim_param_source_map import Source, file_reads
+    try:
+        src = Source(root, commit or "HEAD")
+    except SystemExit as e:
+        print(f"  NOTE: {e} -- cannot classify parameters against source")
+        return set(), None, {}
+    reads = file_reads(src)
+    # A read counts only when it is LIVE: `PlantInfoMod.F90` keeps an uncalled per-PFT reader beside
+    # the live table reader, and at cb243228 `RSRA` is read ONLY there, so a name-literal grep alone
+    # reported it as file-backed while no run ever reads it (found 2026-10-15).
+    file_read = {n for n, rs in reads.items() if any(r["live"] for r in rs)}
+    names = subprocess.run(["git", "-C", root, "grep", "-hoE", r"\b[A-Z][A-Z0-9_]{2,}\b",
+                            src.commit, "--", "*.F90"],
+                           capture_output=True, text=True).stdout
+    mentioned = {ln.split(":", 1)[-1] for ln in names.split()}
+    return file_read, mentioned, reads
 
 
-def build_graph(params: dict, output_cdl: Path, seed: dict) -> FATESKnowledgeGraph:
+def build_graph(params: dict, output_cdl: Path, seed: dict,
+                commit: str | None = None,
+                surface_categories: dict | None = None,
+                status: tuple | None = None) -> FATESKnowledgeGraph:
     kg = FATESKnowledgeGraph()
 
     # Categories
@@ -254,7 +308,7 @@ def build_graph(params: dict, output_cdl: Path, seed: dict) -> FATESKnowledgeGra
     #     coin flip. `guard` is emitted verbatim from the curated seed onto the node so a retrieval
     #     surfaces the SELECTOR alongside the parameter.
     seed_params = seed.get("parameters", {})
-    file_read, mentioned = _source_status()
+    file_read, mentioned, reads = status if status is not None else _source_status(commit)
     dropped, inert = [], []
     for name, par in params.items():
         if par.is_string:
@@ -265,12 +319,30 @@ def build_graph(params: dict, output_cdl: Path, seed: dict) -> FATESKnowledgeGra
                 continue
             inert.append(name)                # live in code, but the FILE value is never read
         cur = seed_params.get(name, {})
-        cat = cur.get("category", par.category)
+        # Precedence: the curated category, then the category the milestone declares for the
+        # parameter's SURFACE, then the parser's long_name keyword guess. The surface default exists
+        # for the grid file, whose ~100 soil and site variables match no keyword and would otherwise
+        # all land in `other` beside the plant file's uncategorised traits.
+        cat = param_category(name, par, seed_params, surface_categories)
         kg.add_parameter(name, category=cat, description=par.long_name,
                          units=par.units, code_location=cur.get("code_location"))
         node = kg.graph.nodes[f"{kg.PARAMETER.lower()}:{name}"]
         if cur.get("guard"):
             node["guard"] = cur["guard"]
+        # A curated `inert: true` is a SOURCE finding (not read on the live path, or read and never
+        # reaching physics), and the node must say so: a retrieval that lists RSRA as a root-
+        # hydraulics driver at cb243228 recommends a knob that does nothing.
+        if cur.get("inert"):
+            node["inert"] = True
+            node["inert_note"] = (cur.get("calibration_notes") or "").strip()
+        # Where the model reads it, at the profile's commit: every Parameter node carries a source
+        # citation, not only the curated ones (all 192 had `code_location: null` until 2026-10-15).
+        live = [r for r in reads.get(name, []) if r["live"]]
+        if live:
+            node["read_site"] = "; ".join(f"{r['routine']} ({r['file']}:{r['line']})" for r in live)
+            node["fortran_var"] = ", ".join(sorted({r["target"] for r in live if r["target"]}))
+            if any(r["conditional"] for r in live):
+                node["read_if_present"] = True
         if name in inert:
             node["file_backed"] = False
             node["file_backed_note"] = (
@@ -365,13 +437,22 @@ def build_graph(params: dict, output_cdl: Path, seed: dict) -> FATESKnowledgeGra
                 if pid(pname) not in kg.graph:
                     continue
                 if kg.graph.has_edge(pid(pname), oid(oname)):
-                    continue          # the parameter side already asserted it; do not downgrade
+                    # the parameter side already asserted it: do not replace the edge, but carry the
+                    # curator's direct/indirect label onto it, which only this block states. Without
+                    # this, naming a driver on BOTH sides silently left it unlabelled (77 driver
+                    # entries at cb243228, 24 of which had a label in the previous build).
+                    edge = kg.graph.edges[pid(pname), oid(oname)]
+                    edge.setdefault("driver_kind", kind)
+                    continue
                 kg.add_relationship(pid(pname), oid(oname), kg.AFFECTS, driver_kind=kind)
     return kg
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Build the EcoSIM RAG index (ecosim-2dea74d9).")
+    ap = argparse.ArgumentParser(description="Build the active EcoSIM RAG profile (the one "
+                                 "non-legacy EcoSIM milestone in rag/milestones.json).")
+    ap.add_argument("--profile", help="the milestone to build (default: the one tools/kb_profile.py "
+                                      "resolves for the commit in use)")
     ap.add_argument("--rebuild", action="store_true", help="Rebuild vector store from scratch")
     ap.add_argument("--graph-only", action="store_true", help="Only rebuild the graph")
     ap.add_argument("--no-write-counts", action="store_true",
@@ -379,6 +460,15 @@ def main():
     ap.add_argument("--allow-shrink", action="store_true",
                     help="Bypass the count-regression guard (a deliberate smaller build)")
     args = ap.parse_args()
+
+    global PROFILE
+    try:
+        res = resolve_or_default("ecosim") if not args.profile else None
+    except NoMatch as e:
+        raise SystemExit(f"ERROR: {e}\nPass --profile to build a registered profile explicitly.")
+    PROFILE = args.profile or res.profile
+    if res is not None:
+        print(f"  profile {PROFILE} resolved ({res.via}{': ' + res.note if res.note else ''})")
 
     ms = load_milestone()
     kb_dir = _rel(ms["knowledge_base_dir"])
@@ -410,15 +500,26 @@ def main():
 
     params = parse_param_surfaces(param_files)
     warn_unresolved_seed_params(seed, params)
+    surface_categories = {Path(k).name: v for k, v in (ms.get("param_file_categories") or {}).items()}
+    status = _source_status(kb_commit(ms))   # the base, or its last in-place patch
 
     chunk_count = 0
     if not args.graph_only:
         # Vector store
         wiki_docs = load_markdown_files(str(wiki_dir))
+        # A hidden directory inside the wiki is an editor's, never the wiki's: a Jupyter autosave
+        # (`.ipynb_checkpoints/`) holds a STALE copy of a page and was indexed as wiki content.
+        hidden = [d for d in wiki_docs
+                  if any(part.startswith(".") for part in Path(str(d.get("source", ""))).parts)]
+        if hidden:
+            print(f"  skipping {len(hidden)} file(s) under hidden directories: "
+                  + ", ".join(sorted({str(d.get('source')) for d in hidden})))
+            wiki_docs = [d for d in wiki_docs if d not in hidden]
         for d in wiki_docs:
             d["kb_source"] = "ecosim"
         wiki_chunks = chunk_documents(wiki_docs)
-        def_chunks = build_definition_chunks(params, output_cdl, seed)
+        def_chunks = build_definition_chunks(params, output_cdl, seed, status=status,
+                                             surface_categories=surface_categories)
         cur_chunks = build_curated_chunks(seed)
         all_chunks = wiki_chunks + def_chunks + cur_chunks
         print(f"\nchunks: wiki={len(wiki_chunks)} definitions={len(def_chunks)} "
@@ -434,7 +535,8 @@ def main():
 
     # Graph
     print("\nBuilding knowledge graph...")
-    kg = build_graph(params, output_cdl, seed)
+    kg = build_graph(params, output_cdl, seed, commit=kb_commit(ms),
+                     surface_categories=surface_categories, status=status)
     kg.save(str(graph_out))
     stats = kg.get_stats()
     print(f"graph: {stats.get('total_nodes')} nodes, {stats.get('total_edges')} edges -> {graph_out}")
@@ -450,6 +552,8 @@ def main():
         "adapter": "ecosim",
         "built_at": datetime.now(timezone.utc).isoformat(),
         "model_commit_built": ms["model_commit_built"],
+        "kb_commit": kb_commit(ms),
+        "patches": [p["commit"] for p in (ms.get("patches") or [])],
         "wiki_subdir": ms["model_wiki_subdir"],
         "param_file": ms["param_file"],
         "param_files_extra": ms.get("param_files_extra") or [],

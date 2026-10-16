@@ -44,12 +44,13 @@ SUBMIT_RE = re.compile(
     r"|submit_phase0\.py"             # A2MC ensemble
     r"|submit_experiments\.py"        # A2MC phase-5
     r"|submit_ensemble\.sh"
+    r"|submit_run\.py"               # A2MC submit-and-register wrapper (the route the sbatch hook enforces)
     r")\b",
     re.I,
 )
 # Previews and read-only queries must not trigger it.
 QUIET_RE = re.compile(r"--dry-run\b|--write-script\b|\bsqueue\b|\bsacct\b|\bscontrol\b"
-                      r"|remind-arm-monitoring", re.I)
+                      r"|remind-arm-monitoring|block-unregistered-sbatch", re.I)
 
 MESSAGE = (
     "HPC JOBS SUBMITTED -> `arm-hpc-monitoring` now applies (it may have been correctly "
@@ -72,6 +73,19 @@ MESSAGE = (
 )
 
 
+def _unquoted(cmd):
+    try:
+        import importlib.util, os
+        spec = importlib.util.spec_from_file_location(
+            "_bus", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "block-unregistered-sbatch.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod._unquoted(cmd)
+    except Exception:
+        return cmd                     # without the helper, behave as before
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -81,7 +95,10 @@ def main():
     if payload.get("tool_name") != "Bash":
         sys.exit(0)
     cmd = (payload.get("tool_input") or {}).get("command", "") or ""
-    if not cmd or QUIET_RE.search(cmd) or not SUBMIT_RE.search(cmd):
+    # Match on the command with quoted TEXT removed, so a submitter's name inside a grep pattern or
+    # a commit message does not read as a submission. The stripping is the sbatch hook's, loaded
+    # from that file so the two hooks share one definition.
+    if not cmd or QUIET_RE.search(cmd) or not SUBMIT_RE.search(_unquoted(cmd)):
         sys.exit(0)
 
     # Only fire when the submission actually succeeded.

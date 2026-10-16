@@ -22,13 +22,15 @@ The full reconstruction guide is **`docs/a2mc_reference/rag_build_roadmap.md`** 
 
 **Do this before Step 1.** A2MC's *workflow* is generic; anything that reads a **model's own artifacts** is a parallel per-model script ([[feedback_per_model_scripts_not_generic]]). Running FATES's builder for a PFLOTRAN profile does not fail usefully — it writes into the wrong collection.
 
-| Model | Script | Profile | Collection | Flags it accepts |
+| Model | Script | Profiles registered (2026-10-15) | Collection | Flags it accepts |
 |---|---|---|---|---|
-| **ELM / FATES** | `scripts/build_rag_index.py` | `api-43-1`, `api-31-0` | `fates_knowledge` | `--rebuild` `--graph-only` `--test` `--profile` `--allow-generic-cdl` |
-| **EcoSIM** | `scripts/build_ecosim_rag.py` | `ecosim-2dea74d9` | `ecosim_knowledge` | `--rebuild` `--graph-only` `--no-write-counts` `--allow-shrink` |
-| **PFLOTRAN** | `scripts/build_pflotran_rag.py` | `pflotran-157a26f7` | `pflotran_knowledge` | `--rebuild` `--no-write-counts` |
+| **ELM / FATES** | `scripts/build_rag_index.py` | `api-43-1` (canonical), `api-31-0` (legacy) | `fates_knowledge` | `--rebuild` `--graph-only` `--test` `--profile` `--allow-generic-cdl` |
+| **EcoSIM** | `scripts/build_ecosim_rag.py` | `ecosim-cb243228` (live), `ecosim-2dea74d9` (legacy) | `ecosim_knowledge` | `--rebuild` `--graph-only` `--profile` `--no-write-counts` `--allow-shrink` |
+| **PFLOTRAN** | `scripts/build_pflotran_rag.py` | `pflotran-157a26f7` | `pflotran_knowledge` | `--rebuild` `--profile` `--no-write-counts` |
 
-**The flag sets genuinely differ — do not copy a command across rows.** PFLOTRAN has **no `--graph-only`** and **no `--allow-shrink`**; EcoSIM has **no `--test`**; only FATES takes `--profile` (it is the only model with more than one).
+**The flag sets genuinely differ — do not copy a command across rows.** PFLOTRAN has **no `--graph-only`** and **no `--allow-shrink`**; EcoSIM has **no `--test`**. Every builder takes `--profile`; FATES and EcoSIM each have more than one registered profile. This table covers the build step. Every knowledge-base BUILD step's tool for every model, in one table: [[reference_per_model_kb_build_tools]].
+
+**The Profiles column is the inventory, not the answer to which one applies**, and it goes stale whenever a profile is registered: `python tools/kb_profile.py --model <m> --list` is the live list. Which profile applies is a property of the commit in use, so resolve it rather than picking from a list: `python tools/kb_profile.py --model <m>` names the profile covering `$A2MC_MODEL_PATH`'s commit, and `--commit <sha>` the one covering an archived binary's commit. Without `--profile` the two adapter builders resolve it the same way, and with no checkout at all take the model's single live profile; FATES's builder uses the active env profile. **After `tools/kb_patch.py apply`, rebuild the SAME profile**: a patch keeps its name (`generate-codebase-wiki` Workflow P).
 
 Per-model behaviour worth knowing before you run:
 
@@ -73,7 +75,7 @@ Reads `docs/fates-knowledge-base/` + `docs/elm-knowledge-base/`, parses the two 
 
 ## Step 2b — Recipe 1: bumping the wiki to a new commit-pinned tree
 
-The **#1 footgun.** The loader probes wiki dir names and **stops at the first match** (`rag/loader.py:366-371`), so a bare `--rebuild` keeps indexing the *legacy* tree even though a commit-pinned `fates-codebase-wiki-e85d997/` exists. The build looks like it succeeded but indexes the wrong content. Redirect with a symlink, archive the old artifacts for rollback, then rebuild:
+The **#1 footgun.** The loader probes wiki dir names and **stops at the first match** (`rag/loader.py:587-595`), so a bare `--rebuild` keeps indexing the *legacy* tree even though a commit-pinned `fates-codebase-wiki-e85d997/` exists. The build looks like it succeeded but indexes the wrong content. Redirect with a symlink, archive the old artifacts for rollback, then rebuild:
 
 ```bash
 cd docs/fates-knowledge-base
@@ -90,16 +92,16 @@ Pair a wiki bump with a **CDL refresh** — the CDLs are hand-managed, not auto-
 ## Step 3 — verify (do not trust a silent success)
 
 ```bash
-$PY -c "
+A2MC_RAG_ACTIVE=<profile> $PY -c "
 from rag import HybridRetriever
-r = HybridRetriever(auto_build=False)
+r = HybridRetriever(auto_build=False)          # needs A2MC_RAG_ACTIVE, or explicit paths
 print(r.get_stats())
 print(r.get_targeted_context(param_names=['fates_cnp_pid_kp'],
       output_names=['FATES_LEAFC'], mechanisms=['PID_Controller'], pft=10)[:1500])
 "
 ```
 
-- **Stats sanity:** current api-31-0 build is ~2,581 vector docs, ~1,295 graph nodes, ~2,197 edges (CLAUDE.md §RAG/GraphRAG). 168 nodes means you ran a pre-Feb-2026 build — `--rebuild` again. 0 docs means the wiki path didn't match (the Step 2b footgun).
+- **Stats sanity:** the api-31-0 (legacy) build is ~2,581 vector docs, ~1,295 graph nodes, ~2,197 edges (CLAUDE.md §RAG/GraphRAG); every profile's own numbers are its `expected_counts` in `rag/milestones.json` (the adapter builders write them on success; FATES's are bumped by hand). 168 nodes means you ran a pre-Feb-2026 build — `--rebuild` again. 0 docs means the wiki path didn't match (the Step 2b footgun).
 - **Content spot-check after a bump** (these are the claims that were wrong in the stale Feb-2026 index): phenology defaults `-68 / 638 / -0.01`, transpiration units in `mm`, and the phantom `fates_cnp_nfix` parameter **absent**. Open a matched `.md` and confirm it's the new commit's content, not legacy.
 
 > ### THE VERIFY CHECKERS ROUTE BY MODEL TOO — the same fork as Step 0
@@ -107,13 +109,15 @@ print(r.get_targeted_context(param_names=['fates_cnp_pid_kp'],
 >
 > | model | golden-query content + count regression | metadata coverage |
 > |---|---|---|
-> | **ELM / FATES** | `tools/check_rag_queries.py --profile api-43-1` | `tools/check_rag_coverage.py --profile <p>` |
-> | **EcoSIM** | `tools/check_ecosim_rag_queries.py --profile ecosim-2dea74d9` | not configured — see below |
-> | **PFLOTRAN** | `tools/check_ecosim_rag_queries.py --profile pflotran-157a26f7` | not configured — see below |
+> | **ELM / FATES** | `tools/check_rag_queries.py --profile <p>` (`api-43-1` today: `python tools/kb_profile.py --model fates --name-only`) | `tools/check_rag_coverage.py --profile <p>` |
+> | **EcoSIM** | `tools/check_ecosim_rag_queries.py`, which resolves the profile itself (`ecosim-cb243228` today); `--profile <p>` for the legacy one | not configured — see below |
+> | **PFLOTRAN** | `tools/check_ecosim_rag_queries.py --model pflotran` (`pflotran-157a26f7`) | not configured — see below |
 >
 > **"Not configured" is not "not covered."** `check_rag_coverage.py` reads `rag/canary_queries.yaml`, which lists only the two `api-*` profiles, so on an adapter profile it falls through to the default `fates_knowledge` collection and exits 1. The generic guard carries its own **count-regression check plus graph node floors**, which is the same bug class from the other side, so an adapter rebuild is verified — just not by that script. Adding adapter blocks to `canary_queries.yaml` is open work, not a blocker.
 >
 > **Also run after any curated-seed or curated-YAML edit:** `$PY tools/validate_seed_coverage.py --seed <the file the profile was built from>`. It is **model-agnostic and works on every shape** — verified on `models/ecosim/curated_seed.yaml`, `models/pflotran/curated_seed.yaml` and `rag/data/curated_relationships_api-43-1.yaml`. It asserts C1 every category has a mechanism and C2 every calibratable parameter is named by one, because the seed builder prints `[SKIP] category X has no assigned mechanisms` and then **exits 0**, so a partial seed reads as a finished one. Read the profile's own `rag/metadata/<profile>.json` for which file to pass — adapters use `models/<model>/curated_seed.yaml`, only the FATES profiles use `rag/data/`.
+>
+> **And for a seed that cites source, its citation checker:** `tools/check_ecosim_seed_citations.py` (every `file:line` and routine resolves at the profile's knowledge-base commit) or `tools/check_pflotran_seed_citations.py` (against the source and the input deck). Both are model-specific on purpose; FATES has none on this line.
 
 - **Coverage self-test (docs/33 §3c) — FATES profiles:** `$PY tools/check_rag_coverage.py --profile <profile>` — asserts every expected `kb_source` is present above a floor and canary wiki files appear. This catches the ELM-wiki-absent bug class (a whole KB silently dropped: `kb_source 'elm' = 0`). Update `rag/canary_queries.yaml` floors after a legitimate rebuild; the *presence* invariant should hold.
 - **Golden-query content test (REQUIRED after any content change; route by model per the table above):** `$PY tools/check_rag_queries.py --profile <profile>`. Coverage is metadata-only — it does NOT catch a *wrong answer* (a bad SZPF ordering formula, a mislabeled PFT identity: dev_logs `20260710r/t`). This one runs the embedding model + graph and asserts real query results: `must_contain` / `must_not_contain` per query (e.g. the correct `iscpf = (pft-1)*nlevsclass+size_class`, the wrong `(size_class-1)*numpft` absent) plus a graph PFT-identity check (PFT10/11/12 = the api-43 arctic `fates_pftname`). Assertions live in `rag/golden_queries.yaml` — **add a query there for every new content invariant you fix** so a regression fails loudly next time. It self-verifies (a negative run does fail); exit 1 = wrong content, exit 0 = pass or gracefully-skipped (no embedding model).
@@ -173,7 +177,7 @@ print('stored vectors:', sum(e is not None for e in g['embeddings']), '(must equ
 print('curated chunks:', sum(str((m or {}).get('source','')).startswith('curated') for m in g['metadatas']))"
 ```
 
-A count that matches the *pre-rebuild* number means the old index is still what is committed.
+A count that matches the *pre-rebuild* number means the old index is still what is committed. `$PY tools/check_rag_index_committed.py` makes that comparison for every profile from the committed blobs, never the disk, and the pre-commit hook runs it with `--staged`.
 
 **Audit any clone for the flag:** `git ls-files -v | grep '^S'` lists every skip-worktree file.
 

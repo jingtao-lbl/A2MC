@@ -110,7 +110,8 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | `restart-failed-jobs` | any (HPC) | Restart SLURM jobs that failed in an ensemble/experiment |
 | `restart-adapter-ensemble` | any (HPC) | Recover failed cases in a NON-CIME adapter ensemble (EcoSIM/PFLOTRAN/ATS) — classify why they died, persist the case list, relaunch only what is missing |
 | `diagnose-forensics` | any | Triage ONE anomaly — real or artifact? — then root-cause it (a whole round -> `phase3-diagnosis`) |
-| `scientific-analysis` | any | Run an investigation → figure → ana_log |
+| `query-knowledge-base` | any | Query the three KB tiers network-first (`tools/kb_network.py`), then confirm in source — required by Phase 3/4/6 logs and forensics findings |
+| `scientific-analysis` | any | Run an investigation → figure → calibration log or report |
 | `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |
 | `literature-review` | any | Cited literature review via `paper-search-mcp` (search→triage→extract→synthesis) — PARAMETER-BOUNDS (published ranges → refine a param-list's `lower`/`upper`) or MANUSCRIPT topic review. Validated DOIs, no fabrication. NOT a single-citation lookup |
 | `onboard-model` | any | Onboard a NEW model end-to-end — adapter package + knowledge chain + V1–V5 + milestone + smoke test (top-level adapter-kit orchestrator) |
@@ -157,6 +158,8 @@ When a request matches a skill's trigger **and** the active mode satisfies its `
 | `tools/` | Shared utilities (extraction, plotting, HPC, cost functions) | reuse rather than re-implement |
 
 **Curated-knowledge gate:** the autonomous agent runs its `MemoryManager` in `propose` mode — its auto-learned discoveries are staged to `auto_discovered_pending.json`, not written to the curated JSONs. You (the interactive agent) review and promote vetted entries via `tools/review_pending_knowledge.py`. This keeps the knowledge that shapes every future diagnosis human-vetted.
+
+**A citation you cannot resolve is a development note, not a broken link.** Hooks, skills and logs sometimes cite a note by name — `feedback_*`, `reference_*`, `project_*` — or point at a dated engineering log. Those live in the maintainer's private development repository and are excluded from every release, so in your copy the path will not exist. **This is expected and nothing is missing from your tree.** The rule or finding being cited is stated where it is cited; the name is provenance for the maintainer. If a particular note would genuinely help you, contact jingtao@lbl.gov rather than treating the absence as a defect to work around.
 
 **Before starting a task:** read the site's prior session logs under `use_cases/{Model}_{Case}/memory/logs/` for work on the same site/round. Repeating a superseded approach is the most common avoidable mistake.
 

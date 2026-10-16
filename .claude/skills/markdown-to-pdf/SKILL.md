@@ -2,7 +2,7 @@
 name: markdown-to-pdf
 visibility: public
 category: authoring
-description: Convert a Markdown document (an ana_log, report, or note) to a shareable PDF or Word (.docx) via pandoc. Use when the user asks to "convert/render markdown to PDF/Word/docx", "render this ana_log/report to PDF", "export markdown to a document", "make a PDF of this", "turn this .md into a docx". Prose documents, not slide decks (slides go through Marp). Requires pandoc + a LaTeX engine for PDF, and python-docx for round-trip-safe .docx edits. Self-contained repo copy — depends only on tools the environment provides, not on any user-level skill or ~/.claude workflow.
+description: Convert a Markdown document (a log, report, or note) to a shareable PDF or Word (.docx) via pandoc. Use when the user asks to "convert/render markdown to PDF/Word/docx", "render this ana_log/report to PDF", "export markdown to a document", "make a PDF of this", "turn this .md into a docx". Prose documents, not slide decks (slides go through Marp). Requires pandoc + a LaTeX engine for PDF, and python-docx for round-trip-safe .docx edits. Self-contained repo copy — depends only on tools the environment provides, not on any user-level skill or ~/.claude workflow.
 modes:
   requires_fates: false      # document conversion; model-agnostic
   nutrient_pathway: any
@@ -13,7 +13,7 @@ modes:
 # Markdown → PDF / DOCX
 
 Convert a Markdown document into a shareable **PDF** or **Word `.docx`**. For A2MC this is the
-"render an `ana_log` / report to PDF" step. Prose only — slide decks go through **Marp**
+"render a log or report to PDF" step. Prose only — slide decks go through **Marp**
 (markdown → PDF/PPTX), not here.
 
 > **Self-contained by design.** This is a repo-vendored copy of a general converter, kept
@@ -34,7 +34,7 @@ Convert a Markdown document into a shareable **PDF** or **Word `.docx`**. For A2
 
 | Want | Step |
 |---|---|
-| PDF of a prose note/report/ana_log | **pandoc → PDF** (Step 2) |
+| PDF of a prose note/report/log | **pandoc → PDF** (Step 2) |
 | New `.docx` from markdown | **pandoc → DOCX** (Step 3) |
 | Edit an *existing* `.docx` preserving tables / tracked changes / citation fields | **python-docx, not a round-trip** (Step 4) |
 

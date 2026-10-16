@@ -300,6 +300,14 @@ class ModelSpec:
     # (see ModelBackend.write_parameter_file surface="secondary" + create_case
     # secondary_param_file). Empty = single-surface model (FATES). e.g. EcoSIM =
     # "pft_mgmt_in" (the stand-management NetCDF input line in the runfile namelist).
+    #: The namelist variable naming the PRIMARY parameter surface. Declared LAST of the four and
+    #: for the same reason the others were: `create_case` used to repoint this surface by a
+    #: BASENAME regex whose non-match was indistinguishable from success, so renaming the base
+    #: file silently left every case reading the shared unperturbed one while the other three
+    #: surfaces repointed correctly. Account:
+    #: memory/dev_logs_adapterkit/20261010e_The_Primary_Surface_Was_The_One_Without_A_Guard.md
+    primary_namelist_var: str = ""
+
     secondary_namelist_var: str = ""
 
     # --- Tertiary parameter surface (models with a third parameter file) ---

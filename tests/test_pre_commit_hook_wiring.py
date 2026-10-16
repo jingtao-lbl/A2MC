@@ -9,7 +9,9 @@ The four assertions are the four layers an audit had to establish by hand, turne
 one that pins a property a downstream project repo depends on:
 
     1  no `exit 0` inside a check block -- it leaves the HOOK, not the check
-    2  every referenced tool exists on disk
+    2  every referenced tool exists on disk (in the development repo; a downstream copy may lack a
+       private tool), every literal call goes through run_tool, the hook's downstream rule matches
+       tools/downstream.py, and run_tool skips downstream and fails here
     3  every gate pattern matches at least one tracked path
     4  check numbers are unique
     5  every tool invocation is path-gated, or self-gates and is named here
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -101,9 +104,66 @@ def test_no_exit_0_inside_a_check_block(lines):
 # --------------------------------------------------------------------------- 2
 
 def test_every_referenced_tool_exists(lines):
+    """In the DEVELOPMENT repo every tool the hook names must exist: run_tool fails on a missing
+    one there, so this catches it before a commit does. In a downstream copy a `visibility: private`
+    tool is legitimately absent and run_tool skips its check, so absence is not an error there."""
+    sys.path.insert(0, str(REPO / "tools"))
+    import downstream
+    if downstream.is_downstream(REPO):
+        pytest.skip("downstream copy: private tools are absent by design and run_tool skips them")
     missing = sorted({t for t in re.findall(r"tools/[a-z_0-9]+\.py", "\n".join(lines))
                       if not (REPO / t).is_file()})
     assert missing == [], f"the hook invokes tool(s) that do not exist: {missing}"
+
+
+def test_every_literal_tool_call_goes_through_run_tool(lines):
+    """A call that bypasses run_tool fails in a downstream copy that does not carry the tool, which
+    is exactly the failure run_tool exists to prevent. A call naming its tool through a variable
+    must carry its own `[[ -f ]]` test instead (the graph-freshness loop does)."""
+    bare = [(i + 1, l.strip()) for i, l in enumerate(lines)
+            if re.search(r'(?<!run_tool )"\$(?:PY|CAP_PY)"\s+"\$ROOT/tools/[a-z_0-9]+\.py"', l)]
+    assert bare == [], f"tool call(s) not routed through run_tool: {bare}"
+
+
+def _hook_functions(lines: list, *names: str) -> str:
+    """The text of the named shell functions, cut from the hook itself rather than copied here."""
+    text = "\n".join(lines)
+    out = []
+    for name in names:
+        m = re.search(r"^%s\(\) \{\n.*?^\}\n" % re.escape(name), text + "\n", re.S | re.M)
+        assert m, f"the hook defines no function {name}()"
+        out.append(m.group(0))
+    return "\n".join(out)
+
+
+def test_the_hooks_downstream_rule_matches_tools_downstream(lines, tmp_path):
+    """The hook restates tools/downstream.py's predicate in shell. Run both on the same trees."""
+    sys.path.insert(0, str(REPO / "tools"))
+    import downstream
+    fn = _hook_functions(lines, "a2mc_is_downstream")
+    cases = {"marked": [".a2mc-downstream"], "marked_with_dev_logs": [".a2mc-downstream", "memory/dev_logs_x/"],
+             "dev_logs_only": ["memory/dev_logs/"], "neither": []}
+    for name, paths in cases.items():
+        root = tmp_path / name
+        root.mkdir()
+        for rel in paths:
+            q = root / rel
+            q.mkdir(parents=True) if rel.endswith("/") else q.write_text("x\n")
+        shell = subprocess.run(["bash", "-c", fn + '\na2mc_is_downstream "$1"', "_", str(root)]).returncode == 0
+        assert shell == downstream.is_downstream(root), f"{name}: hook says {shell}, downstream.py disagrees"
+
+
+def test_run_tool_skips_downstream_and_fails_in_the_development_repo(lines, tmp_path):
+    fn = _hook_functions(lines, "a2mc_is_downstream", "run_tool")
+    def run(root):
+        return subprocess.run(["bash", "-c", fn + '\nROOT="$1"; run_tool python3 "$ROOT/tools/gone.py"', "_", str(root)],
+                              stderr=subprocess.PIPE, universal_newlines=True)
+    copy = tmp_path / "copy"; copy.mkdir(); (copy / ".a2mc-downstream").write_text("x\n")
+    dev = tmp_path / "dev"; (dev / "memory" / "dev_logs").mkdir(parents=True)
+    r = run(copy)
+    assert r.returncode == 0 and "is not in this copy" in r.stderr, r.stderr
+    r = run(dev)
+    assert r.returncode == 1 and "MISSING in the development repo" in r.stderr, r.stderr
 
 
 # --------------------------------------------------------------------------- 3

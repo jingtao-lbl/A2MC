@@ -13,13 +13,24 @@ seed growing.
 """
 from __future__ import annotations
 import json
+import re
 import pathlib
 import pytest
 import yaml
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
-GRAPH = REPO / "rag/graphs/ecosim-2dea74d9.json"
 SEED = REPO / "models/ecosim/curated_seed.yaml"
+
+def _active_ecosim_profile() -> str:
+    """The single non-legacy EcoSIM milestone: the graph these assertions are about is the one the
+    builder produces now, not a pinned name (ecosim-2dea74d9 became legacy on 2026-10-15)."""
+    m = json.loads((REPO / "rag/milestones.json").read_text())["milestones"]
+    live = [k for k, v in m.items() if v.get("adapter") == "ecosim" and not v.get("legacy")]
+    assert len(live) == 1, live
+    return live[0]
+
+PROFILE = _active_ecosim_profile()
+GRAPH = REPO / "rag/graphs" / f"{PROFILE}.json"
 
 
 @pytest.fixture(scope="module")
@@ -56,14 +67,21 @@ def test_guard_names_the_selecting_flag_and_both_pathways(nodes, seed_params):
 
 
 def test_chl_guard_points_at_the_c3_line_not_the_c4_line(nodes):
-    """The specific error, pinned. ICTYP=3 selects StomatesMod.F90:415, NOT :556."""
+    """The specific error, pinned by ROUTINE rather than by line number. ICTYP=3 selects the line in
+    `C3Photosynthesis`, NOT the one in `C4Photosynthesis` (`:415` against `:556` at 2dea74d9, `:423`
+    against `:564` at cb243228). Line numbers move with every commit the profile is re-pinned to,
+    and `tools/check_ecosim_seed_citations.py` already holds each one to the source; what this test
+    owns is that the FIRST citation, the one a reader acts on, is the C3 one."""
     chl = nodes["CHL"]
-    assert "415" in chl["code_location"] and "C3Photosynthesis" in chl["code_location"]
+    first = chl["code_location"].split(";")[0]
+    assert "C3Photosynthesis" in first, f"CHL's first citation is not the C3 line: {first!r}"
+    line = re.search(r":(\d+)", first).group(1)
     selects = chl["guard"]["selects"]
-    assert "415" in selects["3"], "the C3 branch must name :415"
-    assert "556" in selects["4"], "the C4 branch must name :556"
-    assert "556" not in chl["code_location"], (
-        "code_location points at the C4 line -- this is the original defect")
+    assert "C3Photosynthesis" in selects["3"] and f":{line}" in selects["3"], (
+        "the C3 branch must name the same line code_location leads with")
+    assert "C4Photosynthesis" in selects["4"], "the C4 branch must name C4Photosynthesis"
+    c4_lines = set(re.findall(r":(\d+)", selects["4"]))
+    assert line not in c4_lines, "code_location leads with a C4 line -- this is the original defect"
 
 
 def test_dead_file_variable_is_not_a_node(nodes):
@@ -96,7 +114,24 @@ def test_live_but_not_file_backed_parameters_survive(nodes, name):
 
 
 def test_file_backed_flag_is_not_applied_to_ordinary_parameters(nodes):
-    """A flag that ends up on everything says nothing. CHL is read from the file; it must be unflagged."""
+    """A flag that ends up on everything says nothing. CHL is read from the file; it must be unflagged.
+
+    `RSRA` joined the set with the cb243228 profile (2026-10-15): its only `ncd_getvar` is in
+    `ReadPlantTraitsNC`, which nothing calls, so no run reads it; the variable it names is computed
+    from ARSRA in STARTQ. A name-literal grep counted that dead read as file-backed until the
+    builder learned to ask whether the reading routine is ever called.
+
+    `NCNG` joined with the grid surface (2026-10-15): the grid file carries it, but the model takes
+    the lateral-connection mode from the `grid_mode` namelist key and `NCNG` survives in source only
+    as a dummy-argument name (`readimod.F90:130`, `GridConectionMode`). The grid extents NHW, NHE,
+    NVN and NVS must NOT be in the set: `SetMesh` reads them with `check_var` + `nf90_get_var`
+    rather than `ncd_getvar`, and the first grid build called them inert until the scanner learned
+    that pattern."""
     assert "file_backed" not in nodes["CHL"]
+    assert "file_backed" not in nodes["ARSRA"], "ARSRA is read by the LIVE table reader"
+    for name in ("NHW", "NHE", "NVN", "NVS"):
+        assert "file_backed" not in nodes[name], f"{name} is read in SetMesh (GridMod.F90)"
+    assert nodes["fAeroDOM"].get("read_if_present") is True, (
+        "the bioaerosol fractions are read through read_aerosol_vars, if present")
     flagged = [n for n, v in nodes.items() if v.get("file_backed") is False]
-    assert set(flagged) == {"H2KI", "OAKI"}, f"unexpected inert set: {sorted(flagged)}"
+    assert set(flagged) == {"H2KI", "OAKI", "RSRA", "NCNG"}, f"unexpected inert set: {sorted(flagged)}"

@@ -7,12 +7,11 @@
     "log_placeholders",
     "model_change_ledger",
     "phase_script_docs",
-    "rag_index_committed",
     "report_figure_freshness",
     "source_notes",
     "version_consistency"
   ],
-  "skills_total": 54,
+  "skills_total": 55,
   "skills_without_checker": [
     "a2mc-init",
     "add-fates-parameter",
@@ -24,26 +23,22 @@
     "calibration-log",
     "compare-calibration-rounds",
     "curate-knowledge",
-    "diagnose-forensics",
     "ecosim-run-workflow",
     "ecosim-trait-check-refine",
     "ecosim-version-drift",
     "generate-codebase-wiki",
     "inject-knowledge",
-    "literature-review",
     "markdown-to-pdf",
     "model-evolution",
     "offline-testing-workflow",
     "onboard-model",
     "pflotran-run-workflow",
     "port-param-file",
-    "rebuild-rag",
     "restart-adapter-ensemble",
     "restart-failed-jobs",
     "scientific-analysis",
     "setup-discipline",
-    "summarize-calibration-round",
-    "validate-rag-chain"
+    "summarize-calibration-round"
   ],
   "ungoverned_artifacts": []
 }

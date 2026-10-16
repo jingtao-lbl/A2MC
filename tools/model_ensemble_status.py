@@ -28,8 +28,10 @@ Author: Jing Tao with Claude
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -38,6 +40,27 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 _TERMINAL = {"COMPLETED", "FAILED", "CANCELLED", "TIMEOUT", "NODE_FAIL", "OUT_OF_MEMORY", "PREEMPTED"}
 _FAIL_PAT = re.compile(r"ENDRUN|Program aborted|srun: error|Variable not found|IO ERROR|Killed|OOM|Segmentation", re.I)
+
+
+def normalize_state(raw: str) -> str:
+    """One sacct State string -> the bare state keyword `_TERMINAL` is written in.
+
+    `sacct` does NOT return a bare keyword. It decorates two ways, and BOTH must be stripped
+    or a terminal job reads as active:
+
+        "COMPLETED+"          a truncation marker
+        "CANCELLED by 79622"  the cancelling uid, appended with a SPACE
+
+    Measured 2026-10-10: a cancelled 16-task array reported `ACTIVE(CANCELLED by 79622)`, so
+    `jobs_terminal` stayed False and every case that had died part-way was still published as
+    RUNNING -- the exact failure `ensemble_jobs_terminal` exists to prevent, reintroduced by the
+    formatting of the state rather than by the logic. Only `+` was being stripped.
+
+    This is [[feedback_never_parse_a_cli_default_output]] one layer in: the field was requested
+    explicitly with `--format=State -P`, which controls WHICH field is returned and not how its
+    VALUE is spelled.
+    """
+    return raw.strip().split("+")[0].split()[0] if raw.strip() else ""
 
 
 def _sacct_state(job_id: str) -> str | None:
@@ -50,9 +73,9 @@ def _sacct_state(job_id: str) -> str | None:
         return None
     # first line = the top-level job state (drop .batch/.extern steps)
     for line in out.splitlines():
-        s = line.strip().split()[0] if line.strip() else ""
+        s = normalize_state(line)
         if s:
-            return s.split("+")[0]  # e.g. "CANCELLED+" -> "CANCELLED"
+            return s
     return None
 
 
@@ -78,7 +101,7 @@ def ensemble_jobs_terminal(job_ids: list[str]) -> tuple[bool, dict[str, str]]:
         except Exception:
             states[j] = "UNREADABLE"
             continue
-        seen = {l.strip().split("+")[0] for l in out.splitlines() if l.strip()}
+        seen = {normalize_state(l) for l in out.splitlines() if l.strip()}
         if not seen:
             states[j] = "NO-RECORD"
         elif seen <= _TERMINAL:
@@ -149,7 +172,7 @@ def case_index(name: str):
 
 
 def scan(model: str, run_root: Path, case_range=None, jobs_terminal: bool = False,
-         case_ids=None):
+         case_ids=None, case_prefix=None):
     import importlib
     sys.path.insert(0, str(REPO))
     from models import registry
@@ -163,6 +186,16 @@ def scan(model: str, run_root: Path, case_range=None, jobs_terminal: bool = Fals
     with os.scandir(run_root) as it:
         for e in it:
             if not e.is_dir():
+                continue
+            # PREFIX FIRST. `case_index` takes the TRAILING integer, so it cannot tell
+            # `<Case>_case5` from `<Case>_valid5`: a round that materializes an independent
+            # validation lattice beside its training cases in ONE run root has two dir families
+            # sharing an index space, and an index-only filter sweeps in both. That inflates
+            # `total`, so `complete + failed == total` can never be met and the terminal signal
+            # never fires -- the condition-that-cannot-be-true shape, one layer out.
+            # Measured 2026-10-13: --case-range 0-256 over a 257-case gate reported total=513,
+            # having added `Lusignan_valid1..256`.
+            if case_prefix is not None and not e.name.startswith(case_prefix):
                 continue
             if case_range is not None or case_ids is not None:
                 idx = case_index(e.name)
@@ -216,6 +249,151 @@ def report(rows, show_failed_only=False):
     return counts
 
 
+# ---------------------------------------------------------------- state publication
+#: The state-file schema is a CONTRACT with `tools/check_watcher_state.py`, which reads
+#: `status`, `epoch`, `interval_s`, `complete`, `failed`, `total` and -- singular --
+#: `job`. A hand-rolled watcher wrote `jobs` and silently disabled that reader's sacct
+#: cross-check, so the names here are copied from the consumer, not invented.
+_TERMINAL_OK = "ENDED"
+_TERMINAL_UNACCOUNTED = "ENDED_UNACCOUNTED"
+
+
+class StateFile:
+    """Publish a watcher heartbeat to disk, and refuse to be the second instance.
+
+    The MTIME is the liveness signal: a watcher that reports only by appending to a log
+    cannot report its own death, because a log that stops growing looks the same whether
+    the jobs are quiet or the watcher is gone. SIGKILL cannot be trapped, so the
+    arithmetic test (`status == RUNNING` and the heartbeat older than two intervals) is
+    the only one that survives every death mode -- the DIED stamp below is a
+    convenience, never the guarantee.
+    """
+
+    def __init__(self, path, interval_s, note=""):
+        self.path = Path(path)
+        self.pid_path = Path(str(path) + ".pid")
+        self.interval_s = max(1, int(interval_s))
+        self.note = note
+        self.job = ""
+        self.end_hook_status = None   # set once the --on-end command has run
+        self._claim()
+
+    # -- singleton -------------------------------------------------------------
+    @staticmethod
+    def _starttime(pid):
+        """The process's start time in clock ticks since boot (`/proc/<pid>/stat` f22).
+
+        This is the identity token, in preference to the command line: pid + start time
+        names one process INSTANCE and cannot be inherited by a recycled id, whereas a
+        cmdline match depends on how the path happened to be spelled in argv and goes
+        silently blind when a wrapper passes it relatively or through the environment.
+        """
+        try:
+            raw = Path(f"/proc/{pid}/stat").read_text()
+        except OSError:
+            return None
+        # The comm field is parenthesised and may itself contain spaces and parens, so
+        # fields are counted from AFTER the final ')' -- splitting on whitespace from the
+        # start mis-indexes every field for a process whose name has a space in it.
+        try:
+            fields = raw[raw.rindex(")") + 1:].split()
+            return fields[19]          # f22 overall = index 19 after pid and comm
+        except (ValueError, IndexError):
+            return None
+
+    def _live_owner(self):
+        """Return the pid of a LIVE watcher already publishing to this path, else None.
+
+        Both halves are necessary. Liveness alone refuses to start whenever an unrelated
+        process has inherited a dead watcher's pid. Identity alone cannot tell a running
+        owner from a finished one.
+        """
+        try:
+            parts = self.pid_path.read_text().split()
+            pid, claimed = int(parts[0]), (parts[1] if len(parts) > 1 else None)
+        except (OSError, ValueError, IndexError):
+            return None
+        if pid == os.getpid():
+            return None                # re-entry by the same process is not a conflict
+        try:
+            os.kill(pid, 0)
+        except (OSError, ProcessLookupError, PermissionError):
+            return None                # not alive -> a crashed watcher must not wedge the path
+        if claimed is None:
+            return pid                 # pre-token pid file: fall back to liveness alone
+        return pid if self._starttime(pid) == claimed else None
+
+    def _claim(self):
+        owner = self._live_owner()
+        if owner is not None:
+            raise SystemExit(
+                f"REFUSING TO START: pid {owner} is already publishing to {self.path}.\n"
+                f"  Two watchers on one state file is how a stale instance wins the last\n"
+                f"  write and publishes a count the live one disagrees with.\n"
+                f"  Stop it first:  kill {owner}   (then re-run)")
+        self.pid_path.parent.mkdir(parents=True, exist_ok=True)
+        me = os.getpid()
+        self.pid_path.write_text(f"{me} {self._starttime(me)}\n")
+
+    # -- publication -----------------------------------------------------------
+    def write(self, status, counts, total, job=""):
+        self.job = job or self.job
+        payload = {
+            "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "epoch": int(time.time()),
+            "status": status,
+            "job": self.job,
+            "pending": int(counts.get("PENDING", 0)),
+            "running": int(counts.get("RUNNING", 0)),
+            "complete": int(counts.get("COMPLETED", 0)),
+            "failed": int(counts.get("FAILED", 0)),
+            "total": int(total),
+            "interval_s": self.interval_s,
+            "watcher_pid": os.getpid(),
+            "note": self.note,
+        }
+        if self.end_hook_status is not None:
+            payload["end_hook_status"] = self.end_hook_status
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=1) + "\n")
+        tmp.replace(self.path)     # atomic: a reader never sees a half-written file
+
+    def terminal(self, counts, total, job=""):
+        """Stamp the finish, distinguishing a full account from a partial one.
+
+        ENDED_UNACCOUNTED exists because `complete + failed == total` is the only
+        arithmetic that licenses the word finished. A watcher that stops with cases in
+        neither bucket has stopped, not finished, and publishing that as ENDED is how a
+        round gets read as complete while cases sit unexamined.
+        """
+        done = int(counts.get("COMPLETED", 0)) + int(counts.get("FAILED", 0))
+        status = _TERMINAL_OK if done == int(total) else _TERMINAL_UNACCOUNTED
+        self.write(status, counts, total, job)
+        return status
+
+    def died(self, counts, total):
+        try:
+            self.write("DIED", counts, total)
+        except OSError:
+            pass
+
+
+def run_on_end(cmd: str, timeout_s: int) -> str:
+    """Run the on-end command once; print its output into this log; return OK/TIMEOUT/FAILED."""
+    print(f"ON_END running: {cmd}", flush=True)
+    try:
+        proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout_s,
+                              stdin=subprocess.DEVNULL)
+        for line in (proc.stdout + proc.stderr).splitlines():
+            print(f"[ON_END] {line}", flush=True)
+        status = "OK" if proc.returncode == 0 else "FAILED"
+        print(f"ON_END {status} (rc={proc.returncode})", flush=True)
+    except subprocess.TimeoutExpired:
+        status = "TIMEOUT"
+        print(f"ON_END TIMEOUT after {timeout_s}s", flush=True)
+    return status
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", required=True, help="onboarded model name (e.g. ecosim)")
@@ -233,6 +411,26 @@ def main() -> int:
                     help="scan ONLY the case indices listed in this file (one per line). Use for a "
                          "scattered population such as a relaunch, where the narrowest enclosing "
                          "--case-range still scans an order of magnitude too much.")
+    ap.add_argument("--state-file", metavar="PATH",
+                    help="publish a heartbeat here every poll (requires --watch). The file's "
+                         "MTIME is the liveness signal, which is what lets a DEAD watcher be "
+                         "told apart from a quiet one; read it with tools/check_watcher_state.py. "
+                         "A second instance pointed at the same path REFUSES to start.")
+    ap.add_argument("--state-note", metavar="TEXT", default="",
+                    help="free-form note carried in the state file (e.g. which arms these are)")
+    ap.add_argument("--on-end", metavar="CMD", default="",
+                    help="with --watch: run CMD once when every case is terminal (output in this "
+                         "log, outcome in the state file as end_hook_status). The intended CMD is "
+                         "`tools/record_run_status.py settle ... --job-id <job>`, which "
+                         "tools/submit_run.py prints, so the run ledger gets the model's verdict "
+                         "when the run ends.")
+    ap.add_argument("--on-end-timeout", type=int, default=600, metavar="SEC")
+    ap.add_argument("--case-prefix", metavar="PREFIX",
+                    help="scan ONLY case dirs whose name starts with PREFIX (e.g. "
+                         "'Lusignan_case'). REQUIRED to disambiguate when a run root holds more "
+                         "than one case family -- a training set and an independent validation "
+                         "lattice share an index space, and --case-range/--cases-file match the "
+                         "TRAILING INTEGER only, so without this they match both families.")
     ap.add_argument("--case-range", metavar="LO-HI",
                     help="restrict the scan to case dirs whose trailing index is in [LO,HI] "
                          "(inclusive) -- for a chunked array that runs a slice of the ensemble")
@@ -253,6 +451,25 @@ def main() -> int:
         return 1
 
     jobs = [j.strip() for j in (args.ensemble_jobs or "").split(",") if j.strip()]
+
+    state = None
+    if args.state_file:
+        if not args.watch:
+            print("ERROR: --state-file requires --watch (a one-shot run has no heartbeat to "
+                  "publish, and a single stamped file would read as a live watcher)",
+                  file=sys.stderr)
+            return 1
+        state = StateFile(args.state_file, args.watch, args.state_note)
+        _last = {"counts": {}, "total": 0}
+
+        def _on_signal(signum, _frame):
+            state.died(_last["counts"], _last["total"])
+            print(f"WATCHER_DIED (signal {signum}); state stamped DIED", flush=True)
+            raise SystemExit(1)
+
+        for _sig in (signal.SIGTERM, signal.SIGINT):
+            signal.signal(_sig, _on_signal)
+
     while True:
         jobs_terminal = False
         if jobs:
@@ -260,11 +477,31 @@ def main() -> int:
             print("ensemble jobs: " + "  ".join(f"{j}={s}" for j, s in states.items())
                   + ("  -> all terminal; started-but-incomplete cases are FAILED, not RUNNING"
                      if jobs_terminal else "  -> some still active; incomplete cases stay RUNNING"))
-        rows = scan(args.model, run_root, case_range, jobs_terminal, case_ids)
+        rows = scan(args.model, run_root, case_range, jobs_terminal, case_ids,
+                    args.case_prefix)
         counts = report(rows, args.failed)
         pending = counts.get("PENDING", 0) + counts.get("RUNNING", 0)
+        # `total` is DERIVED from the scan, never passed in. A hardcoded total is how a
+        # watcher's own finish test becomes unreachable: 3 arms against a literal 4 means
+        # complete+failed can never meet it, and the watcher runs until it is killed.
+        total = len(rows)
+        job_field = ",".join(jobs) if jobs else ",".join(
+            dict.fromkeys(r[1] for r in rows if r[1] and r[1] != "-"))
+        if state is not None:
+            _last["counts"], _last["total"] = counts, total
         if not args.watch or pending == 0:
+            if state is not None:
+                status = state.terminal(counts, total, job_field)
+                print(f"ENSEMBLE_TERMINAL {status} complete={counts.get('COMPLETED', 0)} "
+                      f"failed={counts.get('FAILED', 0)} of {total}", flush=True)
+            if args.watch and args.on_end:
+                end_status = run_on_end(args.on_end, args.on_end_timeout)
+                if state is not None:
+                    state.end_hook_status = end_status
+                    state.write(status, counts, total, job_field)
             break
+        if state is not None:
+            state.write("RUNNING", counts, total, job_field)
         print(f"  … {pending} still active; re-checking in {args.watch}s", flush=True)
         time.sleep(args.watch)
     return 0

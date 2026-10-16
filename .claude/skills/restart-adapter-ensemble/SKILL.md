@@ -86,12 +86,19 @@ Prefer a launcher that **skips any case already carrying the completion artifact
 
 ```bash
 # re-point at the whole range; only the incomplete cases actually run
-sbatch --array=<lo>-<hi>%<throttle> <the ensemble submit script>
+A2MC_UNTRACKED_JOB="relaunch of a full Phase-0 ensemble's failed cases" \
+    sbatch --array=<lo>-<hi>%<throttle> <the ensemble submit script>
 ```
+
+The declaration is what the agent's sbatch hook asks of a job the run ledger does not record: a full
+Phase-0 ensemble's record is its Phase-0 stem folder (`phase5-testing` step 2c). A relaunch of a
+submission the ledger DOES record (a pilot, a gate or a rerun registered as one row with
+`--run-root`) goes through `tools/submit_run.py --resubmit` instead, which keeps the earlier job id
+in the row's `history`.
 
 The cost is walking every case directory; the benefit is that a partially-finished range needs no bookkeeping. Build an explicit `--array` id list only when the skip-scan is too expensive.
 
-**Re-check the mandatory submit-time overrides** — an ensemble submit script's `#SBATCH` directives often still carry a previous round's job name, array range and log paths, so a bare `sbatch` silently writes into the wrong round's directory.
+**Re-check the mandatory submit-time overrides** — an ensemble submit script's `#SBATCH` directives often still carry a previous round's job name, array range and log paths, so an `sbatch` without those overrides silently writes into the wrong round's directory.
 
 ## Step 4 — if a MODEL FIX is involved, three gates
 

@@ -466,12 +466,31 @@ class EcoSIMBackend(ModelBackend):
         base_nml = config.get("A2MC_ECOSIM_BASE_NAMELIST")
         if base_nml and Path(base_nml).exists():
             text = Path(base_nml).read_text()
-            # Repoint any pft-input path at our staged copy (best-effort, by basename).
-            text = re.sub(
-                r'(["\'])[^"\']*' + re.escape(Path(param_file).name) + r'\1',
-                r'\1' + str(staged_param) + r'\1',
-                text,
-            )
+            # Repoint the PRIMARY surface at our staged copy. By the spec-declared namelist VAR
+            # when one exists, exactly as the other three surfaces below -- and like them, a
+            # non-match RAISES. This used to be a basename regex whose miss was silent: rename the
+            # base file and every case kept reading the shared, unperturbed one while the other
+            # surfaces repointed correctly, so the ensemble built, validated against its own inputs
+            # and would have run 8192 identical-parameter cases.
+            if self.spec.primary_namelist_var:
+                var = re.escape(self.spec.primary_namelist_var)
+                text, n = re.subn(
+                    r'(' + var + r'\s*=\s*(["\']))[^"\']*(["\'])',
+                    r'\1' + str(staged_param) + r'\3',
+                    text,
+                )
+                if n == 0:
+                    raise KeyError(
+                        f"'{self.spec.primary_namelist_var}' not found in the base namelist to "
+                        f"repoint at the staged primary parameter file"
+                    )
+            else:
+                # Model declaring no primary var: fall back to the historical basename match.
+                text = re.sub(
+                    r'(["\'])[^"\']*' + re.escape(Path(param_file).name) + r'\1',
+                    r'\1' + str(staged_param) + r'\1',
+                    text,
+                )
             # Repoint the SECONDARY surface namelist var (spec-declared) at its staged copy.
             if staged_secondary is not None and self.spec.secondary_namelist_var:
                 var = re.escape(self.spec.secondary_namelist_var)
@@ -1088,6 +1107,66 @@ class EcoSIMBackend(ModelBackend):
                         f"year_end needs >=1 full year (365 recs); got {n} recs")
                 per_year = np.array([total[(y + 1) * 365 - 1] for y in range(yrs)])
                 per_year = _select_years(per_year, None, "year_end")
+            return float(np.nanmean(per_year))
+
+        if how == "season_sum":
+            # A season's total of a WITHIN-YEAR CUMULATIVE is a DIFFERENCE at month boundaries,
+            # never a mean. ECO_GPP_col / ECO_RA_col / ECO_RH_col / ECO_ET_col reset each
+            # 1 January -- the same property that makes `year_end` the right annual reduce -- so
+            # averaging a season's records returns roughly where the run was on average rather
+            # than what it accumulated (`calibration-discipline` item 3c: a mean of a resetting
+            # cumulative returns about half its total and depends on where the reset falls).
+            #
+            # SEASONS PARTITION THE CALENDAR YEAR, so the four sum to the annual total and the
+            # unscored annual regression guard stays exactly consistent with the scored seasons:
+            #     DJF = (Jan+Feb) + Dec     MAM = Mar-May     JJA = Jun-Aug     SON = Sep-Nov
+            # DJF is SPLIT rather than taken as a December-to-February window because the
+            # cumulative resets on 1 January: December belongs to year Y's cumulative and
+            # January-February to year Y+1's, so a window spanning the boundary would subtract
+            # across a reset and return a negative total. Splitting keeps every difference inside
+            # one cumulative cycle.
+            #
+            # Month boundaries come from tools.calendar_blocks.growing_season_day_slice, which is
+            # leap-aware -- mandatory here, because EcoSIM runs a REAL Gregorian calendar (366
+            # records in a leap year) and a fixed 365 slips a day per leap year.
+            from tools.calendar_blocks import growing_season_day_slice
+            SEASON_MONTHS = {
+                "DJF": ((1, 2), (12, 12)),      # two blocks, both inside one cumulative cycle
+                "MAM": ((3, 5),),
+                "JJA": ((6, 8),),
+                "SON": ((9, 11),),
+            }
+            season = str(target.get("season", "")).upper()
+            if season not in SEASON_MONTHS:
+                raise ValueError(
+                    f"season_sum needs `season:` in {sorted(SEASON_MONTHS)}; got {season!r}")
+            total = None
+            for v in vlist:
+                a = mask(extracted[v])
+                col = np.nansum(a, axis=1) if a.ndim >= 2 else a
+                total = col if total is None else total + col
+            if target.get("negate"):
+                total = -total
+            n = total.shape[0]
+            blocks = _year_blocks(n)
+            if blocks is None or len(blocks) < 1:
+                raise ValueError(
+                    f"season_sum needs >=1 COMPLETE calendar year on a real calendar; got {n} "
+                    f"records (a fixed-365 fallback is refused here: a seasonal boundary is "
+                    f"exactly what a leap slip moves)")
+            per_year = []
+            for (yr, lo, _hi) in blocks:
+                acc = 0.0
+                for (m0, m1) in SEASON_MONTHS[season]:
+                    d0, d1 = growing_season_day_slice(yr, (m0, m1))   # day-of-year, [d0, d1)
+                    end = total[lo + d1 - 1]                          # cumulative at season end
+                    # The cumulative BEFORE the season started. For a block beginning on
+                    # 1 January (d0 == 0) that is the reset value, i.e. zero -- there is no
+                    # earlier record in this cycle to read.
+                    start = total[lo + d0 - 1] if d0 > 0 else 0.0
+                    acc += float(end) - float(start)
+                per_year.append(acc)
+            per_year = _select_years(np.array(per_year), blocks, "season_sum")
             return float(np.nanmean(per_year))
 
         if how == "depth_integral":

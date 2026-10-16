@@ -24,6 +24,8 @@ name is real and the INDEXED surface was wrong. The profile parsed only
 actually reads carries 121 and has `CNWL` among them. Registering the evolved surface in
 `rag/milestones.json` resolved it, and the output-block pass then delivered the 73 edges it had
 always predicted rather than 72.
+
+The cb243228 re-anchor and the defects behind the dated notes above: `memory/dev_logs_adapterkit/20261015a_The_EcoSIM_Knowledge_Base_Moves_To_The_Binary_R2_Runs.md`.
 """
 from __future__ import annotations
 
@@ -35,7 +37,17 @@ import yaml
 
 REPO = Path(__file__).resolve().parent.parent
 SEED = REPO / "models/ecosim/curated_seed.yaml"
-GRAPH = REPO / "rag/graphs/ecosim-2dea74d9.json"
+
+def _active_ecosim_profile() -> str:
+    """The single non-legacy EcoSIM milestone: the graph these assertions are about is the one the
+    builder produces now, not a pinned name (ecosim-2dea74d9 became legacy on 2026-10-15)."""
+    m = json.loads((REPO / "rag/milestones.json").read_text())["milestones"]
+    live = [k for k, v in m.items() if v.get("adapter") == "ecosim" and not v.get("legacy")]
+    assert len(live) == 1, live
+    return live[0]
+
+PROFILE = _active_ecosim_profile()
+GRAPH = REPO / "rag/graphs" / f"{PROFILE}.json"
 
 pytestmark = pytest.mark.skipif(not (SEED.exists() and GRAPH.exists()),
                                 reason="EcoSIM seed or graph not present in this checkout")
@@ -112,6 +124,28 @@ def test_the_outputs_block_specifically_is_wired():
         f"that creates these; PFLOTRAN's builder has the equivalent pass.")
 
 
+def test_every_output_block_driver_edge_carries_its_driver_kind():
+    """The output block is the only place the curator says DIRECT or INDIRECT, so every edge it
+    names must carry that label, including an edge a parameter's `affects` list created first.
+
+    Until 2026-10-15 the builder skipped an edge that already existed, so every driver named on both
+    sides went unlabelled: 77 entries at cb243228, 24 of which had a label in the previous build,
+    once the parameter entries were re-curated to list their outputs. Not replacing the edge is
+    right; dropping the label was not. Negative control: the graph built before the fix fails with
+    exactly those 77."""
+    seed = yaml.safe_load(SEED.read_text())
+    g = json.load(GRAPH.open())
+    attrs = {(e["source"], e["target"], e["relation_type"]): e for e in g["links"]}
+    unlabelled = []
+    for oname, o in (seed.get("outputs") or {}).items():
+        for kind, field in (("direct", "direct_drivers"), ("indirect", "indirect_drivers")):
+            for p in (o.get(field) or []):
+                e = attrs.get((f"parameter:{p}", f"output:{oname}", "affects"))
+                if e is not None and "driver_kind" not in e:
+                    unlabelled.append(f"outputs.{oname}.{field}: {p}")
+    assert not unlabelled, f"{len(unlabelled)} driver edge(s) lost their direct/indirect label: {unlabelled[:10]}"
+
+
 def test_unresolved_driver_names_are_reported_not_minted():
     """A curated driver name must either resolve to a REAL parsed parameter or not exist at all.
 
@@ -162,7 +196,7 @@ def test_the_indexed_parameter_surfaces_cover_the_names_the_seed_uses():
     """
     seed, nodes, edges = _load()
     milestones = json.loads((REPO / "rag/milestones.json").read_text())
-    entry = milestones["milestones"]["ecosim-2dea74d9"]
+    entry = milestones["milestones"][PROFILE]
     surfaces = [entry["param_file"], *entry.get("param_files_extra", [])]
 
     evolved = [s for s in surfaces if "evolved" in s]

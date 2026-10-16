@@ -146,6 +146,7 @@ def main() -> int:
 
     print(f"Model:        {spec.name}  ({spec.display_name})")
     matched = None
+    drift_note = None
     detected = False          # a version was actually read from the checkout
 
     # 1. Version detection + milestone match
@@ -158,9 +159,22 @@ def main() -> int:
                 ver = spec.version_detector_class().detect_from_checkout(co)
                 label = ver.label
                 matched = _match_milestone(label, _load_milestones())
+                via = "label"
+                # A profile can cover more than its base commit: fixes patched into its knowledge base
+                # in place (tools/kb_patch.py) are listed on the milestone, and a checkout at one of
+                # them has a label no registry key carries. tools/kb_profile.py matches the commit
+                # against each milestone's base AND patches, and explains a miss.
+                if matched is None and getattr(ver, "commit_sha", None):
+                    sys.path.insert(0, str(REPO))
+                    from tools.kb_profile import NoMatch, resolve
+                    try:
+                        res = resolve(args.model, commit=ver.commit_sha, model_path=co)
+                        matched, via = res.profile, res.via
+                    except NoMatch as e:
+                        drift_note = str(e)
                 detected = True
                 print(f"  version:    {label}")
-                print(f"  milestone:  {matched or '(UNMATCHED — see VERDICT: drift or no milestone)'}")
+                print(f"  milestone:  {(matched + (' (a patch of it)' if via == 'patch' else '')) if matched else '(UNMATCHED — see VERDICT: drift or no milestone)'}")
             except Exception as e:
                 print(f"  version:    detection failed: {e}")
             # Advisory: model-source push posture (never gates the exit code).
@@ -216,8 +230,11 @@ def main() -> int:
         print("         but this checkout is at a commit no milestone describes.")
         print("         Calibration can proceed: A2MC reasons with the registered profile, which")
         print("         describes the registered commit, not yours. If your source differs in the")
-        print("         mechanisms you calibrate, rebuild the profile (the `rebuild-rag` skill;")
-        print("         EcoSIM also has `ecosim-version-drift`) and say which you chose.")
+        print("         mechanisms you calibrate: a small fix on top of a registered base is patched")
+        print("         into that profile in place (tools/kb_patch.py plan/apply); a new base binary is a")
+        print("         new milestone (the `rebuild-rag` skill). Say which you chose.")
+        if drift_note:
+            print("         " + drift_note.replace("\n", "\n         "))
         return 3
     print("\nVERDICT: preflight OK.")
     return 0

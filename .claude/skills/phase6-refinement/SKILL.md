@@ -219,6 +219,8 @@ A case that has adopted this carries the two pieces as templates in `use_cases/{
 
 ## Step 2 — interpret + extract lessons (you are the reasoning)
 
+**Run `query-knowledge-base` before interpreting, and cite what it writes (required since 2026-10-15).** `python tools/kb_network.py --model <m> --params <the levers the experiment moved> --outputs <the scored targets> --case <Model_Case> --out-dir <this log's phase_results/<stem>>` queries the knowledge base's three tiers and writes `kb_network.md`: what the network says those levers reach, what earlier rounds already recorded about them, and the source lines to confirm a mechanism against. Cite it in this log and name `query-knowledge-base` under **Skills**; `tools/check_calibration_log_conformance.py` C11 and C13 refuse a Phase 6 log without both. A lesson, and the mechanism behind a rejection (Step 2b), are mechanism claims like any diagnosis.
+
 Mirror `interpret_results` (targets improved/degraded, hypothesis_status **honestly** — partial is
 PARTIAL, not SUCCESS; cross-PFT impact) and `extract_lesson` (is it a **discovery**? a **failed
 approach**? a named pattern — Allocation Paradox, Perfect Storm, Mortality Trap?). Verify any
@@ -341,10 +343,11 @@ st.set_phase6_decision(decision="rethink_6to3",           # converge | rethink_6
     objective="6 targets", best_so_far="3/6", binding_target="<the specific failing target>",
     next_targeted_experiment="<named, in-range, target-aimed experiment aimed at binding_target> | NONE",
     exhaustion_justification="<why no in-range experiment remains> | ''")
-#   NOTE: do NOT pass max_experiments. It DEFAULTS to the machine config, and the default is the
-#   fix for a measured bug: it used to default to 10 while a2mc_noncime_config.sh exports 20, so a
-#   case at cycle 12 recorded "12 of 10" and the routing gate read as exhausted eight cycles early
-#   (tools/workflow_state_offline.py:409-412). Passing the literal reinstates exactly that bug.
+#   NOTE: do NOT pass max_experiments. It DEFAULTS to the machine config ($A2MC_MAX_EXPERIMENTS),
+#   and the default is the fix for a measured bug: it used to default to a literal that differed
+#   from the config, so a case recorded more cycles than its limit and the routing gate read as
+#   exhausted early (tools/workflow_state_offline.py, set_phase6_decision). Passing a literal
+#   reinstates exactly that bug.
 violations = st.validate_phase6_decision()   # MUST be [] before you act
 ```
 `stop_model_dev` / `redesign_6to0` are rejected while `experiment_count < max_experiments` and a named
@@ -353,7 +356,7 @@ violations = st.validate_phase6_decision()   # MUST be [] before you act
 counter via `st.set_position(experiment_count=experiment_count+1)` and `st.save()`.
 
 - **All targets met** → converged (Phase 7). The resolver routes through BOTH close positions before `done`: the round close (three report steps) and then the housekeeping with its **fuller** campaign-close checklist. The terminal deliverable is the **final configuration** — see the contract below; it is seven required elements, not a phrase.
-- **NOT met, `experiment_count` < `--max-experiments` (**`$A2MC_MAX_EXPERIMENTS`**, from the machine config (`a2mc_noncime_config.sh` / `a2mc_config.sh`); 10 if unset)** →
+- **NOT met, `experiment_count` < `--max-experiments` (**`$A2MC_MAX_EXPERIMENTS`**, from the machine config (`a2mc_noncime_config.sh` / `a2mc_config.sh`))** →
   **6→3 rethink is the DEFAULT.** Do NOT
   escalate while the cycle budget remains. Before choosing anything other than rethink, confirm there is **no
   named, in-range, target-aimed parameter experiment left to run** ([[feedback_performance_experiment_is_the_objective]]);

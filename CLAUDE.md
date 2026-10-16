@@ -2,7 +2,7 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of process-based environmental models using AI API + HPC + Adaptive Memory. **This line is the NON-CIME one** (EcoSIM · PFLOTRAN · ATS, via the `models/` adapter registry); the CIME-configured ESMs (ELM, ELM-FATES) are developed in the sibling **[`A2MC-elm`](https://github.com/jingtao-lbl/A2MC-elm/)**. See §"What is A2MC?" below.
-**Status:** Implementation Complete (v2.492)
+**Status:** Implementation Complete (v2.535)
 **Last Updated:** September 15, 2026
 ---
 
@@ -266,12 +266,14 @@ config only by coincidence (v2.282, and the skill sweep the same day).
 # Start from screening phase in calibration round 2 (e.g., 162 params)
 python orchestrator.py --run --start-phase 2 --start-round 2
 
-# Three-level iteration control
+# Three-level iteration control. Each limit DEFAULTS to its machine-config variable
+# ($A2MC_MAX_SKIP_TESTING, $A2MC_MAX_EXPERIMENTS, $A2MC_CONFIDENCE_THRESHOLD); pass a flag only
+# to override it for one run.
 python orchestrator.py --run \
-    --start-round 2 \        # Calibration round (outermost loop)
-    --max-skip-testing 10 \       # Limit skip testing to 10 cycles
-    --max-experiments 10 \        # Limit to 10 full experiment cycles
-    --confidence-threshold 0.90  # Exit skip testing at 90% confidence
+    --start-round 2 \              # Calibration round (outermost loop)
+    --max-skip-testing <N> \       # override $A2MC_MAX_SKIP_TESTING (inner loop)
+    --max-experiments <N> \        # override $A2MC_MAX_EXPERIMENTS (middle loop)
+    --confidence-threshold <X>     # override $A2MC_CONFIDENCE_THRESHOLD (skip-test exit)
 ```
 
 ---
@@ -326,7 +328,8 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 | `calibration-log` | any | Log interactive calibration/exploration for a site — a PhaseLogger phase log or a free-form session log under `use_cases/{site}/memory/logs/` |
 | `create-project-agent` | any | Stand up a PROJECT AGENT — an `A2MC-<Name>` repo, its framework half arriving by sync, its one project folder holding everything the project authors; for a project where calibration is one step among others or absent entirely (`docs/46`) |
 | `diagnose-forensics` | any | Triage ONE anomaly — real or artifact? — then root-cause it (a whole round -> `phase3-diagnosis`) |
-| `scientific-analysis` | any | Investigation → figure → ana_log (manuscript-supporting) |
+| `query-knowledge-base` | any | Query the three KB tiers network-first (`tools/kb_network.py`), then confirm in source — required by Phase 3/4/6 logs and forensics findings |
+| `scientific-analysis` | any | Investigation → figure → calibration log or report (manuscript-supporting) |
 | `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |
 | `literature-review` | any | Cited literature review via `paper-search-mcp` (search→triage→extract→synthesis) — PARAMETER-BOUNDS (published ranges → refine a param-list's `lower`/`upper`) or MANUSCRIPT topic review |
 | `plotting` | any | Clean, readable, overlap-free matplotlib figures — verify by viewing the PNG |

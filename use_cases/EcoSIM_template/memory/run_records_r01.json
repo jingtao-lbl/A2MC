@@ -1,0 +1,15 @@
+{
+ "_comment": "RUN LEDGER for this case: its TESTING and PILOT runs. A RECORD, not curated knowledge -- written by whichever phase launched the run (Phase-5 experiments, Phase-0 pilots and gates) and NOT behind the Tier-3 write gate. Interpreted knowledge (hypothesis, lesson, do-not- repeat) belongs in memory/gained_knowledge/experiments.json, which IS gated. A full ensemble's thousands of cases are NOT tabulated here; their record is that phase stem's armed monitors and watchers. So one row may stand for a whole pilot SUBMISSION rather than one simulation.",
+ "_schema_version": "1.0",
+ "_status_vocabulary": [
+  "pending",
+  "submitted",
+  "running",
+  "completed",
+  "failed",
+  "restarted",
+  "void"
+ ],
+ "_status_note": "`completed` means the MODEL's own success check passed. A scheduler COMPLETED with no usable output tape is `failed`.",
+ "records": []
+}

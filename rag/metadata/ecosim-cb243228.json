@@ -1,0 +1,25 @@
+{
+  "metadata_schema_version": 1,
+  "profile_name": "ecosim-cb243228",
+  "adapter": "ecosim",
+  "built_at": "2026-10-15T22:10:24.403639+00:00",
+  "model_commit_built": "cb2432285b3b31a40461fc1ab7cb74a3f5ed94e1",
+  "kb_commit": "cb2432285b3b31a40461fc1ab7cb74a3f5ed94e1",
+  "patches": [],
+  "wiki_subdir": "ecosim-codebase-wiki-cb243228",
+  "param_file": "docs/ecosim-knowledge-base/param_surfaces_cb243228/ecosim_pftpar_20260915.nc",
+  "param_files_extra": [
+    "docs/ecosim-knowledge-base/param_surfaces_cb243228/MicrobePars.20260211.nc",
+    "docs/ecosim-knowledge-base/param_surfaces_cb243228/biocrust_hillslope_grid_20261001.nc",
+    "Offline/EcoSIM_sample_files/input/MicrobePars_SB1_b1_SPOSC_base.nc",
+    "Offline/EcoSIM_sample_files/input/ds_input__pft_test__ex1__evolved_api2dea74d9.nc"
+  ],
+  "output_cdl": "ecosim_output_info_cb243228.cdl",
+  "curated_yaml": "models/ecosim/curated_seed.yaml",
+  "curated_yaml_status": "v0.1-ai-draft-pending-PI-review",
+  "stats": {
+    "chunk_count": 3125,
+    "graph_nodes": 1027,
+    "graph_edges": 1467
+  }
+}

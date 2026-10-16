@@ -17,14 +17,14 @@ Per **CLAUDE.md Rule #6**, when an HPC ensemble is in flight (a multi-thousand-c
 ## Step 1 — Detect what's running
 
 ```bash
-ps -ef | grep $USER | grep -E "r5_auto_monitor|submit_phase0|extract_ADSP_RGSP_slim|extract_monthly_variables_FATES|plot_all_extracted" | grep -v grep
+ps -ef | grep $USER | grep -E "ensemble_auto_monitor|r5_auto_monitor|submit_phase0|extract_ADSP_RGSP_slim|extract_monthly_variables_FATES|plot_all_extracted" | grep -v grep
 ```
 
 Typical processes seen on this branch:
 
 | Process | Typical PID lifetime | Log location (typical) |
 |---|---|---|
-| `r5_auto_monitor.sh` | 12+ hours (full round) | `tmp/r5_auto_monitor_<startTS>.log` |
+| `tools/ensemble_auto_monitor.sh` (the generic successor of a round's `r5_auto_monitor.sh`) | 12+ hours (full round) | the log it was launched into, under `tmp/` (e.g. `tmp/r5_auto_monitor_<startTS>.log`) |
 | `submit_phase0.py --start N --end M` | ~9 h per 1000 cases | `tmp/r5_batch<N>_cases<A>-<B>_<TS>.log` |
 | `submit_phase0.py --cases-file ...` (restart) | shorter, sized to cohort | `tmp/r5_rerun_<TS>.log` |
 | `extract_ADSP_RGSP_slim.py` / `extract_monthly_variables_FATES.py` | minutes per batch | spawned by auto-monitor; no persistent log |
@@ -56,13 +56,19 @@ The active handoff log (typically the most recent `dev_logs/2026MMDDx_*.md`) nam
 > **If that ensemble is a SLURM job ARRAY, launch the watcher rather than hand-rolling one:**
 > ```bash
 > nohup tools/watch_slurm_array.sh -j <jobid> -n <ntasks> -s <stem>/watch_state.json \
->       [-x "<extract-and-plot refresh command>"] > <stem>/watch.log 2>&1 &
+>       [-x "<extract-and-plot refresh command>"] [-X "<settle command>"] > <stem>/watch.log 2>&1 &
 > ```
 > It publishes a state file whose mtime is a heartbeat, so its own death is detectable —
 > `python tools/check_watcher_state.py <stem>/watch_state.json` reports ALIVE / FINISHED / STALE /
 > DIED and exits non-zero for the last two. Read **anti-pattern #5** before arming a `Monitor` on
 > its log: the log alone cannot report the watcher's death, and a milestone filter matching exact
 > counts will miss most of them.
+>
+> `-X` runs once when the array ends: for a run `tools/submit_run.py` registered, give it the
+> `record_run_status.py settle ... --job-id <jobid>` command that tool printed, so the run ledger gets
+> the model's verdict without a second step; `end_hook_status` in the state file says whether it
+> worked. The standalone-binary poll takes the same command as
+> `model_ensemble_status.py --watch N --on-end '<settle command>'`.
 
 ## Step 2 — Arm Claude Monitor on the auto-monitor log (always, if present)
 
@@ -70,7 +76,7 @@ Broad event + error filter. This catches normal progress AND failure signatures:
 
 ```text
 tail -F -n 0 <auto_monitor_log_path> 2>/dev/null \
-  | grep -E --line-buffered "QUEUE_BELOW_1000|QUEUE_BELOW_500|QUEUE_ABOVE_500|TRANS_DONE|STARTING_EXTRACTION|EXTRACTION_FINISHED|EXTRACTED_CASES|MILESTONE|REGEN_LAUNCH|IDLE_TICK|R5_TERMINAL|ERROR|Traceback|FAILED|MaxJobsExceeded|Killed|OOM"
+  | grep -E --line-buffered "QUEUE_BELOW_1000|QUEUE_BELOW_500|QUEUE_ABOVE_500|TRANS_DONE|STARTING_EXTRACTION|EXTRACTION_FINISHED|EXTRACTED_CASES|MILESTONE|REGEN_LAUNCH|IDLE_TICK|_TERMINAL|ERROR|Traceback|FAILED|MaxJobsExceeded|Killed|OOM"
 ```
 
 Always `persistent: true` and a long timeout. Reasoning: this monitor runs for the session lifetime; a short timeout silently drops you off the event stream.
@@ -100,9 +106,9 @@ Concrete reaction table:
 |---|---|
 | `QUEUE_BELOW_1000` / `QUEUE_BELOW_500` | Compute headroom: `current_queue + N_new_cases × JOBS_PER_CASE ≤ 5000`. Propose next batch (combined vs split). **See the note below — the multiplier is NOT always 3.** |
 | `TRANS_DONE` + `STARTING_EXTRACTION` in normal cadence | Silent acknowledgment (use "Normal" or omit). These arrive every poll cycle. |
-| Milestone-crossing extracted count (e.g., 2750, 3000) | The auto-monitor's `regen_milestone_plot.sh` should fire automatically. Confirm `REGEN_LAUNCHED` events follow. If not, manually invoke the site's `use_cases/{Model}_{Case}/analysis/regen_milestone_plot.sh`. |
+| Milestone-crossing extracted count (e.g., 2750, 3000) | The auto-monitor's call to `tools/regen_ensemble_milestone_plot.sh` should fire automatically. Confirm `REGEN_LAUNCHED` events follow. If not, run `tools/regen_ensemble_milestone_plot.sh` by hand. |
 | `QUEUE_ABOVE_500` (after a submission launches) | Acknowledge as expected; sentinel re-arms for next downcross. |
-| `R5_TERMINAL` / `EXTRACTION_FINISHED` (round complete) | Propose Phase 1 (extraction + Morris sensitivity analysis) per the round-completion runbook. |
+| `<LABEL>_TERMINAL` (default `ENSEMBLE_TERMINAL`; `R5_TERMINAL` when launched with `--label R5`) / `EXTRACTION_FINISHED` (round complete) | Propose Phase 1 (extraction + Morris sensitivity analysis) per the round-completion runbook. |
 | `FAILED` / `Traceback` / `MaxJobsExceeded` / `Killed` / `OOM` | **Stop. Investigate.** Pull recent log context, identify the source process, propose remediation (often: cancel the zombie/dead-dependency chain per **Step 7**, restart submitter, or invoke the `restart-failed-jobs` skill). |
 | A chained phase (e.g. an AD-spinup → spinup → transient leg) crashes | Its downstream phases are now zombies. Cancel the dead chain (**Step 7**) so it doesn't linger in the queue or hang a completion watcher. |
 
@@ -268,5 +274,5 @@ log, a state file marked complete), and use the PID only for the watcher's own l
 - Companion restart workflow: the `restart-failed-jobs` skill.
 - **`calibration-goal`** — the run-to-convergence driver: when it hits a phase with an in-flight ensemble it takes a WAIT stop and relies on the `Monitor` events armed here as its **cross-wait re-invocation trigger** (the completion/milestone event resumes the driver loop).
 - The interactive-agent operating contract: `AGENTS.md`.
-- A site's live auto-monitor script (if any) lives under `use_cases/{Model}_{Case}/analysis/`.
+- The auto-monitor is `tools/ensemble_auto_monitor.sh` and its plot refresh is `tools/regen_ensemble_milestone_plot.sh`, the generic successors of the per-site scripts in the retired `use_cases/{Model}_{Case}/analysis/`. An array ensemble's watcher keeps its state and log in the launching log's `phase_results/{stem}/` (`tools/watch_slurm_array.sh -s`).
 
