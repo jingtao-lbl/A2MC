@@ -178,3 +178,40 @@ def test_the_live_repo_is_auditable_and_lusignan_is_clean():
     missing, n_closed, _, _ = M.audit(lus)
     assert n_closed >= 16, "expected at least 16 closed cycles in R1b"
     assert missing == [], f"EcoSIM_Lusignan should be clean, got {missing}"
+
+
+# ---- the mechanism-graph section (memory/dev_logs_adapterkit/20261017d_*) ----------------------
+# A cycle report from GRAPH_SECTION_FROM on must embed the tested parameters' mechanism graph and
+# stage its knowledge-graph gaps in `graph_gap_candidates.yaml` beside it.
+
+def _report(tmp_path, name, md="", gaps=None):
+    d = tmp_path / name
+    d.mkdir(parents=True)
+    (d / "report.md").write_text(md)
+    if gaps is not None:
+        (d / "graph_gap_candidates.yaml").write_text(gaps)
+    return d
+
+
+GOOD_GAPS = "schema: 1\nmodel: ecosim\nprofile: ecosim-cb243228\nsource_commit: 0340d71b\ncandidates: []\n"
+
+
+def test_a_new_cycle_report_without_the_graph_section_warns_twice(tmp_path):
+    issues = M.graph_section_issues(_report(tmp_path, "20261018a_R2_c02_topic", md="no figure here"))
+    assert len(issues) == 2 and any("mechanism_graph" in i for i in issues)
+
+
+def test_a_complete_graph_section_passes(tmp_path):
+    d = _report(tmp_path, "20261018a_R2_c02_topic", md="![](fig6_mechanism_graph.png)\n", gaps=GOOD_GAPS)
+    assert M.graph_section_issues(d) == []
+
+
+def test_a_gap_file_that_fails_its_schema_warns(tmp_path):
+    bad = GOOD_GAPS.replace("candidates: []", "candidates:\n  - id: G1\n    from: parameter:RTFQ\n")
+    d = _report(tmp_path, "20261018a_R2_c02_topic", md="![](fig6_mechanism_graph.png)\n", gaps=bad)
+    assert any("graph_gap_candidates.yaml" in i for i in M.graph_section_issues(d))
+
+
+def test_reports_before_the_cutoff_and_round_reports_are_exempt(tmp_path):
+    assert M.graph_section_issues(_report(tmp_path, "20261017b_R2_cycle1_topic")) == []
+    assert M.graph_section_issues(_report(tmp_path, "20261018a_R2_round_summary")) == []

@@ -217,7 +217,7 @@ unwritten. That is the failure mode this step exists for.
 
 ## Step 5 — submit and monitor
 
-**Archive the submit scripts into `phase_results/{stem}/submit_scripts/` as soon as they are final** — copy, not move. The run root is untracked scratch; the submit script is the only record of which BINARY the run was bound to and of its run-time hash assertion, and this workflow's own footgun list is why that matters. One per case plus a representative `runfile.nml`. **Phase 0 is deliberately EXEMPT.** Its job scripts are generated from the machine + round config by the materializer, and an ensemble is thousands of cases (one R3 round is 59,393), so archiving them would be both enormous and redundant: the config plus the generator already reproduces them exactly. Phase 5 is different because its handful of variants are hand-designed and hand-repointed, so nothing else records what actually ran.
+**Archive the submit scripts into `phase_results/{stem}/submit_scripts/` as soon as they are final, and before submitting** — copy, not move. **A PreToolUse gate now holds a submission until this is done** (`.claude/hooks/require-run-skill-before-submit.py`): a `tools/submit_run.py` or full-ensemble `sbatch` for a case is refused unless the model's run skill (`ecosim-run-workflow`, `pflotran-run-workflow`, `ats-run-workflow`, `offline-testing-workflow`) was invoked and the case's `case_template/README.md` was read since the session's newest compaction, and the submitted script and every namelist or deck in the run directory already have byte-identical copies in the stem's `submit_scripts/` (or `run_tracking/submit_scripts/`). `A2MC_RUN_GATE_OVERRIDE="<why>"` on the command lets a case with no run skill or template through. The run root is untracked scratch; the submit script is the only record of which BINARY the run was bound to and of its run-time hash assertion, and this workflow's own footgun list is why that matters. One per case plus a representative `runfile.nml`. **Phase 0 is deliberately EXEMPT.** Its job scripts are generated from the machine + round config by the materializer, and an ensemble is thousands of cases (one R3 round is 59,393), so archiving them would be both enormous and redundant: the config plus the generator already reproduces them exactly. Phase 5 is different because its handful of variants are hand-designed and hand-repointed, so nothing else records what actually ran.
 
 ### How an ensemble is actually submitted
 
@@ -229,7 +229,7 @@ one. Raising `--cpus-per-task` cannot speed up a 1-grid-cell run and multiplies 
 ```bash
 source use_cases/<Case>/config/<site>_config_r<N>.sh
 mkdir -p "$A2MC_OUTPUT_DIR/logs"        # SLURM fails a task outright if it cannot open its log
-A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem folder" \
+A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem's run_tracking/" \
     sbatch use_cases/<Case>/case_template/submit_ensemble_array.sh
 ```
 
@@ -238,7 +238,8 @@ A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem folder
 in one step (`--run-dir` for one simulation, `--run-root` for one row covering a submission of many
 cases) and prints the `settle` command to give its watcher as the on-end hook (`phase5-testing`
 step 2c). A bare `sbatch` is refused by the agent's PreToolUse hook. The full config-generated
-ensemble above is the exception: its full record is the round's Phase-0 stem folder, so it gets no
+ensemble above is the exception: its full record is the `run_tracking/` subfolder of the round's
+Phase-0 stem (`phase0-design` Step 3), so it gets no
 ledger row and carries the `A2MC_UNTRACKED_JOB` declaration shown.
 
 **`shared` enforces `MaxSubmitJobsPU = 5000`, and SLURM counts array TASKS individually.** Measured
@@ -402,7 +403,9 @@ scored on, and it should say so instead of plotting.
 - `phase6-refinement` (Step 1b, which routes its figure requirement here), `phase0-design`
   (the round-opening wrapper this sits under), `phase5-testing` (the phase router),
   `calibration-discipline` (the per-cycle definition of done), `arm-hpc-monitoring` (monitoring
-  contract), `onboard-model` (adding a model, not running one).
+  contract), `onboard-model` (adding a model, not running one), `model-evolution` (a change to the
+  EcoSIM source: its instrumentation probes, V0 and ON arms are built and run with this skill, while
+  the change, its record and the knowledge-base update are that skill's).
 - FATES equivalent: `offline-testing-workflow` — CIME-based, does not transfer.
 
 ## Notes

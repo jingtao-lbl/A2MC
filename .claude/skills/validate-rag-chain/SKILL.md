@@ -184,6 +184,7 @@ Whole pass ~half a working day for a coupled pair; re-runs after fixes are secon
   `rebuild-rag` → `inject-knowledge`/curated YAML → **validate**. Recipes V1 (patch wiki
   fabrications), V2 (curated-YAML drift after a bump), V3 (suspected regression) in the
   roadmap.
+- **After a model-source change lands**, `model-evolution` step 8 calls this skill between the rebuild and the record in `docs/<model>-knowledge-base/README.md`.
 - Not yet covered (deferred): param-file↔source consistency (EcoSIM has it, Step 2b), end-to-end retrieval smoke
   tests beyond the golden queries. If you build either, follow the `tools/<name>_validator.py` convention and add a
   section to the roadmap.

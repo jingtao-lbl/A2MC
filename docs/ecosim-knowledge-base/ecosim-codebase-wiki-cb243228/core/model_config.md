@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Modelconfig/`, `f90src/Modelpars/` (structure and entry points), and the run-control namelist read in `drivers/ecosim/EcoSIMAPI.F90::readnamelist`
 **Last verified:** 2026-10-15
 ---
@@ -47,7 +47,7 @@ A Fortran namelist read leaves unlisted members untouched, so a runfile written 
 | `ldo_radiation_test` | `.false.` | `:264` | `Run_EcoSIM_one_step` `:71`; `SurfaceRadiation` (`SurfaceRadiationMod.F90:545`, `:593`) | radiation-only test; forces `ldo_sp_mode` |
 | `llignification` | `.false.` | `:214` | `SecondaryGrowthZone` (`RootMod.F90:3540`, `:3724`, `:3742`) | root lignification option; note `SecondaryGrowthZone`'s only call is commented out (`RootMod.F90:3218`), so this switch has no effect at cb243228 |
 | `lcoarseroot` | `.false.` | `:215` | `StagePlantForGrowth` (`GrosubsMod.F90:520`); `ShootRootElmTransfer` (`PlantNonstElmDynMod.F90:464`); `RootSoilGasExchange` (`RootGasMod.F90:251`); `RootMod.F90:502`, `:830`, `:1068`, `:1641` | coarse (medium-size) woody root pool |
-| `guard_floor_dying_stand` | `.false.` | module only (`:41`) | `WithdrawNutBranchLeaves` (`PlantBranchMod.F90:309`); `CheckPlantBalanceZ` (`PlantBalMod.F90:850-852`) | floors the C-pool divisor at `CPOOL_DIV_FLOOR_dying = 1e-12` gC (`EcoSIMCtrlMod.F90:53`) and skips the relative C-balance test when total vegetation C < `VEGC_BAL_FLOOR_dying = 1.0` gC/m2 (`:61`); the absolute test `abs(balE)>1e-6` still applies |
+| `guard_floor_dying_stand` | `.false.` | module only (`:41`) | `WithdrawNutBranchLeaves` (`PlantBranchMod.F90:309`); `CheckPlantBalanceZ` (`PlantBalMod.F90:875-877`) | floors the C-pool divisor at `CPOOL_DIV_FLOOR_dying = 1e-12` gC (`EcoSIMCtrlMod.F90:53`) and skips the relative C-balance test when total vegetation C < `VEGC_BAL_FLOOR_dying = 1.0` gC/m2 (`:61`); the absolute test `abs(balE)>1e-6` still applies |
 | `conserve_root_clamp` | `.false.` | module only (`:46`) | `GrowFibrous1stRootAxes` (`RootMod.F90:3255`, `:3265`) | when a negative structural root pool is clamped by `AZMAX1`, charges the uncovered deficit up the axis with `ChargeRootDeficitUpAxis` (`RootMod.F90:3309-3345`) instead of discarding it |
 | `oscal_test` | `0.0` | `EcoSIMSolverPar.F90:25` | `PlantNutientO2Uptake` (`NutUptakeMod.F90:70`); `RootSoilGasExchange` (`RootGasMod.F90:734`) | floor on the plant and root O2 limitation factors |
 

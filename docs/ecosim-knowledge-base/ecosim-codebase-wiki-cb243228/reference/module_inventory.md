@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** every `.F90` file under `f90src/` and `drivers/` at `cb243228`
 **Last verified:** 2026-10-15
 ---

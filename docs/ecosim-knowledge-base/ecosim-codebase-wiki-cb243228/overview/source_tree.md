@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** repository layout and `.F90` file counts at `cb243228`, compared with `2dea74d9`
 **Last verified:** 2026-10-15
 ---

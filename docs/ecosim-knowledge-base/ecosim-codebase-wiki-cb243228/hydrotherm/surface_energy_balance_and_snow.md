@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/HydroTherm/SurfPhys/`, `f90src/HydroTherm/SnowPhys/`, `f90src/HydroTherm/CanopyPhys/`, the canopy energy-water solver in `f90src/Plant_bgc/UptakesMod.F90`, ground radiation and roughness in `f90src/Plant_bgc/SurfaceRadiationMod.F90`, ET bookkeeping in `f90src/Balances/RedistMod.F90` and `f90src/Plant_bgc/ExtractsMod.F90`
 **Last verified:** 2026-10-15
 ---

@@ -158,6 +158,8 @@ git update-index --no-skip-worktree "$F"      # BEFORE the build, or at least be
 $PY scripts/build_<model>_rag.py --rebuild    # (Step 0 picks the script)
 git status --porcelain "$F"                   # MUST show " M" — if empty, the flag is still set
 git add "$F" rag/graphs/<profile>.json rag/milestones.json
+git add docs/<model>-knowledge-base/README.md     # adapter models: the update's record, below
+git add docs/<model>-knowledge-base/graph_html/   # where it exists: the regenerated HTML view, below
 git add rag/chroma_db/<profile>/<new-uuid>/      # the vectors; the UUID is new on every rebuild
 git rm -r --cached rag/chroma_db/<profile>/<old-uuid>/   # if the old folder was tracked
 git commit
@@ -179,6 +181,10 @@ print('curated chunks:', sum(str((m or {}).get('source','')).startswith('curated
 
 A count that matches the *pre-rebuild* number means the old index is still what is committed. `$PY tools/check_rag_index_committed.py` makes that comparison for every profile from the committed blobs, never the disk, and the pre-commit hook runs it with `--staged`.
 
+**Regenerate the graph's HTML view, in the same commit, wherever the knowledge base has one** (`docs/<model>-knowledge-base/graph_html/`; EcoSIM today). It embeds the graph's nodes and edges at render time, so a rebuild without it leaves a page describing the previous graph. Run the command that folder's `README.md` records, `$PY tools/render_kg_html.py --profile <profile> --targets <…>`, and check the page's stats line names the rebuilt graph's node and edge counts. `tools/check_kg_html_current.py` compares every page's embedded nodes and edges with its graph: pre-commit 35 refuses a commit that stages a graph and a page that disagree, and an agent hook runs it after a build. A case's own tested-parameter page in its report folder is that case's to regenerate.
+
+**Record the update in the model's knowledge-base README, in the same commit** (adapter models): a row in `docs/<model>-knowledge-base/README.md`'s update history, and its current working version of the model if the commit the profile describes moved. `tools/check_kb_readme.py` (pre-commit 34) refuses a commit that stages a model's graph, index, metadata, seed or milestone entry without its README, and checks the README names every base and patch commit the registry holds. FATES profiles are out of its scope.
+
 **Audit any clone for the flag:** `git ls-files -v | grep '^S'` lists every skip-worktree file.
 
 ## Step 5 — when the index "just stopped working"
@@ -194,6 +200,7 @@ Cross-CWD failures (Perlmutter) trace to path resolution (`rag/hybrid_retriever.
 ## Notes
 
 - **Other knobs:** `A2MC_PFTS` sets the PFT list — always set it (the site config does) so the graph builds PFT-specific nodes for exactly your calibrated PFTs (e.g. `A2MC_PFTS=10,11,12` for api-43 Kougarok). If unset, `graph_builder.py` `_resolve_pft_list` falls back to a site-agnostic all-12-PFT default `[1..12]` **and prints a warning** — usable but not tailored to your site.
+- **A rebuild that follows a model-source change** is step 8 of `model-evolution`, which orders it after the wiki patch or refresh and before `validate-rag-chain` and the README record.
 - **After a commit bump or curated edit, validate the chain** before trusting it — the `validate-rag-chain` skill (wiki↔source, YAML↔wiki, profile diff).
 - **Where it lives in code:** the roadmap §8 has a grep cheat-sheet for every default path, the wiki subdir patterns, the chunk-ID/dedup logic, and the curated-YAML loader.
 - Branch note: wiki *bumps* and new-model adds are forward-dev (mostly `main`/adapter-kit); on a version-pinned manuscript branch the common use is a `--graph-only` refresh after a curated-YAML injection. A pinned (e.g. api-31-0) index is the manuscript-reproducibility anchor — don't bump its wiki commit here without reason.

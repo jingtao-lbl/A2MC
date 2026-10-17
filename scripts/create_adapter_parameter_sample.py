@@ -113,6 +113,66 @@ def parse_pft_param_list(path) -> Tuple[List[str], np.ndarray, np.ndarray]:
 
 
 # =============================================================================
+# Sampling SCALE — an optional `scale` column, `linear` (the default) or `log10`.
+#
+# A row marked `log10` is sampled uniformly in log10(value) between log10(lower) and
+# log10(upper), then written to the matrix as the value itself, so everything downstream of the
+# matrix (the materializer, the validator, the bounds checks) sees ordinary values inside the
+# declared bounds and needs no change. It is for a range spanning orders of magnitude, where a
+# linear draw puts almost every case in the top decade: over [1, 200], 95.5% of linear draws
+# land above 10. A list with no `scale` column, or a blank cell, samples exactly as before --
+# the unit sample is drawn first and only the marked columns are transformed, so unmarked
+# columns are byte-identical to a run without the column (tests/test_adapter_sampler_log_scale.py).
+# =============================================================================
+
+SCALES = ("linear", "log10")
+
+
+def parse_param_scales(path, names: List[str]) -> np.ndarray:
+    """Boolean mask, True where a row's `scale` is `log10`, in the same row order as
+    `parse_pft_param_list`. Raises on an unknown scale or a log10 row with lower <= 0."""
+    path = Path(path)
+    skiprows = _detect_header_row(path)
+    with path.open() as f:
+        header_line = next(line for i, line in enumerate(f) if i == skiprows)
+    df = pd.read_csv(path, sep=_detect_delimiter(header_line), skiprows=skiprows, engine="python")
+    df.columns = [c.strip() for c in df.columns]
+    lower_col, upper_col = _find_bound_columns(list(df.columns))
+    df[lower_col] = pd.to_numeric(df[lower_col], errors="coerce")
+    df[upper_col] = pd.to_numeric(df[upper_col], errors="coerce")
+    df = df.dropna(subset=[lower_col, upper_col, "name"]).reset_index(drop=True)
+    assert len(df) == len(names), "scale parse disagrees with the parameter parse on row count"
+    if "scale" not in df.columns:
+        return np.zeros(len(names), dtype=bool)
+    raw = [("" if pd.isna(v) else str(v).strip().lower()) or "linear" for v in df["scale"]]
+    bad = sorted({s for s in raw if s not in SCALES})
+    if bad:
+        raise ValueError(f"{path}: unknown scale value(s) {bad}; allowed {SCALES}")
+    mask = np.array([s == "log10" for s in raw])
+    nonpos = [n for n, m, lo in zip(names, mask, df[lower_col]) if m and lo <= 0]
+    if nonpos:
+        raise ValueError(f"{path}: log10 scale needs lower > 0; offending rows {nonpos}")
+    return mask
+
+
+def to_sampling_space(problem: dict, is_log: np.ndarray) -> dict:
+    """The problem the SAMPLER sees: log10 bounds for log-scale columns, unchanged otherwise."""
+    if not np.any(is_log):
+        return problem
+    b = [[np.log10(l), np.log10(u)] if g else [l, u] for (l, u), g in zip(problem["bounds"], is_log)]
+    return dict(problem, bounds=b)
+
+
+def from_sampling_space(X: np.ndarray, is_log: np.ndarray) -> np.ndarray:
+    """Back to parameter values: 10**x for log-scale columns, untouched otherwise."""
+    if not np.any(is_log):
+        return X
+    X = np.array(X, dtype=float, copy=True)
+    X[:, is_log] = np.power(10.0, X[:, is_log])
+    return X
+
+
+# =============================================================================
 # Multi-surface routing — shared by materialize_adapter_ensemble.py and
 # validate_adapter_ensemble.py (a param list can span more than one physical base file, e.g.
 # EcoSIM_BioCON R3: 40 plant traits in the primary PFT NetCDF + 8 soil-BGC rates in the tertiary
@@ -506,20 +566,28 @@ def main() -> int:
     names, lower, upper = parse_pft_param_list(args.param_list_file)
     problem = {"num_vars": len(names), "names": names,
                "bounds": [[l, u] for l, u in zip(lower, upper)]}
+    # Sampling SCALE: the sampler draws in `sp`; the matrix holds values (see SCALES above).
+    is_log = parse_param_scales(args.param_list_file, names)
+    sp = to_sampling_space(problem, is_log)
+    if np.any(is_log):
+        print(f"  log10-scale columns: {[n for n, g in zip(names, is_log) if g]}")
 
     if args.method == "morris":
-        X = sample_morris(problem, args.trajectories, args.num_levels, args.seed)
+        X = sample_morris(sp, args.trajectories, args.num_levels, args.seed)
         method_args = {"trajectories": args.trajectories, "num_levels": args.num_levels, "seed": args.seed}
     elif args.method == "sobol":
-        X = sample_sobol(problem, args.n_samples, args.seed, not args.no_second_order)
+        X = sample_sobol(sp, args.n_samples, args.seed, not args.no_second_order)
         method_args = {"n_samples": args.n_samples, "calc_second_order": not args.no_second_order, "seed": args.seed}
     elif args.method == "sobol_seq":
-        X = sample_sobol_sequence(problem, args.n_samples, args.seed)
+        X = sample_sobol_sequence(sp, args.n_samples, args.seed)
         method_args = {"n_samples": args.n_samples, "seed": args.seed,
                        "construction": "scrambled Sobol' sequence (NO Saltelli cross-sampling)"}
     else:  # lhs
-        X = sample_lhs(problem, args.n_samples, args.seed)
+        X = sample_lhs(sp, args.n_samples, args.seed)
         method_args = {"n_samples": args.n_samples, "seed": args.seed}
+    X = from_sampling_space(X, is_log)
+    if np.any(is_log):
+        method_args["log10_scale_columns"] = [n for n, g in zip(names, is_log) if g]
 
     # THE VALIDATION ARGUMENTS ARE CHECKED BEFORE ANYTHING IS WRITTEN. They used to be checked
     # after, so a refusal (no --validation-matrix, a seed equal to the training seed) left the
@@ -535,7 +603,7 @@ def main() -> int:
     print(f"  matrix:  {args.output_matrix}")
     print(f"  problem: {args.output_problem}")
 
-    rc = write_validation_design(problem, args, names)
+    rc = write_validation_design(problem, args, names, is_log)
     return rc
 
 
@@ -600,7 +668,7 @@ def check_validation_args(args) -> int:
     return 0
 
 
-def write_validation_design(problem, args, names) -> int:
+def write_validation_design(problem, args, names, is_log=None) -> int:
     """Draw and write the INDEPENDENT validation design, or say plainly that there is none.
 
     Refuses rather than warns on a seed collision, because a validation set drawn with the training
@@ -625,7 +693,10 @@ def write_validation_design(problem, args, names) -> int:
     if rc:
         return rc
 
-    V = sample_sobol_sequence(problem, n, args.validation_seed)
+    # Drawn in the SAME sampling space as the training design (log10 for log-scale columns), so
+    # the two designs differ only by the scramble seed.
+    is_log = np.zeros(problem["num_vars"], dtype=bool) if is_log is None else np.asarray(is_log, dtype=bool)
+    V = from_sampling_space(sample_sobol_sequence(to_sampling_space(problem, is_log), n, args.validation_seed), is_log)
     Xtrain = np.loadtxt(args.output_matrix)
     # Coincidence is the failure a different seed is supposed to prevent, so assert it rather than
     # assume it. Row-wise exact match over float64 is the right test: these come from the same
@@ -644,10 +715,14 @@ def write_validation_design(problem, args, names) -> int:
     # produce without the bits matching. Distance is measured in BOX-NORMALISED units so a
     # parameter spanning six orders of magnitude is not compared in the same units as one spanning
     # 0-1, and the worst pair is always REPORTED so the number is visible even when it passes.
-    span = np.asarray(upper_of(problem), dtype=float) - np.asarray(lower_of(problem), dtype=float)
+    # Measured in the SAMPLING space, where both designs are uniform, so a log-scale column is not
+    # dominated by its top decade.
+    sp = to_sampling_space(problem, is_log)
+    span = np.asarray(upper_of(sp), dtype=float) - np.asarray(lower_of(sp), dtype=float)
     span[span <= 0] = 1.0
-    d_min = _nearest_distance(np.asarray(V, dtype=float) / span,
-                              np.asarray(Xtrain, dtype=float) / span)
+    Vs, Ts = np.array(V, dtype=float), np.array(Xtrain, dtype=float, ndmin=2)
+    Vs[:, is_log], Ts[:, is_log] = np.log10(Vs[:, is_log]), np.log10(Ts[:, is_log])
+    d_min = _nearest_distance(Vs / span, Ts / span)
     print(f"    closest validation-to-training distance: {d_min:.3e} (box-normalised)")
     if d_min < 1e-9:
         print(f"ERROR: a validation point sits {d_min:.3e} from a training point in "

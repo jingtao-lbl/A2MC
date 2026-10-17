@@ -26,6 +26,8 @@ The only external resource the page loads is the Google Fonts stylesheet. Opened
 
 `docs/` is not wholesale synced: the public leg takes `docs/a2mc_reference/`, the knowledge-base directories, and — since 2026-09-24 — **this directory**. The generic tutorial is public because `create-project-agent` gates on a user having worked through it, and a skill cannot require a document its reader does not have.
 
+**The public repo also serves it as a web page**, through GitHub Pages (branch `main`, folder `/docs`): https://jingtao-lbl.github.io/A2MC/tutorial/A2MC_Getting_Started.html. That URL is what the root README and the User Guide link to, because GitHub shows an `.html` file in a repository as source rather than as a page. Pages serves the whole public `docs/` folder, not only this directory; `docs/.nojekyll`, which the public leg ships, makes it serve the files as they are instead of running Jekyll over them.
+
 It was scanned before publishing and names no private repo, branch or collaborator, so nothing in it needs stripping. A tutorial written for one team is a different matter: keep those out of this directory, or out of the INCLUDE list, because a case-specific walkthrough belongs to the group that received the case.
 
 ## Editing

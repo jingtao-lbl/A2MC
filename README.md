@@ -3,10 +3,10 @@
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 **Status:** Implementation Complete <br>
-**Version:** 2.535 <br>
+**Version:** 2.549 <br>
 **Purpose:** Fully autonomous multi-target calibration of process-based environmental models using AI API + HPC + RAG/GraphRAG + Adaptive Memory. This repo is the **non-CIME line** (EcoSIM, PFLOTRAN, ATS); for a CIME-configured Earth system model see **Which A2MC do you want?** below.
 
-> **New here?** This README is the front door. For the full operational detail — configuration reference, per-phase behavior, module APIs, knowledge-system internals, state persistence, cost, and reporting — see the [**A2MC User Guide**](docs/a2mc_reference/user_guide.md).
+> **New here? Start with the [Getting Started tutorial](https://jingtao-lbl.github.io/A2MC/tutorial/A2MC_Getting_Started.html).** It takes you from a machine with nothing installed to a calibration case ready for its first round: installing and signing in to Claude Code, cloning, the Python environment, building your model, and creating your case with the agent. In a clone it is `docs/tutorial/A2MC_Getting_Started.html`, one self-contained page you can open directly in a browser. For the full operational detail afterwards — configuration reference, per-phase behavior, module APIs, knowledge-system internals, state persistence, cost, and reporting — see the [**A2MC User Guide**](docs/a2mc_reference/user_guide.md).
 
 ---
 
@@ -144,6 +144,8 @@ Full setup — every config field, provider/model table, installation on NERSC P
 
 The offline agent is any coding-agent harness (e.g. Claude Code) opened in a clone of this repo. There is nothing to launch — you open the repo and talk to it.
 
+**First time?** The [Getting Started tutorial](https://jingtao-lbl.github.io/A2MC/tutorial/A2MC_Getting_Started.html) walks through this section step by step, including the two things it assumes are already done: installing Claude Code, and building the Python environment at `~/a2mc_env`.
+
 ```bash
 # 1. Clone and open the repo in a coding agent that reads AGENTS.md
 git clone https://github.com/jingtao-lbl/A2MC.git && cd A2MC   # CIME model? clone A2MC-elm instead
@@ -200,6 +202,7 @@ Details: [User Guide → Knowledge system](docs/a2mc_reference/user_guide.md#6-k
 
 ## Documentation
 
+- [**Getting Started tutorial**](https://jingtao-lbl.github.io/A2MC/tutorial/A2MC_Getting_Started.html) — the step-by-step walkthrough from a bare machine to a case ready for its first round (in a clone: `docs/tutorial/A2MC_Getting_Started.html`)
 - [**A2MC User Guide**](docs/a2mc_reference/user_guide.md) — full operational reference (config, phases, modules, knowledge system, state, cost, reporting)
 - [`AGENTS.md`](AGENTS.md) — operating contract for the offline interactive agent
 - [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md) — offline-agent skills catalog
@@ -235,10 +238,6 @@ A dedicated methods paper on A2MC is in preparation; this section will be update
 
 ## References
 
-- [Anthropic Claude API](https://docs.anthropic.com/)
-- [NERSC SLURM Documentation](https://docs.nersc.gov/jobs/)
-- [ELM-FATES Technical Reference](https://fates-users-guide.readthedocs.io/)
-- [SALib Morris Sensitivity](https://salib.readthedocs.io/)
 - [CAF Agent of the Week #7 — A2MC](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 
@@ -248,5 +247,5 @@ A dedicated methods paper on A2MC is in preparation; this section will be update
 
 **Author:** Jing Tao <br>
 **Email:** jingtao@lbl.gov <br>
-**Project:** NGEE-Arctic Phase 4, CC4, ELM-FATES calibration <br>
+**Project:** NGEE-Arctic and Belowground Biogeochemistry SFA. <br>
 **GitHub:** https://github.com/jingtao-lbl/A2MC (non-CIME line) · https://github.com/jingtao-lbl/A2MC-elm (CIME line)

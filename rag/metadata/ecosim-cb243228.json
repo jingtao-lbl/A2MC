@@ -2,10 +2,12 @@
   "metadata_schema_version": 1,
   "profile_name": "ecosim-cb243228",
   "adapter": "ecosim",
-  "built_at": "2026-10-15T22:10:24.403639+00:00",
+  "built_at": "2026-10-16T21:48:40.923725+00:00",
   "model_commit_built": "cb2432285b3b31a40461fc1ab7cb74a3f5ed94e1",
-  "kb_commit": "cb2432285b3b31a40461fc1ab7cb74a3f5ed94e1",
-  "patches": [],
+  "kb_commit": "0340d71b1058e41cbcf303b3dff30c42a4277fe1",
+  "patches": [
+    "0340d71b1058e41cbcf303b3dff30c42a4277fe1"
+  ],
   "wiki_subdir": "ecosim-codebase-wiki-cb243228",
   "param_file": "docs/ecosim-knowledge-base/param_surfaces_cb243228/ecosim_pftpar_20260915.nc",
   "param_files_extra": [
@@ -18,8 +20,8 @@
   "curated_yaml": "models/ecosim/curated_seed.yaml",
   "curated_yaml_status": "v0.1-ai-draft-pending-PI-review",
   "stats": {
-    "chunk_count": 3125,
-    "graph_nodes": 1027,
-    "graph_edges": 1467
+    "chunk_count": 3138,
+    "graph_nodes": 1028,
+    "graph_edges": 1474
   }
 }

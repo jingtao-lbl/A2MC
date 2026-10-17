@@ -203,6 +203,7 @@ categories:
     mechanisms:
     - Plant_Mass_Balance_And_Root_Clamp
     - Harvest_Cutting_Partition
+    - Plant_Death_Root_Litterfall_And_Replanting
     key_outputs:
     - Plant_BALANCE_C_pft
     - HVST_C_FLX_pft
@@ -539,7 +540,7 @@ mechanisms:
     notes: 'Gates: is_root_N2fix and is_canopy_N2fix on INTYP. CNND and CPND set the nodule N:C and P:C
       target and the N and P of nodule infection; DMND (NoduGrowthYield_pft) is the nodule growth yield.
       Nodule respiration uses VMXO = 0.125 and the root O2 limiter; maintenance uses RmSpecPlant on nodule
-      N. Root-nodule pools enter the plant balance through nodulE over NU..LBAL (PlantBalMod SumRootPoolsForBalance).'
+      N. Root-nodule pools enter the plant balance through nodulE over NU..LSTK, LSTK = max(MaxNumRootLays, NK) (PlantBalMod SumRootPoolsForBalance).'
     _source: human; wiki-audit-cb243228
   Prescribed_Tissue_Stoichiometry:
     description: 'Prescribed organ N:C and P:C used to price and build new growth: leaf and sheath ratios
@@ -1062,9 +1063,9 @@ mechanisms:
     description: Hourly per-PFT C, N, P budget check that aborts the run on error, plus the balance-only
       root totals that cover layer MaxNumRootLays+1, the default-off root-clamp conservation switch and
       the default-off dying-stand guard.
-    code_reference: f90src/Plant_bgc/PlantBalMod.F90:820-829 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:849-852
-      (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:878 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:640-663
-      (SumRootPoolsForBalance); f90src/Plant_bgc/PlantBalMod.F90:684-686 (EnterPlantBalance); f90src/Plant_bgc/RootMod.F90:3252-3271
+    code_reference: f90src/Plant_bgc/PlantBalMod.F90:845-854 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:874-877
+      (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:905 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:630-683
+      (SumRootPoolsForBalance); f90src/Plant_bgc/PlantBalMod.F90:709-711 (EnterPlantBalance); f90src/Plant_bgc/RootMod.F90:3252-3271
       (GrowFibrous1stRootAxes); f90src/Plant_bgc/RootMod.F90:3326-3342 (ChargeRootDeficitUpAxis); f90src/Modelconfig/EcoSIMCtrlMod.F90:41-46
       (<module scope>)
     parameters:
@@ -1081,8 +1082,10 @@ mechanisms:
       makes the C abort absolute-only when total vegetation C < 1 gC and floors a leaf-withdrawal divisor.
       conserve_root_clamp (default .false., /ecosim/) charges a negative fibrous-root structural pool's
       uncovered deficit to the same axis's primary roots higher up (ChargeRootDeficitUpAxis) instead of
-      letting AZMAX1 discard it. LBAL = max(MaxNumRootLays, MaxSoilLays4Root_pft); MaxSoilLays4Root_pft
-      equals NK only in prescribed-phenology mode or after a tip passes the bottom of layer MaxNumRootLays.
+      letting AZMAX1 discard it. The balance-only root stock terms (beyondE, nodulE) end at LSTK =
+      max(MaxNumRootLays, NK), fixed for the run (0340d71b); the respiration term beyondAR ends at LBAL =
+      max(MaxNumRootLays, MaxSoilLays4Root_pft), and MaxSoilLays4Root_pft equals NK only in
+      prescribed-phenology mode or after a tip passes the bottom of layer MaxNumRootLays.
       Listed parameters are illustrative; the switches are namelist logicals, not plant-file parameters.
     _source: wiki-audit-cb243228
     doc_reference: ecosim-codebase-wiki-cb243228/plant_bgc/roots_and_uptake.md
@@ -1508,6 +1511,37 @@ mechanisms:
       (non-woody) and 1.5814e-5 h-1 (woody vascular), compile-time. Annual deciduous crops get an automatic
       grain harvest with terminate-and-reseed in ResetBranchPhenology (PlantBranchMod.F90:2704-2717).'
     _source: wiki-audit-cb243228
+  Plant_Death_Root_Litterfall_And_Replanting:
+    description: What happens to a plant's root mass when the plant dies, is disturbed, or is replanted.
+      When the roots die, ResetDeadPlant calls SetDeadPlant, LiterFallDeadRoots and LiterFallRootShootStorage,
+      which move the root pools to litter layer by layer, and ResetBranchRootStates then zeroes the root
+      states. Tillage, harvest thinning, annual death and annual termination remove root mass layer by layer
+      too. On a planting day a plant slot that is not active is re-initialised by StartPlants, and
+      InitRootMychorMorphoBio zeroes every root pool over all layers 1..NL. Every one of those removal loops
+      ends at MaxNumRootLays, one layer short of NK = MaxNumRootLays + 1, the deepest layer roots grow into.
+    code_reference: f90src/Plant_bgc/LitterFallMod.F90:87-95 (ResetDeadPlant); f90src/Plant_bgc/LitterFallMod.F90:503-517
+      (LiterFallDeadRoots); f90src/Plant_bgc/LitterFallMod.F90:912 (ResetBranchRootStates); f90src/Plant_bgc/InitPlantMod.F90:114-130
+      (StartPlants); f90src/Plant_bgc/InitPlantMod.F90:1045-1062 (InitRootMychorMorphoBio); f90src/Plant_bgc/PlantBalMod.F90:484-488
+      (ZeroGrosub); f90src/Plant_bgc/GrosubsMod.F90:238-245 (Live2DeadTransformation); f90src/Plant_bgc/ExtractsMod.F90:109-117
+      (ExtractLitterfall)
+    doc_reference: ecosim-codebase-wiki-cb243228/core/grid_and_mesh.md
+    parameters: []
+    affects:
+    - LITRf_C_pft
+    - LITRf_N_FLX_pft
+    - Root_C_pft
+    - Plant_BALANCE_C_pft
+    - Plant_BALANCE_N_pft
+    - Plant_BALANCE_P_pft
+    notes: 'Not calibratable: no parameter-file variable enters it. A dead stand keeps its layer-NK root
+      pools (the removal loops stop at MaxNumRootLays) and a replanting erases them with no flux, which the
+      plant balance reads as a loss once its stock terms count layer NK (SumRootPoolsForBalance, LSTK); seen
+      as N balance aborts at the replanting hour in EcoSIM_Lusignan R2c. The litter bookkeeping is split the
+      same way: the hourly reset of LitrfallElms_pvr (ZeroGrosub) and the balance litter term LitrfallElms_pft
+      (Live2DeadTransformation) stop at MaxNumRootLays, while ExtractLitterfall passes litter to the soil
+      input through MaxSoilLays4Root_pft, which reaches NK when a root tip is there; root senescence can write
+      litter at NK (RootBiochemistry runs to MaxNumRootLays+1). Audit: use_cases/EcoSIM_Lusignan/memory/model_evolution/20261016a_model_evolution_r02_dead_root_litterfall_audit.md.'
+    _source: human; dead-root-audit-20261016a
   Soil_Water_Retention_Derivation:
     description: 'Each soil layer''s field capacity FC, wilting point WP and vertical and lateral saturated
       conductivities SCNV, SCNH come from the grid file only when the file value is non-negative. A negative
@@ -1581,7 +1615,7 @@ outputs:
       a per-PFT net needs CAN_GPP_pft plus CAN_RA_pft (canopy only) plus that PFT''s root respiration.'
     _source: human; wiki-audit-cb243228
     code_location: f90src/IOutils/HistData/HistRegisterPlant.F90:413 (register_hist_plants); f90src/IOutils/HistData/HistUpdatePlant.F90:94
-      (update_hist_plants); f90src/Plant_bgc/GrosubsMod.F90:253 (Live2DeadTransformation); f90src/Plant_bgc/PlantBalMod.F90:99
+      (update_hist_plants); f90src/Plant_bgc/GrosubsMod.F90:253 (Live2DeadTransformation); f90src/Plant_bgc/PlantBalMod.F90:101
       (SumPlantBiome); f90src/APIs/PlantStateTransferMod.F90:243 (ReceivePlantState)
   CAN_GPP_pft:
     description: 'Plant canopy gross CO2 fixation per PFT, gC m-2 h-1, default inactive. GrossCO2Fix_pft/area:
@@ -1608,7 +1642,7 @@ outputs:
     _source: human; wiki-audit-cb243228
     code_location: f90src/IOutils/HistData/HistRegisterPlant.F90:33 (register_hist_plants); f90src/IOutils/HistData/HistUpdatePlant.F90:155
       (update_hist_plants); f90src/APIs/PlantStateTransferMod.F90:123 (ReceivePlantState); f90src/Plant_bgc/PlantBranchMod.F90:3289
-      (ComputRAutoAfEmergence); f90src/Plant_bgc/PlantBalMod.F90:502 (ZeroGrosub)
+      (ComputRAutoAfEmergence); f90src/Plant_bgc/PlantBalMod.F90:504 (ZeroGrosub)
   LEAF_C_pft:
     description: Per-PFT canopy leaf structural carbon, gC m-2, flag A, registered inactive. Filled from
       LeafStrutElms_pft(ielmc) divided by the column area; LeafStrutElms_pft is the branch sum of LeafStrutElms_brch
@@ -1623,7 +1657,7 @@ outputs:
       duration via XRLA/daylength).
     _source: human; wiki-audit-cb243228
     code_location: f90src/IOutils/HistData/HistRegisterPlant.F90:237 (register_hist_plants); f90src/IOutils/HistData/HistUpdatePlant.F90:196
-      (update_hist_plants); f90src/Plant_bgc/PlantBalMod.F90:291 (SumCanopyBiome)
+      (update_hist_plants); f90src/Plant_bgc/PlantBalMod.F90:293 (SumCanopyBiome)
   LEAF_N_pft:
     description: Canopy leaf nitrogen, per PFT.
     direct_drivers:
@@ -1671,7 +1705,7 @@ outputs:
       ratios.
     _source: human; wiki-audit-cb243228
     code_location: f90src/IOutils/HistData/HistRegisterPlant.F90:225 (register_hist_plants); f90src/IOutils/HistData/HistUpdatePlant.F90:192
-      (update_hist_plants); f90src/Plant_bgc/PlantBalMod.F90:290 (SumCanopyBiome); f90src/Plant_bgc/PlantBalMod.F90:586
+      (update_hist_plants); f90src/Plant_bgc/PlantBalMod.F90:292 (SumCanopyBiome); f90src/Plant_bgc/PlantBalMod.F90:588
       (SumRootBiome)
   Plant_N_pft:
     description: Total plant nitrogen, per PFT.
@@ -1717,7 +1751,7 @@ outputs:
       the uptake surface for N/P. Cross-check RootST_C_pft (structural) vs Root_NONSTC_pft (reserves).
     _source: human; wiki-audit-cb243228
     code_location: f90src/IOutils/HistData/HistRegisterPlant.F90:261 (register_hist_plants); f90src/IOutils/HistData/HistUpdatePlant.F90:203
-      (update_hist_plants); f90src/Plant_bgc/PlantBalMod.F90:586 (SumRootBiome)
+      (update_hist_plants); f90src/Plant_bgc/PlantBalMod.F90:588 (SumRootBiome)
   Root_N_pft:
     description: Root nitrogen, per PFT.
     direct_drivers:
@@ -1925,7 +1959,7 @@ outputs:
       + stalk + stalk reserve + husk + ear + grain structural pools + canopy nonstructural pool (plus C4
       node pools for C4 plants).
     code_location: f90src/IOutils/HistData/HistRegisterPlant.F90:211 (register_hist_plants); f90src/IOutils/HistData/HistUpdatePlant.F90:191
-      (update_hist_plants); f90src/Plant_bgc/PlantBalMod.F90:290 (SumCanopyBiome); f90src/Plant_bgc/PlantBalMod.F90:377
+      (update_hist_plants); f90src/Plant_bgc/PlantBalMod.F90:292 (SumCanopyBiome); f90src/Plant_bgc/PlantBalMod.F90:379
       (SumPlantBranchBiome)
     _source: wiki-audit-cb243228
 parameters:
@@ -2231,7 +2265,7 @@ parameters:
       iteration exists.'
     _source: human; wiki-audit-cb243228
     code_location: f90src/Plant_bgc/StomatesMod.F90:268 (StomatalDynamics); f90src/Plant_bgc/StomatesMod.F90:943
-      (PrepPhotosynthesis); f90src/Plant_bgc/PlantBalMod.F90:807 (CheckPlantBalanceZ)
+      (PrepPhotosynthesis); f90src/Plant_bgc/PlantBalMod.F90:832 (CheckPlantBalanceZ)
   XRLA:
     category: phenology
     controls:
@@ -3781,5 +3815,5 @@ parameters:
       NK (GetInLayerRootDepth). Under ldo_sp_mode PlantUptakeAPISend sets MaxNumRootLays = NL instead.
     code_location: f90src/IOutils/readimod.F90:454 (readTopoNC); f90src/IOutils/readimod.F90:460 (readTopoNC);
       f90src/APIs/PlantColumnTransferMod.F90:194-197 (SendPlantColumnInputs); f90src/Plant_bgc/RootMod.F90:5459
-      (GetInLayerRootDepth); f90src/Plant_bgc/PlantBalMod.F90:570 (SumRootBiome)
+      (GetInLayerRootDepth); f90src/Plant_bgc/PlantBalMod.F90:572 (SumRootBiome)
     _source: wiki-audit-cb243228

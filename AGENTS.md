@@ -24,6 +24,8 @@ python3 tools/check_stage_ready.py     # per-clone wiring, the setup stage, and 
 
 It prints the per-clone rows git cannot carry (commit hooks, author name, …), the stage, the cases still in setup, and the skill to run next: `a2mc-init` (wire the clone; build and verify the model on this machine), `onboard-model` (a model A2MC does not have), `onboard-case` (a case to create or finish), or `onboard-session` (resume a running case). Under Claude Code the SessionStart hook prints the same answer; any other harness runs this command itself. `setup-discipline` holds each stage's definition of done.
 
+**Point a new user at the tutorial.** `docs/tutorial/A2MC_Getting_Started.html` is the human-facing walkthrough of this whole setup arc, from installing the harness to a case ready for its first round; when someone is new to A2MC or asks how to get started, tell them it exists. It summarizes the setup skills for a reader, so where the two differ the skill is right, and you follow the skill rather than the page.
+
 ## Resolve your mode first
 
 A2MC is **mode-aware**: the same repo runs different model configurations — ELM with or without FATES, different FATES API versions/milestones (which even change the parameter-file format), and different nutrient schemes (ECA vs RD), among others. Guidance, parameters, and mechanisms that are true in one mode are false in another.

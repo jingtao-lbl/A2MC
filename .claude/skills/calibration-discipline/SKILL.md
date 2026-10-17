@@ -26,7 +26,10 @@ per experiment cycle (Phase 3→4→5→6):
   □ each phase logged with its phaseN skill + calibration-log → log/{stem}.md + phase_results/{stem}/
   □ every figure self-documenting IN phase_results/{stem}/ (figure + caption.md + its .py + data)
   □ that .py was COPIED FROM the case template in use_cases/{Model}_{Case}/scripts/ and ADAPTED here;
-     a script's SECOND use is the trigger to template it (measured: 7 byte-identical duplicate pairs)
+     chosen by READING scripts/README.md's generated index, and it names its source on a
+     `Template:` line (`none (first use)` if nothing fits; pre-commit 33). A script's SECOND use is
+     the trigger to template it, then regenerate the index (pre-commit 32)
+     (measured: 7 byte-identical duplicate pairs; one README indexing 3 of 29 templates)
   □ analysis is FIRST-HAND this cycle (check_offline_log_evidence.py exit 0 for phase 3/4/6)
   □ every tape variable REDUCED per its own semantics (rate / increment / resetting-cumulative /
      run-cumulative / stock) and checked ACTIVE, never inferred from its name or units
@@ -55,6 +58,8 @@ per experiment cycle (Phase 3→4→5→6):
       lever CLASS exhausted vs untried · each refutation's DIRECTION + the base's MISS SIGN, still valid?
       → NEW PATHWAYS with falsifiers). Enforced: check C9
   □ cycle end → a synthesis report (write-report): empty-alt figs, no em dash, one canonical script/fig
+     + the TESTED parameters' full mechanism graph (graph edges and source-confirmed gaps), gaps staged in
+     the report folder's graph_gap_candidates.yaml for HUMAN review at cycle end (write-report item 5)
      ENFORCED by check_cycle_reports.py (pre-commit 18, WARN) -- a closed cycle with no report is named
   □ no KB write / model-source edit before a verified test + human gate
 
@@ -164,7 +169,14 @@ appears to disagree with the config, the config wins: it is what the code reads.
    back and adapt. **Measured, and this is why the rule exists:** one site's `phase_results/` held **7
    script names duplicated across stem folders, all 7 byte-identical**, every one a Phase-5 script copied
    verbatim into its Phase-6 folder because no template tier existed. Checker:
-   `tools/check_case_script_tier.py`.
+   `tools/check_case_script_tier.py`. **Choose by READING the index, then say what you chose.** The
+   case's `use_cases/{Model}_{Case}/scripts/README.md` carries an index generated from each template's docstring
+   (`tools/case_script_index.py`; a hook flags it stale, pre-commit 32 refuses it stale), and a new
+   phase script names its source on a `Template:` line, `Template: none (first use)` when nothing fits
+   (`tools/check_script_provenance.py`, pre-commit 33). Run files (launchers, namelists) are indexed the
+   same way in `use_cases/{Model}_{Case}/case_template/README.md`, and an adapted launcher names
+   `Template: case_template/<name>`. Measured: a README that indexed 3 of 29
+   templates, and a figure script written from scratch beside the templates that did the job.
 3. **Analysis is first-hand this cycle.** A diagnosis / hypothesis / refinement (phase 3/4/6) log must do
    *this* cycle's analysis and cite a first-hand artifact produced this session, not restate a prior log.
    In **Phase 3**, that first-hand artifact should include a **sim-vs-obs TIME-SERIES comparison** for the
@@ -484,7 +496,9 @@ cron that survives an hour of quiet is strictly better than a checklist nobody r
 
 **FIX IMMEDIATELY, inside the phase that found it, never queued and never surfaced as a blocker:** a parameter BOUND that the round's own data shows is wrong, a source DEFECT, a bug in A2MC's tooling, a broken run script, a mis-set walltime or queue. These are the phase's work. A round that discovers its own bound is degenerate and then stops to ask has converted a finding into a delay. **When monitoring reports failed cases, DIAGNOSE AND FIX — model bug, infrastructure failure, or a mistake in your own run scripts — before continuing** (`phase0-design` Step 4a).
 
-**QUEUE in `TODO.md`** only what is genuinely out of the round's scope: a NEW MECHANISM to design, or a SIGNIFICANT CHANGE TO MODEL STRUCTURE. Those are `model-evolution` work with their own discipline and their own gate.
+**QUEUE** only what is genuinely out of the round's scope: a NEW MECHANISM to design, or a SIGNIFICANT CHANGE TO MODEL STRUCTURE. Those are `model-evolution` work with their own discipline and their own gate.
+
+**WHERE an open item is queued depends on what it CHANGES, not on where it was found** (PI, 2026-10-16). Work that changes the framework, or a model for every case that runs it (a model-source fix, a knowledge-base rebuild, a backend change), goes in the project's own work list, outside any one case, naming the case that surfaced it. Anything that affects THIS case only (the next phase's action, a failure class accepted for the round, a queue or job note, a figure or scoring choice for this case) goes in the case's `workflow_state_offline_r{RR}.json` as an open thread (`st.add_thread`), where the session-start snapshot shows it. The test: would another case running the same model need it done? A case-only item written into the project-wide list is noise there and invisible to the case's own resume path.
 
 **And a queued item is still not a loop gate.** Ending a turn by surfacing one as though it blocks is the same premature stop as item 6, wearing politeness instead of a verdict.
 

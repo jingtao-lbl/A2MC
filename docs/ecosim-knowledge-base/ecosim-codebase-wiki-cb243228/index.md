@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/` + `drivers/` (full repo)
 **Last verified:** 2026-10-15
 ---
@@ -37,7 +37,7 @@ The rows below are the ones a calibration depends on. "Already wrong" means the 
 |---|---|---|---|
 | Plant parameter reader | The live reader is `ReadPlantTraitTable`, copied per PFT by `SetPlantTraits`; the per-PFT reader `ReadPlantTraitsNC` is never called, so a name it alone reads (`RSRA`) is never read | already wrong | [`io_and_forcing/input_readers.md`](io_and_forcing/input_readers.md) |
 | Root axial resistance | Derived from `ARSRA`, `RVSR` and `RRAD2M` in STARTQ: a per-vessel resistance for the primary and medium roots, divided by `NumVessels` for the fine roots; the stalk term uses `RSSA` | changed | [`plant_bgc/roots_and_uptake.md`](plant_bgc/roots_and_uptake.md) |
-| Plant mass balance | An hourly per-PFT abort on C, N or P, not a debug check; it now counts root layers to `MAX(MaxNumRootLays, MaxSoilLays4Root_pft)` | already wrong; changed | [`plant_bgc/roots_and_uptake.md`](plant_bgc/roots_and_uptake.md) |
+| Plant mass balance | An hourly per-PFT abort on C, N or P, not a debug check; it now counts root layers to `MAX(MaxNumRootLays, MaxSoilLays4Root_pft)`; patch `0340d71b` sums the two root STOCK terms over the fixed range `MAX(MaxNumRootLays, NK)` and keeps the moving range for respiration | already wrong; changed | [`plant_bgc/roots_and_uptake.md`](plant_bgc/roots_and_uptake.md) |
 | `MaxSoilLays4Root_pft` | With dynamic phenology, the deepest root-tip layer capped at `NK`; it equals `NK` by assignment only under `ldo_sp_mode` | already wrong | [`plant_bgc/roots_and_uptake.md`](plant_bgc/roots_and_uptake.md) |
 | `NPP_pft` | Carries gross fixation: respiration is still zero when it is formed; `ECO_NPP_col` is the net production | already wrong | [`plant_bgc/photosynthesis_and_respiration.md`](plant_bgc/photosynthesis_and_respiration.md) |
 | Photosynthetic capacity | `VCMX`, `VOMX` are multiplied by 1.92 and `ETMX` by 1.35 at read | already wrong | [`plant_bgc/photosynthesis_and_respiration.md`](plant_bgc/photosynthesis_and_respiration.md) |
@@ -61,3 +61,13 @@ Citations appear as `(path/from/repo/root.F90:NNN)` or `:NNN-MMM`, at commit `cb
 ## Keeping it true
 
 The three `reference/` maps are generated, not written: regenerate them with `python tools/ecosim_param_source_map.py --model-path $A2MC_MODEL_PATH --commit cb243228 --seed models/ecosim/curated_seed.yaml --markdown <this wiki>/reference/calibration_parameter_source_map.md --outputs-markdown <this wiki>/reference/curated_output_source_map.md --mechanisms-markdown <this wiki>/reference/curated_mechanism_index.md`. `tools/check_ecosim_tested_params_in_kb.py` fails when any of them is stale, when a tested parameter has no wiki row that cites a line together with its enclosing routine, or when a citation does not resolve at this commit; `tools/check_ecosim_seed_citations.py` holds the curated seed to the same standard.
+
+<!-- kb-patches:begin -->
+## Patches applied
+
+This knowledge base describes base commit `cb243228` with the fixes below patched in place by `tools/kb_patch.py`; citations in every page are at `0340d71b`. Citations a patch flagged were reviewed by hand before it was committed.
+
+| # | commit | on top of | summary | source files | citations re-anchored | flagged for review |
+|---|---|---|---|---|---|---|
+| 1 | `0340d71b` | `cb243228` | 0340d71b: the plant balance sums its bottom-layer root stocks over a fixed range, MAX(MaxNumRootLays, NK); balance-only, the R2c base binary | `f90src/Plant_bgc/PlantBalMod.F90` | 104 | 7 |
+<!-- kb-patches:end -->

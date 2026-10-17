@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Plant_bgc/{RootMod,UptakesMod,NutUptakeMod,PlantNonstElmDynMod,PlantBalMod}.F90`, root parts of `GrosubsMod`, `PlantPhenolMod`, `InitPlantMod`, `f90src/Ecosim_mods/StartqMod.F90`, `f90src/IOutils/PlantInfoMod.F90`, `f90src/APIs/PlantMod.F90`, `f90src/Modelconfig/EcoSIMCtrlMod.F90`
 **Last verified:** 2026-10-15
 ---
@@ -17,8 +17,8 @@ The plant model runs once per hour per column from `PlantModel` (`f90src/APIs/Pl
 ```
 PlantModel                                         APIs/PlantMod.F90:37
   PlantAPISend                                     :71   column -> plt_* copies
-  EnterPlantBalance                                :73   PlantBalMod.F90:668  (opens the C/N/P bracket, zeroes hourly fluxes)
-  PhenologyUpdate                                  :82
+  EnterPlantBalance                                :73   PlantBalMod.F90:686  (opens the C/N/P bracket, zeroes hourly fluxes)
+  PhenologyUpdate                                  :84
     StagePlantPhenology                            PlantPhenolMod.F90:91   MaxSoilLays4Root_pft = NMaxRootBotLayer_pft (:453)
     root_shoot_branching                           PlantPhenolMod.F90:95   adds structural root axes (PR gate, :374-379)
   RootUptakes                                      :85   UptakesMod.F90:51
@@ -40,8 +40,8 @@ PlantModel                                         APIs/PlantMod.F90:37
     RemoveBiomassByDisturbance, ResetDeadPlant, AccumulateStates, Live2DeadTransformation   GrosubsMod.F90:106-117
   EXTRACTs                                         :91
   ReSeedPlants                                     :93
-  ExitPlantBalance                                 :95   PlantBalMod.F90:715 -> CheckPlantBalanceZ (aborts on error)
-  PlantAPIRecv                                     :97
+  ExitPlantBalance                                 :95   PlantBalMod.F90:740 -> CheckPlantBalanceZ (aborts on error)
+  PlantAPIRecv                                     :99
 ```
 
 Two consequences of this order matter for interpretation. Uptake RATES are computed in `RootUptakes` but only CREDITED to root nonstructural pools at the start of `RootBGCModel` (`SummarizeRootSink`, `RootMod.F90:5692-5696`), after growth of the branches. And the shoot-root transfer runs after root growth (`GrosubsMod.F90:326-328`), so root growth in hour h uses the root pool left by the transfer of hour h-1. In prescribed-phenology mode (`ldo_sp_mode`) only `PlantUptakeAPISend`, `RootUptakes`, `extracts` and `PlantUPtakeAPIRecv` run (`PlantMod.F90:60-68`) and nutrient uptake is skipped (`UptakesMod.F90:224-229`); there is no root growth and no plant balance.
@@ -114,7 +114,7 @@ Fibrous primary roots (every PFT except woody vascular with `lcoarseroot`; `Grow
 
 Both elongation routines branch on `lcoarseroot .and. is_plant_woody_vascular(...)` (`:1889`, `:2807`), the same test `GrowRootMycoAxes` uses to choose between them (`:1641-1650`): `Grow1stRootElongZoneLayL` is reached only through `GrowFibrous1stRootAxes` (`:3190`), called when the test is false, and `StructuralRootElongation` only through `GrowWoodyStructuralRootAxes` (`:2220`), called when it is true. So the active-zone branch at `:1890` and the whole-axis branch at `:2810` never execute, and a fibrous axis always pays maintenance on its axis total, at the tip layer's temperature `TFN6_vr(L)` and, for bryophytes and drought-deciduous PFTs, the tip layer's root water potential. The zeroing at `:2376` acts on `StructuralRootThickening`'s own local copy: `GrowWoodyStructuralRootAxes` sets `LDoneTip = .true.` when it has just run `StructuralRootElongation` in that layer (`:2217-2222`) and passes the flag to the thickening call in the same layer (`:2226-2228`), so the woody tip layer is not charged twice; it does not touch the fibrous path. Inputs: `RmSpecPlant = 0.010` gC gN-1 h-1 (`f90src/Modelpars/PlantBGCPars.F90:228`, `InitVegPars`); `TFN6_vr(L) = calc_plant_maint_tempf(TKS_vr(L)+TempOffset_pft)` for `L=NU..MaxNumRootLays` (`GrosubsMod.F90:504-507`, `StagePlantForGrowth`; Arrhenius form on `photosynthesis_and_respiration.md` section 9); `fRootGrowPSISense = exp(0.10*max(PSIRoot,-5000))`, 0.05 for bryophytes (`RootMod.F90:250-254`, `RootBiochemistry`).
 
-On the fibrous path, maintenance first sets the growth budget, `RCO2PotGroth = RNonstCO2 - Rmaint1st_CO2` (`:1924-1925`); a negative remainder is added to `RootMaintDef_CO2_pvr` (`:1928`) and paid from structure by `RemobilizePrimeActRoots` (`:2028-2032`; section 5), which adds that payoff to the respiration total (`:4579-4580`). Below layer `MaxNumRootLays` the oxidation is capped at `Rmaint1st_CO2` (`:1913-1915`). The hour's total `RCO2T1st_Oltd = AMIN1(Rmaint1st_CO2,RNonstCO2_Oltd) + RGrowCO2_Oltd + RCO2Nonst4Nassim_Oltd` (`:1989-1990`) is debited from the tip layer's nonstructural C (`:1993`) and booked, negative, to `RootCO2Autor_pvr` over the young layers of the axis (`:2084-2087`, or the tip layer alone at `:2090-2093`). `RootCO2Autor_pvr` is summed into `RootAutoCO2_pft` (`PlantBalMod.F90:167-171`, `SumRootAR`) and `GrossResp_pft` (`:99`, `SumPlantBiome`), and added to `ECO_ER_col` and `Eco_AutoR_CumYr_col` (`PlantNonstElmDynMod.F90:442-443`, `ShootRootElmTransfer`), which is `ECO_RA_col` ([`photosynthesis_and_respiration.md`](photosynthesis_and_respiration.md) section 12).
+On the fibrous path, maintenance first sets the growth budget, `RCO2PotGroth = RNonstCO2 - Rmaint1st_CO2` (`:1924-1925`); a negative remainder is added to `RootMaintDef_CO2_pvr` (`:1928`) and paid from structure by `RemobilizePrimeActRoots` (`:2028-2032`; section 5), which adds that payoff to the respiration total (`:4579-4580`). Below layer `MaxNumRootLays` the oxidation is capped at `Rmaint1st_CO2` (`:1913-1915`). The hour's total `RCO2T1st_Oltd = AMIN1(Rmaint1st_CO2,RNonstCO2_Oltd) + RGrowCO2_Oltd + RCO2Nonst4Nassim_Oltd` (`:1989-1990`) is debited from the tip layer's nonstructural C (`:1993`) and booked, negative, to `RootCO2Autor_pvr` over the young layers of the axis (`:2084-2087`, or the tip layer alone at `:2090-2093`). `RootCO2Autor_pvr` is summed into `RootAutoCO2_pft` (`PlantBalMod.F90:169-173`, `SumRootAR`) and `GrossResp_pft` (`:101`, `SumPlantBiome`), and added to `ECO_ER_col` and `Eco_AutoR_CumYr_col` (`PlantNonstElmDynMod.F90:442-443`, `ShootRootElmTransfer`), which is `ECO_RA_col` ([`photosynthesis_and_respiration.md`](photosynthesis_and_respiration.md) section 12).
 
 Woody vascular PFTs with `lcoarseroot` add radial thickening (`StructuralRootThickening`, `RootMod.F90:2238`), whose N and P cost uses the live coarse-root ratios `rECLiveCRoot_pft` (CNLCRT, CPLCRT; `:2367`, `:2420-2430`), radius update from active-zone volume (`:2563-2564`), and a live-to-dead transfer once the radius passes `dmax=0.015` m (`CRootsLive2DeadTransformation`, `:3789-3807`), which returns the N and P difference between live and dead ratios (CNDCRT, CPDCRT) to the nonstructural pool (`:3798-3807`). The explicit lignification block of `StructuralRootThickening` (`:2467-2495`) is unreachable: `RootMycoNonstC4Lig_Oltd` is zeroed at `:2451` and only rescaled afterwards (`:2461`), consistent with the comment at `:2373`. `SecondaryGrowthZone` (`:3348`) has no live caller (its call is commented out at `:3218`).
 
@@ -259,32 +259,32 @@ Root traits are copied from the live table reader in `SetPlantTraits` (`PlantInf
 
 ## 13. Plant mass balance
 
-`EnterPlantBalance` (`PlantBalMod.F90:668`) snapshots, per PFT, `TotBegVegE = RootElms + ShootElms + SeasonalNonstElms + StandDeadStrutElms + ShootNoduleElms + nodulE + beyondE` (`:684-686`, `:698`) and zeroes hourly fluxes (`ZeroGrosub`, `:709`). `CheckPlantBalanceZ` (`:738`), run for every PFT every hour by `ExitPlantBalance` (`:731-733`), recomputes the same total (`:817-818`) and forms the residual
+`EnterPlantBalance` (`PlantBalMod.F90:686`) snapshots, per PFT, `TotBegVegE = RootElms + ShootElms + SeasonalNonstElms + StandDeadStrutElms + ShootNoduleElms + nodulE + beyondE` (`:709-711`, `:723`) and zeroes hourly fluxes (`ZeroGrosub`, `:734`). `CheckPlantBalanceZ` (`:763`), run for every PFT every hour by `ExitPlantBalance` (`:756-758`), recomputes the same total (`:842-843`) and forms the residual
 
 ```
-balE(NE) = TotEnd - TotBeg - NodulInfect - Soil2RootMycoExudE + Litrfall + DistLoss - SeedPlanted      :820-822
-balE(C) -= GrossCO2Fix + GrossResp + beyondAR                                                            :827
-balE(N) -= RootNutUptakeN + CanopyN2Fix + RootN2Fix + NH3Dep2Can                                         :828
-balE(P) -= RootNutUptakeP                                                                                :829
+balE(NE) = TotEnd - TotBeg - NodulInfect - Soil2RootMycoExudE + Litrfall + DistLoss - SeedPlanted      :845-847
+balE(C) -= GrossCO2Fix + GrossResp + beyondAR                                                            :852
+balE(N) -= RootNutUptakeN + CanopyN2Fix + RootN2Fix + NH3Dep2Can                                         :853
+balE(P) -= RootNutUptakeP                                                                                :854
 ```
 
-(Respiration is carried with a negative sign: `GrossResp_pft = RootAutoCO2_pft + CanopyGrosRCO2_pft`, `PlantBalMod.F90:99`, with root terms built by decrementing `RootCO2Autor_pvr`, e.g. `RootMod.F90:804`; subtracting it therefore adds the respiration loss back.) Tests and aborts:
+(Respiration is carried with a negative sign: `GrossResp_pft = RootAutoCO2_pft + CanopyGrosRCO2_pft`, `PlantBalMod.F90:101`, with root terms built by decrementing `RootCO2Autor_pvr`, e.g. `RootMod.F90:804`; subtracting it therefore adds the respiration loss back.) Tests and aborts:
 
 | element | abort condition | line |
 |---|---|---|
-| C | `abs(balE)>1e-6 .and. (lveg_too_small_for_relative_test .or. abs(err_rel)>1e-3)` | `:852`, `endrun` at `:878` |
+| C | `abs(balE)>1e-6 .and. (lveg_too_small_for_relative_test .or. abs(err_rel)>1e-3)` | `:852`, `endrun` at `:905` |
 | N | `abs(balE)>1e-6 .and. abs(err_rel)>1e-3` | `:888`, `:910` |
 | P | same, skipped on the planting or harvest day | `:919`, `:937-938` |
 
-with `err_rel = balE/max(TotEnd, TotBeg)` (`:832-836`). Diagnostics go to Fortran unit 888 (`:854-876`). The residual accumulates into `PlantElmBalCum_pft` (`:941-943`), output as `Plant_BALANCE_C_pft` (`f90src/IOutils/HistData/HistUpdatePlant.F90:89`).
+with `err_rel = balE/max(TotEnd, TotBeg)` (`:857-861`). Diagnostics go to Fortran unit 888 (`:879-967`). The residual accumulates into `PlantElmBalCum_pft` (`:972-974`), output as `Plant_BALANCE_C_pft` (`f90src/IOutils/HistData/HistUpdatePlant.F90:89`).
 
-The model's own root totals cover fewer layers than the root fluxes: `SumRootBiome` sums root pools over `L=1..MaxNumRootLays` (`PlantBalMod.F90:570-586`), `SumRootAR` sums root respiration over `1..NMaxRootBotLayer_pft` (`:167-171`), while uptake, exudation and the shoot-root transfer act on `NU..MaxSoilLays4Root_pft`. `SumRootPoolsForBalance` (`:617-665`, fix commit `9669b817`) closes that gap for the balance only, with `LBAL = MAX(MaxNumRootLays, MaxSoilLays4Root_pft)` (`:640`): `beyondE` adds root pools in layers `MaxNumRootLays+1..LBAL` (`:644-653`), `nodulE` replaces `RootNoduleElms_pft` with nodules over `NU..LBAL` (`:654-658`), and `beyondAR` adds root respiration over `NMaxRootBotLayer_pft+1..LBAL` (`:659-663`). `RootElms_pft` itself is unchanged, so `Root_C_pft` still omits layer `MaxNumRootLays+1` (section 14). `LBAL` is evaluated separately at entry and exit; because `MaxSoilLays4Root_pft` can change within the hour (section 2), a root pool left in layer `NK` is counted at both ends only while `MaxSoilLays4Root_pft` stays at `NK`.
+The model's own root totals cover fewer layers than the root fluxes: `SumRootBiome` sums root pools over `L=1..MaxNumRootLays` (`PlantBalMod.F90:572-588`), `SumRootAR` sums root respiration over `1..NMaxRootBotLayer_pft` (`:169-173`), while uptake, exudation and the shoot-root transfer act on `NU..MaxSoilLays4Root_pft`. `SumRootPoolsForBalance` (`:630-683`, fix commits `9669b817` and `0340d71b`) closes that gap for the balance only. The two STOCK terms are summed over a fixed range ending at `LSTK = MAX(MaxNumRootLays, NK)` (`:656`): `beyondE` adds root pools in layers `MaxNumRootLays+1..LSTK` (`:661-670`), and `nodulE` replaces `RootNoduleElms_pft` with nodules over `NU..LSTK` (`:671-676`). The FLUX term `beyondAR` adds root respiration over `NMaxRootBotLayer_pft+1..LBAL`, with `LBAL = MAX(MaxNumRootLays, MaxSoilLays4Root_pft)` (`:654`, `:677-681`), the range the hour's respiration loops ran over. `RootElms_pft` itself is unchanged, so `Root_C_pft` still omits layer `MaxNumRootLays+1` (section 14). Before `0340d71b` the stock terms also ended at `LBAL`, which moves within the hour (section 2), so a pool already in layer `NK` could enter the end-of-hour total and not the start-of-hour one, reading as a balance error for mass the model never created.
 
-`guard_floor_dying_stand` (default `.false.`, `EcoSIMCtrlMod.F90:41`, read through `/ecosim/`, `EcoSIMAPI.F90:182`) changes two things. In `CheckPlantBalanceZ` it sets `lveg_too_small_for_relative_test` when `max(TotEnd, TotBeg) < VEGC_BAL_FLOOR_dying = 1.0` gC (`PlantBalMod.F90:849-851`; floor at `EcoSIMCtrlMod.F90:61`); in that regime the C abort no longer needs `abs(err_rel)>1e-3` and fires on the absolute test alone (`:852`). Off, the condition reduces to the original `abs(balE)>1e-6 .and. abs(err_rel)>1e-3`. It does not touch the N or P tests. In `WithdrawNutBranchLeaves` it floors the C-pool denominator at `CPOOL_DIV_FLOOR_dying = 1e-12` (`PlantBranchMod.F90:308-312`; `EcoSIMCtrlMod.F90:53`). `conserve_root_clamp` (section 5) is the companion switch for the root clamp; both are read from the same namelist group and both default off, so a runfile without them reproduces the earlier behaviour.
+`guard_floor_dying_stand` (default `.false.`, `EcoSIMCtrlMod.F90:41`, read through `/ecosim/`, `EcoSIMAPI.F90:182`) changes two things. In `CheckPlantBalanceZ` it sets `lveg_too_small_for_relative_test` when `max(TotEnd, TotBeg) < VEGC_BAL_FLOOR_dying = 1.0` gC (`PlantBalMod.F90:874-876`; floor at `EcoSIMCtrlMod.F90:61`); in that regime the C abort no longer needs `abs(err_rel)>1e-3` and fires on the absolute test alone (`:877`). Off, the condition reduces to the original `abs(balE)>1e-6 .and. abs(err_rel)>1e-3`. It does not touch the N or P tests. In `WithdrawNutBranchLeaves` it floors the C-pool denominator at `CPOOL_DIV_FLOOR_dying = 1e-12` (`PlantBranchMod.F90:308-312`; `EcoSIMCtrlMod.F90:53`). `conserve_root_clamp` (section 5) is the companion switch for the root clamp; both are read from the same namelist group and both default off, so a runfile without them reproduces the earlier behaviour.
 
 ## 14. Producing equations owned here
 
-- `Root_C_pft = RootElms_pft(C)/AREA` (`HistUpdatePlant.F90:203`), with `RootElms_pft = massr1st + massr2nd + nonst` summed over `L=1..MaxNumRootLays` and all root types (`PlantBalMod.F90:567-586`, `SumRootBiome`); primary includes medium roots (`:576`, `:579`). Nodules are excluded (`:591-594`).
+- `Root_C_pft = RootElms_pft(C)/AREA` (`HistUpdatePlant.F90:203`), with `RootElms_pft = massr1st + massr2nd + nonst` summed over `L=1..MaxNumRootLays` and all root types (`PlantBalMod.F90:569-588`, `SumRootBiome`); primary includes medium roots (`:578`, `:581`). Nodules are excluded (`:593-596`).
 - `ECO_ET_col`: see section 8.
 
 ## 15. Which root levers are live, by branch

@@ -27,8 +27,9 @@ redesign/replay. The underlying scripts are the same the online agent drives.
 > Match the discipline (verify param existence, don't clobber the committed matrix, validate before
 > submit), then exercise judgment about *what* to sample.
 
-**Deliverable:** simulation jobs queued (ADSP→RGSP→TRANS dependency chains), `submission_manifest.json`
-written, monitoring armed.
+**Deliverable:** simulation jobs queued (ADSP→RGSP→TRANS dependency chains on the FATES path, which
+also writes `submission_manifest.json`), monitoring armed, and **the ensemble's run record in
+`phase_results/{stem}/run_tracking/`** (Step 3), on every model path.
 
 ## Opening a NEW round (redesign, Phase 6 → 0, `calibration_round++`)
 
@@ -159,7 +160,7 @@ Arriving here from Phase 6 with the middle loop exhausted (or all candidates pin
 >   (input↔binary). THEN submit — each case is a SERIAL standalone run (EcoSIM: `srun -n 1`, OMP=1), so
 >   parallelism is ACROSS cases: prefer a **SLURM job array** over 821 individual `sbatch`. The site ships one
 >   at `use_cases/{Model}_{Case}/case_template/submit_ensemble_array.sh` —
->   `A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem folder" sbatch …/submit_ensemble_array.sh`
+>   `A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem's run_tracking/" sbatch …/submit_ensemble_array.sh`
 >   (`--array=0-N%<conc>`; `--array=0` for the V0 baseline first; the declaration is what the
 >   agent's sbatch hook asks of a job the run ledger does not record, Step 3). NO CIME, NO ADSP→RGSP→TRANS chain, NO
 >   shared `bld/`. (`backend.submit_ensemble` — loop-`sbatch` per case — is the fallback; the array is
@@ -331,9 +332,9 @@ It (3a) writes per-case scripts via `tools/create_case.sh --write-script`, (3b) 
 > applies green before `backend.submit_ensemble`.
 
 > **Pilots, gates, probes and reruns go in the RUN LEDGER; the full ensemble does not.** A Phase-0
-> round's thousands of config-generated cases have their full record in the round's Phase-0 stem
-> folder, so they are neither tabulated nor given a ledger row (PI); submit the ensemble with
-> `A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem folder"` (its own V0
+> round's thousands of config-generated cases have their full record in the `run_tracking/`
+> subfolder of the round's Phase-0 stem (below), so they are neither tabulated nor given a ledger row (PI); submit the ensemble with
+> `A2MC_UNTRACKED_JOB="full Phase-0 ensemble; its record is the phase-0 stem's run_tracking/"` (its own V0
 > case, `--array=0`, is part of it). Everything submitted AROUND it is a test someone designed: the
 > viability gate, a rerun of its failures, a debug-binary probe, a V0-at-equality arm for a model change.
 > Submit those through `tools/submit_run.py`, which registers each in
@@ -342,6 +343,27 @@ It (3a) writes per-case scripts via `tools/create_case.sh --write-script`, (3b) 
 > `--field case_prefix=...` / `case_range=LO-HI`). A bare `sbatch` is refused by the agent's
 > PreToolUse hook, which points there. When each job ends, `record_run_status.py settle` records the
 > model's verdict, and `SIMULATIONS_r<NN>.md` rewrites itself on every write.
+
+> **The full ensemble's record is a MANDATORY `run_tracking/` subfolder of this phase's stem.** The
+> ledger exempts the ensemble because its record lives here, so this folder is the only place it
+> lives; the run root is scratch and gets cleaned. It holds, for every submission made from the stem:
+>
+> | file | what it records |
+> |---|---|
+> | `SUBMISSION_r{RR}.md` | one row per submission (job id, run root, launcher, worklist, ledger row or "none: full ensemble", outcome), the command-line overrides, the environment (config sourced, binary path and hash) |
+> | `submit_scripts/` | the launcher as submitted, and each single run's `submit.sh` and input files; for an array, confirm it matches what the scheduler holds (`scontrol write batch_script <jobid>`) |
+> | `worklists/` | each worklist, or the command that regenerates one too large to copy |
+> | the run's own start lines | where the launcher prints them, e.g. each node's binary hash |
+> | `state_*.json`, `*.digest.log` | each watcher's last state and a de-duplicated digest of its log |
+>
+> **The launcher goes into `run_tracking/submit_scripts/` BEFORE the `sbatch`, and each gate, probe or rerun's script and namelist into the stem's `submit_scripts/` (or `run_tracking/submit_scripts/`) before its `tools/submit_run.py`.** **A PreToolUse gate now holds a submission until this is done** (`.claude/hooks/require-run-skill-before-submit.py`): a `tools/submit_run.py` or full-ensemble `sbatch` for a case is refused unless the model's run skill (`ecosim-run-workflow`, `pflotran-run-workflow`, `ats-run-workflow`, `offline-testing-workflow`) was invoked and the case's `case_template/README.md` was read since the session's newest compaction, and the submitted script and every namelist or deck in the run directory already have byte-identical copies in the stem's `submit_scripts/` (or `run_tracking/submit_scripts/`). `A2MC_RUN_GATE_OVERRIDE="<why>"` on the command lets a case with no run skill or template through.
+>
+> Produce it with the case's archive template (`use_cases/{Model}_{Case}/scripts/archive_run_tracking.py`
+> where the case has one; otherwise write it in the stem and template it on second use), run it right
+> after the submission (the launcher is already there, as above), and **re-run it before the hand-off**
+> so the watcher states are final.
+> `tools/check_phase0_run_tracking.py` (pre-commit 31, blocking) refuses case work once the round's
+> state has moved past `design` without it. Testing runs are unchanged: their record is the ledger.
 
 > **Footgun — build-case reuse.** All cases share the build case's `bld/`. If the build case fails,
 > every dependent case is orphaned — confirm it completed before the batch. Restart it separately,
@@ -368,12 +390,14 @@ restart script). Infrastructure failures → `restart-failed-jobs`; model failur
 |---|---|---|
 | **your own run scripts / config** | a failure that is not about the science at all — a guard that misfires, a walltime that never gets scheduled, a worklist that empties early | **fix and resubmit.** This is the category most often missed, because a broken script looks like a broken model |
 | **infrastructure** | NODE_FAIL, PartitionDown, SIGKILL clusters, out-of-memory | `restart-failed-jobs` (CIME) / `restart-adapter-ensemble` (non-CIME) |
-| **the model** | the run reaches the model and the model cannot survive the parameter set | **a RESULT, not an error** — characterise it (which parameters, what threshold, what mechanism), then decide whether a BOUND is wrong. If it is, cut it now: an in-round bound correction is the phase's own work, not a `TODO.md` item ([`calibration-discipline`](../calibration-discipline/SKILL.md), "FIX IT NOW vs QUEUE IT") |
+| **the model** | the run reaches the model and the model cannot survive the parameter set | **a RESULT, not an error** — characterise it (which parameters, what threshold, what mechanism), then decide whether a BOUND is wrong. If it is, cut it now: an in-round bound correction is the phase's own work, not a `TODO.md` item ([`calibration-discipline`](../calibration-discipline/SKILL.md), "FIX IT NOW vs QUEUE IT"). **If no bound explains it, it is a model DEFECT: invoke `model-evolution`** (below) |
 
 **Measured on EcoSIM_Lusignan R1, 2026-09-05, where all three appeared in one phase:**
 
 - **Own script, twice.** A `strings "$EXE" | grep -q <symbol>` guard under `set -o pipefail` returned 141 from SIGPIPE **even though the match succeeded**, killing a job six seconds in; and `srun` inside a `while read` loop **consumed the worklist through stdin**, so every worker ran exactly one case (128 workers, 128 claims, 128 of 256 cases never claimed). Neither is a model failure and neither would ever have been fixed by a restart skill. Both were found by reading the log of a *reported failure* rather than counting it.
 - **Model.** 26 of 128 cases drove soil organic matter negative and **exited `rc=0`**, so `sacct` recorded them COMPLETED. Diagnosing rather than tallying showed all 26 had `OMGR >= 0.68`, zero of 102 successes did, and time-to-failure was monotone in `OMGR` — a first-order rate whose ×4 upper bound emptied its pool in one hourly step. The bound was cut in-round.
+
+**Bound or defect: rule out the bound FIRST, then go to `model-evolution`.** An ensemble is the widest sweep of the parameter space the model will see, so Phase 0 is where its latent bugs surface; a failure is a bound problem only if the evidence ties it to the sampled values. Compare the failing cases' parameter values with the successes': a bound is implicated when the failures share an extreme of one or a few parameters, or time-to-failure is monotone in one (the `OMGR` case below). It is a **model defect** when the failing cases sit inside the ranges the successes cover, or the source shows a code path that any parameter set can reach (a loop range, a reset, a balance check), so narrowing a bound would only make it rarer. Then **invoke `model-evolution`**, in its order: an audit record in `use_cases/{Model}_{Case}/memory/model_evolution/` (knowledge base first, then source), a default-off fix with its V0 at equality, and the knowledge base brought along when the fix lands. The round keeps running on its own binary meanwhile, and its failed cases stay recorded as failures. Example: two cases of one ensemble aborted a nitrogen balance at the hour a dead stand was replanted, with no sampled value at an extreme; the cause was removal loops that stop one root layer short of where roots grow (`use_cases/EcoSIM_Lusignan/memory/model_evolution/20261016a_model_evolution_r02_dead_root_litterfall_audit.md`).
 
 **A `rc=0` failure is the reason the completion test must be the model's own terminal artifact.** If the scheduler's exit status were trusted here, 26 truncated runs would have entered screening as complete. Gate on the artifact (a final restart, a mass tape), never on `sacct`.
 
@@ -409,7 +433,8 @@ manifest hash, plus Step 0.5 via `parameter_set_changes=` (the redesign rational
 second place). **Offline logging convention:** set **`A2MC_AGENT_MODE=offline`**
 so the log lands FLAT at `use_cases/{Model}_{Case}/memory/logs/{YYYYMMDDx}_phase0_design_r{RR}_{descriptor}.md`
 (docs/31) — NOT the online `{session_id}/phase0_design/` nested path. **Hand off** to `phase1-exploration`
-once TRANS (or the adapter's single run) is >95% complete. **Advance the driver state:**
+once TRANS (or the adapter's single run) is >95% complete, after re-running the archive so
+`run_tracking/` is final (Step 3). **Advance the driver state:**
 `st.set_position(current_phase="exploration")`; `st.save()` (`tools/workflow_state_offline.py` — the offline
 analog of the online phase transition, so `resolve_next_action` picks up `exploration` next). (Arrived here
 from Phase 6 with all candidates pinned at bounds? That's the 6→0 redesign — start a new
@@ -479,9 +504,10 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
                                       caption, data and notes -- this is the log's evidence
 ```
 
-1. **Look in `use_cases/{Model}_{Case}/scripts/` first.** If a template covers what this phase needs, copy it into this phase's `phase_results/{stem}/` and adapt it there. Do not run it from `scripts/` and do not edit the template to suit one phase: the template is the shared shape, the copy is this phase's instrument.
+1. **Read the case's template index first: `use_cases/{Model}_{Case}/scripts/README.md`.** Read it; listing the folder is not enough. The index is generated from each template's own docstring (`tools/case_script_index.py`), so it lists every template, and the edit-time hook puts the same list in front of you when you create a new script in a phase folder. Run files (launchers, namelists) have their own generated index in `use_cases/{Model}_{Case}/case_template/README.md`. If a template covers what this phase needs, copy it into this phase's `phase_results/{stem}/` and adapt it there. Do not run it from `scripts/` and do not edit the template to suit one phase: the template is the shared shape, the copy is this phase's instrument.
 2. **If there is NO template, write one from scratch** in `phase_results/{stem}/`. That is the correct first-use state and nothing is wrong with it.
-3. **On a script's SECOND use, promote it to `scripts/` as the template**, then copy it back into the new phase's folder and adapt. Second use is the trigger, not third.
+   **Either way, the new script names its source** on one line of its docstring (a shell script's header comment): `Template: scripts/<name>` for an adapted copy (`Template: case_template/<name>` for an adapted launcher or run file), `Template: none (first use)` when nothing fits. An unedited copy needs no line, since it is byte-identical to its template. `tools/check_script_provenance.py` (pre-commit 33) refuses a new phase script without the line, and refuses `none` beside a template of the same name.
+3. **On a script's SECOND use, promote it to `scripts/` as the template**, then copy it back into the new phase's folder and adapt. Second use is the trigger, not third. Drop the `Template:` line from the promoted file and regenerate the index (`python3 tools/case_script_index.py --case use_cases/{Model}_{Case} --write`); a hook flags a template the index does not list, and pre-commit 32 refuses a `scripts/` change while the index is stale.
 
 **This does not conflict with "one canonical script per figure, never two copies."** The canonical *script* always stays with its figures; the canonical script *TEMPLATE* stays in `scripts/`. Different artifacts, different jobs.
 
@@ -495,6 +521,7 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
   and obvious in the picture. Also fixes fonts/units/semantic colours, and the A2MC ensemble
   figure template for biomass-vs-target time series.
 - **Monitoring the in-flight ensemble** → `arm-hpc-monitoring`. **Failed jobs** → `restart-failed-jobs`.
+- **A failure no parameter bound explains** (Step 4a) → **`model-evolution`**: audit record, default-off fix, V0, then the knowledge base brought along.
 - **Rebuilding a new site/model's knowledge base first** → `build-rag-from-scratch`.
 - **Next:** `phase1-exploration` (extract Y matrix + Morris sensitivity).
 

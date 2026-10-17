@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/APIs/` (13 files), `f90src/APIData/` (14 files); callers in `drivers/ecosim/EcoSIMAPI.F90`, `f90src/Modelforc/Hour1Mod.F90`, `f90src/Main/InitEcoSIM.F90`, `f90src/Ecosim_mods/InitAllocMod.F90`
 **Last verified:** 2026-10-15
 ---

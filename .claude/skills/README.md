@@ -93,7 +93,7 @@ docs that an adapter model could run them.
 | [ats-run-workflow](ats-run-workflow/SKILL.md) | any | Run + test ATS (XML-deck): a nested Teuchos ParameterList addressed by path, targets injected into the deck's `observations` block; states which half of the adapter is still v0.1. |
 | [offline-testing-workflow](offline-testing-workflow/SKILL.md) | FATES | Design + launch + analyze an offline HPC parameter-sweep experiment on a Morris base case. |
 | [add-fates-parameter](add-fates-parameter/SKILL.md) | FATES | Model-evolution: wire a new FATES parameter into EDParamsMod + the parameter file (experiment branch, default-off, V0-at-equality). |
-| [model-evolution](model-evolution/SKILL.md) | any | Model-evolution umbrella: the workflow for evolving ANY onboarded model's source — ELM/FATES, EcoSIM, PFLOTRAN, ATS (branch, preserve the baseline binary, default-off, paired verify, fork-only push). |
+| [model-evolution](model-evolution/SKILL.md) | any | Model-evolution umbrella: the workflow for evolving ANY onboarded model's source — ELM/FATES, EcoSIM, PFLOTRAN, ATS (branch, preserve the baseline binary, default-off, paired verify, fork-only push, then bring the knowledge base along). |
 | [phase0-design](phase0-design/SKILL.md) | any | Offline Phase 0 — design/sample/submit the ensemble (analog of `_run_design`). |
 | [phase1-exploration](phase1-exploration/SKILL.md) | any | Offline Phase 1 — extract Y matrix + Morris sensitivity. |
 | [phase2-screening](phase2-screening/SKILL.md) | any | Offline Phase 2 — rank ensemble vs targets; best/most-targets cases. |

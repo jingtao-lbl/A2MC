@@ -39,12 +39,28 @@ from tools.kb_profile import kb_commit  # noqa: E402
 D3 = "https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"
 
 
-def load_graph(profile: str):
-    g = json.loads((REPO / "rag/graphs" / f"{profile}.json").read_text())
+def graph_from_json(g: dict):
+    """(nodes by id, links) from a profile's node-link graph JSON, as every page draws them."""
     nodes = {n["id"]: n for n in g["nodes"]}
     links = [{**{k: v for k, v in e.items() if k not in ("source", "target")},
               "source": e["source"], "target": e["target"]} for e in g["links"]]
     return nodes, links
+
+
+def load_graph(profile: str):
+    return graph_from_json(json.loads((REPO / "rag/graphs" / f"{profile}.json").read_text()))
+
+
+def page_data(nodes, links, keep):
+    """The nodes and links a page embeds for the node ids in `keep`, and the graph's isolated-node count.
+
+    `tools/check_kg_html_current.py` compares a committed page against this, so the two cannot drift.
+    """
+    ns = [{**{k: v for k, v in nodes[i].items() if k != "id"}, "id": i,
+           "label": nodes[i].get("name") or i.split(":", 1)[1]} for i in sorted(keep)]  # sorted: a set's order varies per run
+    ls = [l for l in links if l["source"] in keep and l["target"] in keep]
+    n_iso = sum(1 for i in nodes if i not in {l["source"] for l in links} | {l["target"] for l in links})
+    return ns, ls, n_iso
 
 
 def param_names(paths):
@@ -276,10 +292,7 @@ render();
 
 
 def page(profile, nodes, links, keep, tested, targets, case, heading, subtitle, table_html, hide):
-    ns = [{**{k: v for k, v in nodes[i].items() if k != "id"}, "id": i,
-           "label": nodes[i].get("name") or i.split(":", 1)[1]} for i in keep]
-    ls = [l for l in links if l["source"] in keep and l["target"] in keep]
-    n_iso = sum(1 for i in nodes if i not in {l["source"] for l in links} | {l["target"] for l in links})
+    ns, ls, n_iso = page_data(nodes, links, keep)
     stats = (f"Profile {profile}: {len(nodes)} nodes, {len(links)} edges in the graph; this page draws "
              f"{len(ns)} nodes and {len(ls)} edges. {n_iso} nodes have no edge at all and are not drawn.")
     data = {"nodes": ns, "links": ls, "tested": tested, "targets": targets, "stats": stats,

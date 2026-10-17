@@ -289,7 +289,8 @@ def main() -> int:
     ap.add_argument("--params", nargs="*", default=[])
     ap.add_argument("--mechanisms", nargs="*", default=[])
     ap.add_argument("--outputs", nargs="*", default=[])
-    ap.add_argument("--case", help="use_cases/<case>, for the case-level adaptive memory")
+    ap.add_argument("--case", help="the case, e.g. EcoSIM_Lusignan, for the case-level adaptive memory "
+                                   "(a use_cases/<case> path is accepted too)")
     ap.add_argument("--hops", type=int, default=2, help="max edges on a parameter -> output path (default 2)")
     ap.add_argument("--rag-k", type=int, default=5, help="vector hits to keep (0 skips vector search)")
     ap.add_argument("--per-name", type=int, default=6, help="document lines kept per name (default 6)")
@@ -298,6 +299,14 @@ def main() -> int:
     if not (a.params or a.mechanisms or a.outputs):
         print("ERROR: name at least one --params, --mechanisms or --outputs", file=sys.stderr)
         return 2
+    if a.case:
+        # Accept the path form as well as the bare name, and refuse a case that is not there: a
+        # wrong value used to resolve to use_cases/use_cases/<case> and report the case layer as
+        # "store absent", which reads as an empty store rather than as a typo.
+        a.case = Path(a.case.rstrip("/")).name if "use_cases" in Path(a.case).parts else a.case.strip("/")
+        if not (REPO / "use_cases" / a.case).is_dir():
+            print(f"ERROR: --case {a.case}: there is no use_cases/{a.case}/ in this tree", file=sys.stderr)
+            return 2
 
     kp = _load("_kb_profile", "tools/kb_profile.py")
     reg = kp.registry()

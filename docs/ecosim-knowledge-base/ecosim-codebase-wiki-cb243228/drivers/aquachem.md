@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `drivers/aquachem/` (`aquachem.F90`, `AquachemMod.F90`, `AquaSaltChemMod.F90`), `drivers/boxshared/ChemIDMod.F90`
 **Last verified:** 2026-10-15
 ---

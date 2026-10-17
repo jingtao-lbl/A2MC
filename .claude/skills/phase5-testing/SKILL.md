@@ -131,9 +131,10 @@ contains no observations, while still producing plausible-looking numbers.
    `monitor_experiments.py`.
 2. **Monitor** the in-flight experiment → `arm-hpc-monitoring`. **Failed jobs** → distinguish
    infrastructure (restart-eligible) from model failures via `restart-failed-jobs`.
-2b. **ARCHIVE THIS PHASE'S JOB SCRIPTS into `phase_results/{stem}/submit_scripts/`** — one per case, plus one
-   representative `runfile.nml`. **Phase 0 is deliberately EXEMPT.** Its job scripts are generated from the machine + round config by the materializer, and an ensemble is thousands of cases (one R3 round is 59,393), so archiving them would be both enormous and redundant: the config plus the generator already reproduces them exactly. Phase 5 is different because its handful of variants are hand-designed and hand-repointed, so nothing else records what actually ran. **Copy, never move:** the scheduler reads the operative copy from the run
-   directory. Do it as soon as the scripts are final, not at Phase 6.
+2b. **ARCHIVE THIS PHASE'S JOB SCRIPTS into `phase_results/{stem}/submit_scripts/`** — each case's submit
+   script and its own namelist or input deck, since variants can differ in either. **Phase 0 is deliberately EXEMPT.** Its job scripts are generated from the machine + round config by the materializer, and an ensemble is thousands of cases (one R3 round is 59,393), so archiving them would be both enormous and redundant: the config plus the generator already reproduces them exactly. The exemption covers the PER-CASE scripts only: the ensemble's launcher, its command line and its worklist go in the Phase-0 stem's `run_tracking/` (`phase0-design` Step 3), because a command-line override is reproduced by no config. Phase 5 is different because its handful of variants are hand-designed and hand-repointed, so nothing else records what actually ran. **Copy, never move:** the scheduler reads the operative copy from the run
+   directory. Do it BEFORE submitting, as soon as the scripts are final, not at Phase 6.
+   **A PreToolUse gate now holds a submission until this is done** (`.claude/hooks/require-run-skill-before-submit.py`): a `tools/submit_run.py` or full-ensemble `sbatch` for a case is refused unless the model's run skill (`ecosim-run-workflow`, `pflotran-run-workflow`, `ats-run-workflow`, `offline-testing-workflow`) was invoked and the case's `case_template/README.md` was read since the session's newest compaction, and the submitted script and every namelist or deck in the run directory already have byte-identical copies in the stem's `submit_scripts/` (or `run_tracking/submit_scripts/`). `A2MC_RUN_GATE_OVERRIDE="<why>"` on the command lets a case with no run skill or template through.
    **Why this is a step and not housekeeping.** The run directory is untracked scratch that gets cleaned,
    and the submit script is the only record of **which binary this run was bound to** plus its run-time
    hash assertion. A log stating "V0 gate PASS" with no archived submit script cannot show which
@@ -221,8 +222,8 @@ contains no observations, while still producing plausible-looking numbers.
 
    **This is worth running for TESTING runs and not for a large Phase-0 ensemble** (PI): the value
    is a readable table of a handful of hand-designed variants, and 8192 config-generated cases are
-   already reproducible from the config plus the generator, with their full record in the round's
-   Phase-0 stem folder -- the same reasoning that exempts Phase 0 from the submit-script archive in
+   already reproducible from the config plus the generator, with their full record in the `run_tracking/`
+   subfolder of the round's Phase-0 stem (`phase0-design` Step 3) -- the same reasoning that exempts Phase 0 from the submit-script archive in
    step 2b. Such an ensemble gets no ledger row; its `sbatch` carries `A2MC_UNTRACKED_JOB`.
 
    **This is a RECORD, so it is UNGATED and it is not knowledge.** It goes nowhere near
@@ -268,9 +269,10 @@ memory/phase_results/{stem}/          the canonical SCRIPT for this figure, besi
                                       caption, data and notes -- this is the log's evidence
 ```
 
-1. **Look in `use_cases/{Model}_{Case}/scripts/` first.** If a template covers what this phase needs, copy it into this phase's `phase_results/{stem}/` and adapt it there. Do not run it from `scripts/` and do not edit the template to suit one phase: the template is the shared shape, the copy is this phase's instrument.
+1. **Read the case's template index first: `use_cases/{Model}_{Case}/scripts/README.md`.** Read it; listing the folder is not enough. The index is generated from each template's own docstring (`tools/case_script_index.py`), so it lists every template, and the edit-time hook puts the same list in front of you when you create a new script in a phase folder. Run files (launchers, namelists) have their own generated index in `use_cases/{Model}_{Case}/case_template/README.md`. If a template covers what this phase needs, copy it into this phase's `phase_results/{stem}/` and adapt it there. Do not run it from `scripts/` and do not edit the template to suit one phase: the template is the shared shape, the copy is this phase's instrument.
 2. **If there is NO template, write one from scratch** in `phase_results/{stem}/`. That is the correct first-use state and nothing is wrong with it.
-3. **On a script's SECOND use, promote it to `scripts/` as the template**, then copy it back into the new phase's folder and adapt. Second use is the trigger, not third.
+   **Either way, the new script names its source** on one line of its docstring (a shell script's header comment): `Template: scripts/<name>` for an adapted copy (`Template: case_template/<name>` for an adapted launcher or run file), `Template: none (first use)` when nothing fits. An unedited copy needs no line, since it is byte-identical to its template. `tools/check_script_provenance.py` (pre-commit 33) refuses a new phase script without the line, and refuses `none` beside a template of the same name.
+3. **On a script's SECOND use, promote it to `scripts/` as the template**, then copy it back into the new phase's folder and adapt. Second use is the trigger, not third. Drop the `Template:` line from the promoted file and regenerate the index (`python3 tools/case_script_index.py --case use_cases/{Model}_{Case} --write`); a hook flags a template the index does not list, and pre-commit 32 refuses a `scripts/` change while the index is stale.
 
 **This does not conflict with "one canonical script per figure, never two copies."** The canonical *script* always stays with its figures; the canonical script *TEMPLATE* stays in `scripts/`. Different artifacts, different jobs.
 

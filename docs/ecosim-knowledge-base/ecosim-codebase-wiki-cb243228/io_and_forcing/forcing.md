@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Modelforc/{YearMod,DayMod,Hour1Mod,WthrMod,DepositionMod}.F90`, climate and GHG readers in `f90src/IOutils/{ClimReadMod,readsmod}.F90`, time loop in `drivers/ecosim/{EcoSIMAPI,ecosim}.F90`
 **Last verified:** 2026-10-15
 ---

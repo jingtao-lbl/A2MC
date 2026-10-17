@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Disturbances/`, the plant-side disturbance modules `f90src/Plant_bgc/PlantDisturb*Mod.F90`, the management readers in `f90src/IOutils/{PlantInfoMod,ReadManagementMod}.F90`, and tillage mixing in `f90src/Balances/TillageMixMod.F90`
 **Last verified:** 2026-10-15
 ---

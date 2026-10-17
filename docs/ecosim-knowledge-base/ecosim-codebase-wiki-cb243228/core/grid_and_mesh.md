@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Mesh/{GridConsts,GridMod}.F90`, the vertical layer indices in `f90src/Ecosim_datatype/GridDataType.F90` and `f90src/IOutils/readimod.F90`, and their plant-side mirrors in `f90src/APIData/PlantSiteAPIData.F90`
 **Last verified:** 2026-10-15
 ---
@@ -75,28 +75,51 @@ The plant code sees the column through `plt_site` (`f90src/APIData/PlantSiteAPID
 |---|---|
 | `GridDataType.F90:24` | "additional soil lower boundary layers" |
 | `PlantSiteAPIData.F90:40` | "current hydrologically active layer" |
-| `PlantAPI4Uptake.F90:74` and `f90src/Plant_bgc/PlantBalMod.F90:186` | "total layers with roots, can be set to NL_col" |
+| `PlantAPI4Uptake.F90:74` and `f90src/Plant_bgc/PlantBalMod.F90:188` | "total layers with roots, can be set to NL_col" |
 | `f90src/Plant_bgc/RootMod.F90:5444` | "current soil root bottom layer number" |
 
 None matches the code exactly. What the code does: `NK = NJ + 1`, constant, and it bounds the layers in which roots may exist and take up water and nutrients.
 
 ### 2.5 Which loops use which bound
 
+Grouped by role. Every row was read at `0340d71b`.
+
 | routine | file:line | loop | consequence |
 |---|---|---|---|
+| **Growth, uptake and senescence** | | | |
 | `RootMycoO2NutrientUptake` | `f90src/Plant_bgc/NutUptakeMod.F90:216` | `L=NU,NK` | nutrient and O2 uptake include layer `NK` |
 | `GetInLayerRootDepth` | `RootMod.F90:5455-5459` | `L=1,NK` | a primary-root tip can enter layer `NK`; `MaxSoilLays4Root_pft` is raised to the tip layer |
 | `StagePlantPhenology` | `f90src/Plant_bgc/PlantPhenolMod.F90:453` | | `MaxSoilLays4Root_pft = NMaxRootBotLayer_pft` each hour (dynamic path) |
+| `RootBiochemistry` | `f90src/Plant_bgc/RootMod.F90:228`, `:288` | `L=NU,MaxNumRootLays+1` | root growth, senescence and geometry run in layer `NK`. `Grow2ndRootAxes` calls `DiagSenes2ndRootAxes` with the layer (`:780`), which writes root litter to `LitrfallElms_pvr` at that layer (`:1008-1009`), so senescence litter can land in layer `NK` |
+| `GetPlantRoot1stDepz` | `RootMod.F90:1722` | `L=NU,MaxNumRootLays+1` | |
 | `TotalGasandSoluteUptake` | `f90src/Plant_bgc/ExtractsMod.F90:224` | `L=NU,MIN(MaxNumRootLays+1,NK)` | column uptake totals include `NK` |
 | `StagePlantForGrowth` | `f90src/Plant_bgc/GrosubsMod.F90:421`, `:504` | `L=1,NK`; `L=NU,MaxNumRootLays` | mixed within one routine |
-| `LiterFallRootShootStorage` | `f90src/Plant_bgc/LitterFallMod.F90:358` | `L=NU,MaxNumRootLays` | root litterfall stops at `NJ` |
+| `HandleBareSoil`, `SetCanopyGrowthFuncs` | `f90src/Plant_bgc/UptakesMod.F90:1440`, `:1622` | `L=NU,MaxNumRootLays` | |
+| `RootNodulBiochemistry` | `f90src/Plant_bgc/NoduleBGCMod.F90:513` | `L=NU,MaxNumRootLays` | root-nodule biochemistry stops at `NJ` |
+| **Removal of root mass** | | | |
+| `LiterFallDeadRoots` | `f90src/Plant_bgc/LitterFallMod.F90:505`, `:518`, `:555`, `:581`, `:598`, `:627` | `L=NU,MaxNumRootLays` | a dead stand's root pools go to litter only to `NJ` |
+| `LiterFallRootShootStorage` | `LitterFallMod.F90:358` | `L=NU,MaxNumRootLays` | a dead stand's root storage goes to litter only to `NJ` |
+| `ResetBranchRootStates` | `LitterFallMod.F90:912` | `L=NU,MaxNumRootLays` | a dead plant's root states are zeroed only to `NJ` |
+| `RemoveRootsByTillage` | `f90src/Plant_bgc/PlantDisturbByTillageMod.F90:437` | `L=NU,MaxNumRootLays` | tillage root removal stops at `NJ` |
 | `RemoveBiomByHarvest` | `f90src/Plant_bgc/PlantDisturbsMod.F90:942` | `L=NU,MaxNumRootLays` | thinning and harvest root removal stop at `NJ` |
 | `RemoveDeadAnnual` | `PlantDisturbsMod.F90:189` | `L=NU,MaxNumRootLays` | annual death sends roots to litter only to `NJ` |
-| `SumLitfallBlg` | `PlantBalMod.F90:141` | `L=1,MaxNumRootLays` | |
-| `SumRootPoolsForBalance` | `PlantBalMod.F90:640-663` | `L=MaxNumRootLays+1,LBAL`, `LBAL = MAX(MaxNumRootLays, MaxSoilLays4Root_pft)` | the plant balance counts root pools below `NJ` (fix commit `9669b817`) |
+| `TerminateRoots4Annuals` | `PlantDisturbsMod.F90:2177` | `L=NU,MaxNumRootLays` | annual termination removes roots only to `NJ` |
+| **Litter bookkeeping** | | | |
+| `ZeroGrosub` | `f90src/Plant_bgc/PlantBalMod.F90:484` | `L=0,MaxNumRootLays` | the hourly reset of the plant litter array `LitrfallElms_pvr` stops at `NJ` |
+| `Live2DeadTransformation` | `f90src/Plant_bgc/GrosubsMod.F90:238` | `L=0,MaxNumRootLays` | `LitrfallElms_pft`, the litter term of the plant balance (`PlantBalMod.F90:847`), stops at `NJ` |
+| `SumLitfallBlg` | `PlantBalMod.F90:143` | `L=1,MaxNumRootLays` | the belowground litter total stops at `NJ` |
+| `ExtractLitterfall` | `f90src/Plant_bgc/ExtractsMod.F90:109` | `L=0,MaxSoilLays4Root_pft` | plant litter enters the soil input `LitrfalStrutElms_vr` through the moving index, which reaches `NK` when a root tip is there |
+| `SetArrays4PlantSoilTransfer` | `f90src/Modelforc/Hour1Mod.F90:853` | `0..NL_col` | the soil input is reset every hour |
+| `UpdateChemInSoilLays` | `f90src/Balances/RedistMod.F90:932-934` | | the soil input is added to `SolidOM_vr` |
+| **Root stocks in the plant balance** | | | |
+| `SumRootBiome` | `PlantBalMod.F90:572` | `L=1,MaxNumRootLays` | `RootElms_pft`, and the `Root_C_pft` output, omit layer `NK` |
+| `SumRootPoolsForBalance` | `PlantBalMod.F90:630-683` | stocks `L=MaxNumRootLays+1,LSTK`, `LSTK = MAX(MaxNumRootLays, NK)` (`:656`, `:661`); respiration `L=NMaxRootBotLayer_pft+1,LBAL`, `LBAL = MAX(MaxNumRootLays, MaxSoilLays4Root_pft)` (`:654`, `:678`) | the plant balance counts root stocks in layer `NK` over a fixed range (fix commits `9669b817`, `0340d71b`) |
+| **Plant-column transfer** | | | |
 | `PlantAPIRecv` | `f90src/APIs/PlantAPI.F90:58` | `L=NUI_col,NK_col` | |
+| `ReceivePlantCanopy` | `f90src/APIs/PlantCanopyTransferMod.F90:84` | `L=0,NL_col` | the plant litter array is copied to the column every hour |
+| `SendPlantRootAxes` | `f90src/APIs/PlantRootAxisTransferMod.F90:175` | `L=0,NK_col` | and copied back to the plant the next hour |
 
-Material can therefore enter layer `NK` (uptake, root growth) but some removal paths (litterfall, harvest thinning, annual death) never visit it. The plant balance accounts for that layer through `LBAL`; how this interacts with `MaxSoilLays4Root_pft` on the dynamic path is detailed in [../plant_bgc/roots_and_uptake.md](../plant_bgc/roots_and_uptake.md).
+Material can therefore enter layer `NK` (uptake, root growth, senescence) but the removal paths never visit it. A dead stand keeps its layer-`NK` root pools, and a replanting re-initialises the plant over `1..NL` (`InitRootMychorMorphoBio`, `f90src/Plant_bgc/InitPlantMod.F90:1045`), erasing them with no flux. The litter bookkeeping is split the same way: the hourly reset of `LitrfallElms_pvr` and the plant balance's litter term stop at `NJ`, while the soil input reads through `MaxSoilLays4Root_pft`. Litter written at layer `NK` is therefore not cleared each hour, is not counted by the plant balance, and is added to the soil input again in every hour `MaxSoilLays4Root_pft` reaches `NK`; how large this is in a run has not been measured. The plant balance accounts for layer-`NK` root stocks through `LSTK`; how `MaxSoilLays4Root_pft` moves on the dynamic path is detailed in [../plant_bgc/roots_and_uptake.md](../plant_bgc/roots_and_uptake.md).
 
 ## 3. Iteration idioms
 

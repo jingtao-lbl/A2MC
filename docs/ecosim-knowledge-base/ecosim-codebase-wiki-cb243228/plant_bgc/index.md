@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Plant_bgc/`, `f90src/Prescribed_pheno/`, plant parts of `f90src/APIs/PlantMod.F90`, `f90src/IOutils/PlantInfoMod.F90`, `f90src/Ecosim_mods/StartqMod.F90`
 **Last verified:** 2026-10-15
 ---
@@ -64,8 +64,8 @@ Plant state lives in the `plt_*` API types (`plt_pheno`, `plt_morph`, `plt_biom`
 ```
 PrepLandscapeGrazing                                  PlantMod.F90:52-55
 PlantAPISend                                          :71      PlantAPI.F90:70
-EnterPlantBalance                                     :73      PlantBalMod.F90:668  (zeroes the hour's fluxes via ZeroGrosub, :709)
-SeedDeposition  (first hour of the day)               :76-79   InitPlantMod.F90:1270
+EnterPlantBalance                                     :73      PlantBalMod.F90:686  (zeroes the hour's fluxes via ZeroGrosub, :734)
+SeedDeposition  (first hour of the day)               :78-81   InitPlantMod.F90:1270
 PhenologyUpdate                                       :82      PlantPhenolMod.F90:46
   set_plant_flags -> StartPlants on planting day      PlantPhenolMod.F90:83, :225, :256
   FindMainBranchNumber, StagePlantPhenology, TestPlantEmergence, root_shoot_branching   :89-95
@@ -89,8 +89,8 @@ GROWPLANTS                                            :88      GrosubsMod.F90:61
   Live2DeadTransformation                             :117     GrosubsMod.F90:125
 EXTRACTs                                              :91      ExtractsMod.F90:34
 ReSeedPlants                                          :93      LitterFallMod.F90:103
-ExitPlantBalance -> CheckPlantBalanceZ                :95      PlantBalMod.F90:715
-PlantAPIRecv                                          :97      PlantAPI.F90:40
+ExitPlantBalance -> CheckPlantBalanceZ                :95      PlantBalMod.F90:740
+PlantAPIRecv                                          :99      PlantAPI.F90:40
 ```
 
 Canopy radiation runs separately, before `PlantModel` in the hour, through `PlantCanopyRadsModel` (`PlantMod.F90:127-140`, called from `f90src/Modelforc/Hour1Mod.F90:201`), which wraps `CanopyConditionModel` (`PlantMod.F90:136`; `SurfaceRadiationMod.F90:49`).
@@ -152,7 +152,7 @@ Derivations of each are on the page that owns the process.
 
 Each item is derived on the page named; the citations here are the decisive lines.
 
-1. **NPP_pft is gross fixation.** It is evaluated before the hour's respiration is summed (`GrosubsMod.F90:253`; `PlantBalMod.F90:99`, `:501`), so it equals CAN_GPP_pft outside grazing hours; ECO_NPP_col is net (`f90src/Balances/RedistMod.F90:226`). See [`growth_and_allocation.md`](growth_and_allocation.md) section 12.
+1. **NPP_pft is gross fixation.** It is evaluated before the hour's respiration is summed (`GrosubsMod.F90:253`; `PlantBalMod.F90:101`, `:503`), so it equals CAN_GPP_pft outside grazing hours; ECO_NPP_col is net (`f90src/Balances/RedistMod.F90:226`). See [`growth_and_allocation.md`](growth_and_allocation.md) section 12.
 2. **Phenology gates photosynthesis.** A deciduous branch fixes no CO2 unless its leaf-out hours have reached VRNLI or its leaf-off hours are still below VRNXI (`StomatesMod.F90:115-117`, `:1031-1033`). See [`phenology.md`](phenology.md) section 9.
 3. **Allocation is hard-coded by stage.** Partition fractions are constants of `CalcPartitionCoeff` (`PlantBranchMod.F90:624-687`); the DM* parameters are growth yields, not partition shares (`:384-390`).
 4. **Leaf protein is the lesser of an N route and a P route.** `AMIN1(N growth*CNWL, P growth*CPWL)` (`PlantBranchMod.F90:3561-3562`); only the binding route has leverage on photosynthetic capacity.

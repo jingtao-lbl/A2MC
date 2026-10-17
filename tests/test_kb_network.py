@@ -71,6 +71,21 @@ def test_tier3_reads_both_memory_layers(tmp_path):
     assert "fco2_is_the_rank_one_water_lever" in labels, labels
 
 
+def test_case_accepts_the_path_form_and_reads_the_same_layer(tmp_path):
+    """`--case use_cases/EcoSIM_Lusignan` once resolved to use_cases/use_cases/... and reported "store absent"."""
+    rc, js, md, out = _run(tmp_path, "--params", "FCO2", "--case", "use_cases/EcoSIM_Lusignan/")
+    case = js["tier3"]["case"]
+    assert "use_cases/use_cases" not in case["store"], case["store"]
+    labels = [e["label"] for d in case["files"].values() for e in d["entries"]]
+    assert "fco2_is_the_rank_one_water_lever" in labels, labels
+    assert "store absent" not in md
+
+
+def test_an_unknown_case_is_bad_usage(tmp_path):
+    rc, js, md, out = _run(tmp_path, "--params", "FCO2", "--case", "No_Such_Case")
+    assert rc == 2 and js is None, out
+
+
 def test_the_source_pointers_come_from_the_kb(tmp_path):
     rc, js, md, out = _run(tmp_path, "--params", "RMOM")
     assert js["source_pointers"] and all(":" in p for p in js["source_pointers"]), js["source_pointers"]

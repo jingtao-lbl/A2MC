@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/ModelDiags/` (5 files) and `f90src/DebugTools/` (1 file)
 **Last verified:** 2026-10-15
 ---
@@ -79,7 +79,7 @@ history update                                  EcoSIMAPI.F90:526
 | 110 | `EndCheckBalances` | column water budget dump (`BalancesMod.F90:232-270`) and the unreachable energy dump |
 | 111 | `EndCheckBalances` | per-gas budget dump (`:324-396`) |
 | 121 | `TranspNoSaltMod::ExitMassCheck` | transport gas budget dump (`f90src/Transport/Nonsalt/TranspNoSaltMod.F90:200` onward) |
-| 888 | `CheckPlantBalanceZ` | plant C, N, P budget dump (`f90src/Plant_bgc/PlantBalMod.F90:854-936`) |
+| 888 | `CheckPlantBalanceZ` | plant C, N, P budget dump (`f90src/Plant_bgc/PlantBalMod.F90:879-967`) |
 | 993-996 | `ExitMassBalanceM` | WATSUB water dumps (`f90src/HydroTherm/SoilPhys/WatsubMod.F90:253-284`) |
 | 104 | `InitTracerIDs` | tracer id listing (`f90src/Modelconfig/TracerIDMod.F90:378-386`) |
 

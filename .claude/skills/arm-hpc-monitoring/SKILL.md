@@ -79,7 +79,7 @@ tail -F -n 0 <auto_monitor_log_path> 2>/dev/null \
   | grep -E --line-buffered "QUEUE_BELOW_1000|QUEUE_BELOW_500|QUEUE_ABOVE_500|TRANS_DONE|STARTING_EXTRACTION|EXTRACTION_FINISHED|EXTRACTED_CASES|MILESTONE|REGEN_LAUNCH|IDLE_TICK|_TERMINAL|ERROR|Traceback|FAILED|MaxJobsExceeded|Killed|OOM"
 ```
 
-Always `persistent: true` and a long timeout. Reasoning: this monitor runs for the session lifetime; a short timeout silently drops you off the event stream.
+Always the longest timeout (`timeout_ms` at its maximum) and a re-arm on each expiry notice. Reasoning: this monitor runs for the session lifetime; a short timeout silently drops you off the event stream. If the Monitor runs a script rather than a bare `tail | grep`, bind the script to the Monitor (§"A Monitor's event script must exit when its Monitor does") or every re-arm leaves a copy behind.
 
 ## Step 3 — Arm Claude Monitor on each active submitter log (if any)
 
@@ -218,7 +218,7 @@ Safety: these are your own guaranteed-non-runnable jobs, and cancellation is rev
 ## Anti-patterns
 
 1. **Do NOT** rely on the happy-path filter alone — if the process crashes, you'll never know.
-2. **Do NOT** arm a Monitor without `persistent: true` for session-length watches — a 5-minute timeout means you stop receiving events 5 min after the harness fires.
+2. **Do NOT** arm a session-length watch on the default timeout. Set `timeout_ms` to the maximum and re-arm on each expiry notice, with the script bound to its Monitor (§"A Monitor's event script must exit when its Monitor does"), so a re-arm does not leave the previous copy running.
 3. **Do NOT** sleep/poll to wait for monitor events. The events arrive as notifications. If you need a one-shot "wait until ready," use Bash `run_in_background` with an `until` loop instead.
 4. **Do NOT** narrate every event back to the user. Acknowledge with "Normal" or silence for routine, react with proposals for threshold crossings and errors.
 5. **Do NOT** assume the auto-monitor survived the previous session — Claude Monitors are session-local. A nohup'd auto-monitor script itself survives, but the *tail process* armed by `Monitor` does not. Always re-arm at session start.
@@ -264,6 +264,22 @@ PID file is simpler and cannot be fooled.
 done" by asking whether a process still exists is asking the wrong question anyway: the process can
 die without finishing. Gate on the artifact the work produces (a final restart, a terminal line in a
 log, a state file marked complete), and use the PID only for the watcher's own liveness.
+
+## A Monitor's event script must exit when its Monitor does
+
+**When a `Monitor` EXPIRES, only the shell it launched is killed.** A script that runs its own loops under that shell — a `tail -F` pipeline, a `while true; sleep` heartbeat loop — is reparented to init and keeps running with nothing reading its output. Every re-arm after an expiry adds another copy, and each keeps polling the filesystem and the scheduler. (Stopping a Monitor with `TaskStop` removed its whole process tree in the case observed; expiry did not.)
+
+**Bind the script's lifetime to the shell that launched it:**
+
+```bash
+OWNER=$PPID                                                    # the Monitor's shell, recorded at start
+tail -F --pid="$OWNER" -n 0 watch_*.log | ...                  # tail exits when the owner does
+for _ in $(seq 20); do kill -0 "$OWNER" 2>/dev/null || exit 0; sleep 30; done   # a loop sleeps in short steps that check the owner
+```
+
+**Test it by killing ONLY the parent:** start the wrapper with `setsid bash -c '<script>; true'`, `kill -9` the wrapper's PID alone, and confirm the script is gone within seconds. Run the unbound version the same way as the control. Do not test with `timeout`, which signals the whole process group and so kills the script directly; that test passes either way.
+
+**Find leftovers** with `ps -e -o pid=,ppid=,pgid=,args= | grep <script>`. A copy whose parent is PID 1 is an orphan; stop it with `kill -- -<pgid>`, and only for your own processes.
 
 ## Cross-references
 

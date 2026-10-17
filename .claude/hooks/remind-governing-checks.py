@@ -85,6 +85,13 @@ MEMORY_BY_SHAPE = (
      "command, never assume the FATES tool covers the others; the profiles listed there are an inventory, "
      "and the profile a command uses is resolved by tools/kb_profile.py. QUERYING the KB is the "
      "query-knowledge-base skill"),
+    (r"^TODO\.md$",
+     "feedback_todo_scope_by_impact",
+     "route a work item by what it CHANGES: an item that affects ONE case only (its round progress, an "
+     "in-flight job, the next phase's action, a figure or bound for that case) belongs in that case's "
+     "workflow_state open_threads, not here; this file is for work that changes the framework, or a model "
+     "for every case running it (a model-source fix, a knowledge-base rebuild, a backend change), naming "
+     "the case that surfaced it"),
     (r"^\.claude/(settings\.json|hooks/[^/]+\.(py|sh))$",
      "feedback_registered_hook_filename_is_an_interface",
      "a hook .claude/settings.json registers is an INTERFACE -- never mv or rm its file, because a running "
@@ -131,6 +138,45 @@ def memory_lines(rel):
     return out
 
 
+# A NEW script in a phase folder is the moment the template choice is made, and the moment it was
+# missed: the case's scripts/ tier was listed rather than read, its README indexed 3 of 29 templates,
+# and a phase script was written from scratch beside a template that already did the job. So the
+# case's templates are put in front of the author here, with each one's own summary line, and the
+# provenance line the commit will ask for is named. Only for a file that does not exist yet.
+_PHASE_SCRIPT = re.compile(r"^use_cases/([^/]+)/memory/phase_results/.+\.(py|sh)$")
+
+
+def template_lines(rel):
+    m = _PHASE_SCRIPT.match(rel)
+    if not m or "/run_tracking/" in rel or "/submit_scripts/" in rel:
+        return []
+    if os.path.isfile(os.path.join(ROOT, rel)):
+        return []
+    import case_script_index as I
+    case = os.path.join(ROOT, "use_cases", m.group(1))
+    found = I.templates(I.Path(case), I.Path(ROOT))
+    if not found:
+        runs = I.templates(I.Path(case), I.Path(ROOT), "case_template")
+        return ["  NEW PHASE SCRIPT: use_cases/%s/scripts/ holds no template yet%s. Name the source "
+                "on a `Template:` line in its docstring, or `Template: none (first use)` "
+                "(check_script_provenance, pre-commit 33)."
+                % (m.group(1), "; its case_template/ holds %s" % ", ".join(r.name for r in runs)
+                   if runs else "")]
+    out = ["  NEW PHASE SCRIPT: does one of this case's %d templates already do this? Copy it here "
+           "and adapt it, rather than writing from scratch (use_cases/%s/scripts/README.md):"
+           % (len(found), m.group(1))]
+    for t in found:
+        out.append("    %-34s %s" % (t.name, I.summary_of(t)[:110]))
+    runs = I.templates(I.Path(case), I.Path(ROOT), "case_template")
+    if runs:
+        out.append("  Run files in case_template/ (launchers, namelists): %s"
+                   % ", ".join(r.name for r in runs))
+    out.append("  Its docstring then names its source on one line, `Template: scripts/<name>` or "
+               "`Template: case_template/<name>`, or `Template: none (first use)` if none fits "
+               "(check_script_provenance, pre-commit 33).")
+    return out
+
+
 def already_said(session, rel):
     """True if this path was announced earlier in this session. Fails OPEN: on any trouble we
     speak again, because a duplicate reminder is a smaller harm than a silent first one."""
@@ -172,7 +218,8 @@ def main():
 
     # Say nothing when there is nothing to say. Most of this tree IS governed, so the dedupe above
     # is what keeps this from becoming wallpaper -- but an ungoverned path must stay silent outright.
-    if not gated and not is_skill and not memory_lines(rel):
+    tmpl = template_lines(rel)
+    if not gated and not is_skill and not memory_lines(rel) and not tmpl:
         return
     if already_said(payload.get("session_id"), rel):
         return
@@ -200,6 +247,7 @@ def main():
                      "CLAUDE.md, AGENTS.md, .claude/skills/README.md and "
                      "docs/a2mc_reference/skills_catalog.md must move in and out of the private "
                      "blocks with it, and `## Changelog` must stay the LAST section.")
+    lines.extend(tmpl)
     lines.extend(memory_lines(rel))
     lines.append("  Full picture: python3 tools/harness_query.py --touches %s" % rel)
 

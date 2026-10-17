@@ -43,6 +43,10 @@
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/block-unregistered-sbatch.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/require-run-skill-before-submit.py\""
           }
         ]
       },
@@ -114,6 +118,14 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/remind-memory-bucket.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/remind-template-index.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.claude/hooks/remind-kg-html.py\""
           }
         ]
       }

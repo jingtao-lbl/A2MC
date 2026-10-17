@@ -96,7 +96,7 @@ The paths in angle brackets are fields of the profile's entry in `rag/milestones
 ## Guardrails
 
 - **All three tiers, every time.** The answer from the first tier that responds is not the full picture.
-- **A gap is a finding.** Record it; do not paper over it by reading source and moving on.
+- **A gap is a finding.** Record it; do not paper over it by reading source and moving on. In a calibration cycle, a link the source confirms and the graph lacks is staged in the cycle report's `graph_gap_candidates.yaml` (`write-report` item 5; `tools/graph_gaps.py`) for human review, and drawn in the report's mechanism graph (`tools/plot_kb_network.py`).
 - **Tier 3 is read here and written elsewhere.** A conclusion reached in this session goes to memory only after a Phase 5 test verifies it and a human curates it ([[feedback_no_kb_injection_before_verified_test]]).
 - **The profile is resolved, never typed** (`tools/kb_profile.py`).
 

@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** core orchestration: `drivers/ecosim/`, `f90src/{Main,Ecosim_mods,Modelconfig,Modelpars,Mesh,Utils,Minimath,DebugTools}/`
 **Last verified:** 2026-10-15
 ---

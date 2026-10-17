@@ -8,7 +8,7 @@ modes:
   requires_fates: false      # covers ELM and/or FATES source; model-dev, not a calibration phase
   nutrient_pathway: any
   scope: [model-dev]
-  summary: "The disciplined workflow for changing ELM/FATES source — branch, default-off, paired verify, log in the case's memory/model_evolution stream, fork-only push."
+  summary: "The disciplined workflow for changing a model's source — branch, default-off, paired verify, log in the case's memory/model_evolution stream, fork-only push, then the knowledge base brought along and its README record."
 ---
 
 # model-evolution — evolving a model's SOURCE under the reproducibility discipline
@@ -20,7 +20,7 @@ for the FATES "add a tunable knob" case. Read the model-tree contract first: the
 `CLAUDE.md` §1 (paths recorded in [[feedback_model_source_push_fork_only]]).
 
 **Applies to EVERY onboarded model, not only ELM/FATES.** The *workflow* is generic — branch, preserve the
-baseline, switch-gate default-off, paired verify, log in the case's `use_cases/{Model}_{Case}/memory/model_evolution/` stream, push fork-only. What is per-model is the
+baseline, switch-gate default-off, paired verify, log in the case's `use_cases/{Model}_{Case}/memory/model_evolution/` stream, push fork-only, bring the knowledge base along. What is per-model is the
 **artifact handling**: the build system (step 3.5), where a tunable knob lives (step 3), and the fork
 remotes (step 7). FATES supplies most worked examples below because it has the longest history here; EcoSIM
 ([[reference_ecosim_fork_and_anchor]]) and PFLOTRAN ([[reference_pflotran_repos_and_clones]]) follow the
@@ -72,7 +72,7 @@ the mechanism can actually move the target.
 - Negative precedent (demo #16 `max_plant_density`): Options A (per-event cap) and B (crown-area) were
   wired perfectly and **still failed** — wrong quantity controlled; only C (count-based) worked, found by
   **instrumentation** (debug dumps). When the right control point is unclear, **instrument first**
-  (temporary debug output), analyze, *then* implement.
+  (temporary debug output, run through the model's run skill per step 5), analyze, *then* implement.
 - Do not escalate to model-dev on an unverified assumption ([[feedback_performance_experiment_is_the_objective]]
   — earn model-dev only after the calibration loop is provably exhausted).
 
@@ -106,7 +106,7 @@ in the source, a ~6-file refactor + a restart-format change.)
   `git grep` — the branch may yet be reworked or abandoned, so pinning a wiki to it is churn. Once it
   has passed paired verification (step 5) and merged to the fork's `main`, the change is permanent in
   the tree `A2MC_MODEL_PATH` resolves to, and the wiki is now wrong about the model you actually run:
-  that is the moment to bring the knowledge base along: `generate-codebase-wiki` **Workflow P** (patch the round's profile in place) when a round adopts the change on top of its base binary, for an adapter model only since FATES has no P, **Workflow C** (targeted drift refresh) when it becomes a new round's base. Do not wait
+  that is the moment to bring the knowledge base along (step 8): `generate-codebase-wiki` **Workflow P** (patch the round's profile in place) when a round adopts the change on top of its base binary, for an adapter model only since FATES has no P, **Workflow C** (targeted drift refresh) when it becomes a new round's base. Do not wait
   for an api-epoch milestone — those are rare and expensive in FATES, so milestone-gating would leave
   the wiki stale for months against a model that has moved.
 - **THEN grep EVERY consumer** of the symbol/state — now scoped by the files the wiki named, not the
@@ -267,6 +267,13 @@ invoking wrapper rather than the build script, so neither branch could ever fire
 (does the intended thing) *and* **OFF** (reproduces baseline) — do not interpret any result until the OFF
 run confirms V0-at-equality (build/env/seed drift otherwise masquerades as signal).
 
+**Every run this skill makes goes through the model's RUN skill** — an instrumentation probe (step 1),
+a V0 arm, an ON arm, a rerun of a failed case: `ecosim-run-workflow`, `pflotran-run-workflow` or
+`ats-run-workflow`, and `offline-testing-workflow` for FATES/CIME. Invoke it before building the run.
+Those skills own what this one does not restate: staging a case's inputs, the namelist's limits, the
+submit-and-register path (`tools/submit_run.py`), monitoring and settling. A probe built from this
+skill alone skipped them and had to be audited against the run skill afterwards.
+
 > **⚠ V0 CANNOT VALIDATE ITSELF — make the pass criterion a CONJUNCTION.** A V0 pass is "outputs
 > identical". But **running the same binary twice also produces identical outputs**, so the check's
 > success state is indistinguishable from a specific, plausible harness error
@@ -368,6 +375,30 @@ Measured: a re-anchor merged from the fork's `main` put ELEVEN commits in the co
 merges, two artifact-ignore commits and a comment-style commit — for a net change of 8 files.
 Rebuilt as six, the comparison reads as the change itself.
 
+**8. Bring the knowledge base along — and record the commit.** Once the change has passed step 5 and a
+round runs it (merged to the fork's working branch, or adopted as a round's binary), the knowledge base
+describes a model that no longer exists until it is updated. In order:
+
+1. **Wiki** — `generate-codebase-wiki`: **Workflow P** (`tools/kb_patch.py plan`, then `apply`) when a
+   round adopts the change on top of its base binary, for an adapter model; **Workflow C**, or B across
+   an api epoch, when the change becomes a new round's base (FATES is always C). Rewrite every claim the
+   plan flags by hand, against the new source.
+2. **Curated network** — a mechanism or relation the change creates or removes goes into the curated seed:
+   `inject-knowledge` for a new fact, `wire-knowledge-graph` when the graph cannot reach what the seed says.
+3. **Rebuild** — `rebuild-rag` on the SAME profile after a patch, the new one after C; its Step 4 commit
+   sequence, because the index silently fails to commit otherwise, and the graph's HTML view regenerated
+   in the same commit wherever the knowledge base has one (`tools/render_kg_html.py`, the command in
+   `docs/<model>-knowledge-base/graph_html/README.md`).
+4. **Validate** — `validate-rag-chain`: wiki against source, the seed's citations, the golden queries.
+5. **Record it** in `docs/<model>-knowledge-base/README.md`: a row in its update history and its current
+   working version of the model, in the same commit. `tools/check_kb_readme.py` (pre-commit 34) refuses a
+   knowledge-base change that does not.
+
+**Two timings, not one.** A defect the work finds IN the knowledge base (a missing or wrong claim about the
+code the round runs now) is fixed at once, against that binary; the knowledge base for the CHANGE waits
+until the change lands, since an in-flight branch may be reworked (step 2). The model-evolution record
+says which state the knowledge base is in.
+
 ## Footguns
 
 - **Building the change before preserving the baseline (SHARED build tree)** — the branch protected the
@@ -404,10 +435,17 @@ Rebuilt as six, the comparison reads as the change itself.
   routinely spans several files + a restart-format change. Mirror an existing template, don't invent.
 - **Pushing upstream** — a stray `git push origin`/`upstream` targets the community repo; the `DISABLE` guard
   blocks it, but keep the discipline.
+- **Leaving the knowledge base behind** — the change lands, the round runs it, and the wiki and graph
+  still describe the old code, so every later diagnosis reasons about a model that no longer exists.
+  Step 8, and its README record.
+- **Building a run from this skill alone** — the model's run skill owns staging, the namelist's limits and
+  the submit-and-register path; step 5.
 - **Writing a pointer instead of a record** — "see the branch" is not a log. The case's model-evolution record must stand alone: mechanism, verification, commit, and what it means for the rounds.
 
 ## Cross-references
 
+- **Reciprocal skills** — `phase0-design` (Step 4a hands it a failure no parameter bound explains), `ecosim-run-workflow`, `pflotran-run-workflow`, `ats-run-workflow` (step 5: every probe and verification run goes through the model's run skill), `query-knowledge-base` (step 2 scopes from the knowledge base), `generate-codebase-wiki`, `rebuild-rag`, `validate-rag-chain` (step 8 brings the knowledge base along). Each names this skill back.
+- **Knowledge base, further:** `inject-knowledge`, `wire-knowledge-graph` (step 8.2); the record of each update is `docs/<model>-knowledge-base/README.md`, checked by `tools/check_kb_readme.py`.
 - **Sub-recipe:** `add-fates-parameter` (the "add a tunable/switchable knob" case — `EDParamsMod` scalar or
   `EDPftvarcon` per-PFT plumbing).
 - Build reuse + paired-run pilots: `offline-testing-workflow` (Step 5 build reuse; the pilot pattern).

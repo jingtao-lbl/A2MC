@@ -69,6 +69,10 @@
 #   category      Grouping for reporting/screening (stoichiometry, uptake, allocation, kinetics).
 #   units         Physical units of the value.
 #   nc_dim        The parameter's dimension name in a NetCDF parameter file (e.g. `npfts`).
+#   scale         How the adapter sampler draws the row: `linear` (blank = linear) or `log10`,
+#                 uniform in log10(value) between the bounds; needs lower > 0. For a range spanning
+#                 orders of magnitude, where a linear draw lands almost every case in the top decade.
+#                 The matrix still holds values, so nothing downstream changes.
 #
 # ★ bound_source VOCABULARY — start every entry with one of these ★
 #   measured:     Derived from THIS project's own measurements. Name the dataset/campaign and the

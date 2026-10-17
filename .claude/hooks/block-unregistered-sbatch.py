@@ -23,7 +23,8 @@ WHAT IS ALLOWED.
     so a command that tests and then submits is still refused);
   * a job the ledger deliberately does not record -- not a simulation (an output extraction, a
     build, a transfer), or a full config-generated Phase-0 ensemble, whose full record is the
-    round's Phase-0 stem folder (PI): declare it on the command with
+    `run_tracking/` subfolder of the round's Phase-0 stem (PI; phase0-design Step 3): declare it on
+    the command with
     `A2MC_UNTRACKED_JOB="<why the ledger does not record it>"` (at least 10 characters). The reason
     lands in the transcript, which is the record.
 
@@ -121,7 +122,8 @@ REASON = (
     "      -- <the sbatch arguments and script, unchanged>\n"
     "stdout is only the job id, so J=$(python tools/submit_run.py ...) works.\n"
     "If the ledger deliberately does not record this job (an extraction, a build, a transfer, or a "
-    "full Phase-0 ensemble, whose full record is the round's Phase-0 stem folder), say so on the "
+    "full Phase-0 ensemble, whose full record is the run_tracking/ subfolder of the round's Phase-0 "
+    "stem), say so on the "
     "command: "
     "A2MC_UNTRACKED_JOB=\"<why the ledger does not record it>\" sbatch ...   "
     "Contract: .claude/hooks/block-unregistered-sbatch.py"

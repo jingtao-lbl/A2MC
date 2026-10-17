@@ -52,6 +52,8 @@ premise: *import A2MC to calibrate models other than ELM.*
 
 ### The guided path — start here
 
+**New to A2MC? Read the [Getting Started tutorial](https://jingtao-lbl.github.io/A2MC/tutorial/A2MC_Getting_Started.html) first.** It walks through everything before the agent takes over (installing Claude Code, cloning, the Python environment) and then the setup below, one step at a time. In a clone it is `docs/tutorial/A2MC_Getting_Started.html`, one self-contained page you can open directly in a browser. This section is the reference for the same path.
+
 **You do not have to configure A2MC by hand.** The offline agent (a coding-agent harness opened in
 this repo) drives setup through skills, and each stage has a checklist and a runnable gate:
 

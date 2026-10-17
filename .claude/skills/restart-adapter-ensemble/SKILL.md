@@ -91,7 +91,8 @@ A2MC_UNTRACKED_JOB="relaunch of a full Phase-0 ensemble's failed cases" \
 ```
 
 The declaration is what the agent's sbatch hook asks of a job the run ledger does not record: a full
-Phase-0 ensemble's record is its Phase-0 stem folder (`phase5-testing` step 2c). A relaunch of a
+Phase-0 ensemble's record is the `run_tracking/` subfolder of its Phase-0 stem (`phase0-design`
+Step 3), so add the relaunch there as a row of `SUBMISSION_r{RR}.md`. A relaunch of a
 submission the ledger DOES record (a pilot, a gate or a rerun registered as one row with
 `--run-root`) goes through `tools/submit_run.py --resubmit` instead, which keeps the earlier job id
 in the row's `history`.

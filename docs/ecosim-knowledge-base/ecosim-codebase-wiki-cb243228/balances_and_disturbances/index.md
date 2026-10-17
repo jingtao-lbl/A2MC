@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Balances/` (7 files), `f90src/Disturbances/` (6 files), and the plant-side disturbance modules they hand off to
 **Last verified:** 2026-10-15
 ---
@@ -66,9 +66,9 @@ WATSUB / PrepHourlyWeather: cable / IR / OTC warming inside the warming window
 
 ## 6. Key facts to carry away
 
-- A disturbance changes the plant balance only through `PlantElmDistLoss_pft` (exports) and litterfall; both enter `CheckPlantBalanceZ` (`f90src/Plant_bgc/PlantBalMod.F90:820-822`). The P check is skipped on planting and harvest days (`:937`); the C and N checks are not.
+- A disturbance changes the plant balance only through `PlantElmDistLoss_pft` (exports) and litterfall; both enter `CheckPlantBalanceZ` (`f90src/Plant_bgc/PlantBalMod.F90:845-847`). The P check is skipped on planting and harvest days (`:968`); the C and N checks are not.
 - Harvested exports reduce `Eco_NBP_CumYr_col` and accumulate in `EcoHavstElmnt_CumYr_*`, which feed `ECO_HVST_C_col` and `HVST_C_FLX_pft`.
-- Removal loops for roots under harvest, annual death and litterfall go to `MaxNumRootLays`, one layer short of the deepest layer roots can occupy (`NK`) ([../core/grid_and_mesh.md](../core/grid_and_mesh.md) §2.5).
+- Every root-removal loop (litterfall at death, the dead-plant reset, tillage, harvest thinning, annual death and annual termination) goes to `MaxNumRootLays`, one layer short of `NK`, the deepest layer roots grow into. A dead stand keeps its layer-`NK` roots and a replanting erases them with no flux, and litter written at layer `NK` is neither cleared hourly nor counted by the plant balance while the soil input can re-read it ([../core/grid_and_mesh.md](../core/grid_and_mesh.md) §2.5).
 - Soil fire's moisture limit is inert (`VolMaxSoilMoist4Fire = 1.0`), so burn depth is set by soil organic C alone.
 
 ## Calibration parameters

@@ -303,7 +303,7 @@
       "node_type": "Mechanism",
       "name": "Plant_Mass_Balance_And_Root_Clamp",
       "description": "Hourly per-PFT C, N, P budget check that aborts the run on error, plus the balance-only root totals that cover layer MaxNumRootLays+1, the default-off root-clamp conservation switch and the default-off dying-stand guard.",
-      "code_location": "f90src/Plant_bgc/PlantBalMod.F90:820-829 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:849-852 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:878 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:640-663 (SumRootPoolsForBalance); f90src/Plant_bgc/PlantBalMod.F90:684-686 (EnterPlantBalance); f90src/Plant_bgc/RootMod.F90:3252-3271 (GrowFibrous1stRootAxes); f90src/Plant_bgc/RootMod.F90:3326-3342 (ChargeRootDeficitUpAxis); f90src/Modelconfig/EcoSIMCtrlMod.F90:41-46 (<module scope>)",
+      "code_location": "f90src/Plant_bgc/PlantBalMod.F90:845-854 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:874-877 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:905 (CheckPlantBalanceZ); f90src/Plant_bgc/PlantBalMod.F90:630-683 (SumRootPoolsForBalance); f90src/Plant_bgc/PlantBalMod.F90:709-711 (EnterPlantBalance); f90src/Plant_bgc/RootMod.F90:3252-3271 (GrowFibrous1stRootAxes); f90src/Plant_bgc/RootMod.F90:3326-3342 (ChargeRootDeficitUpAxis); f90src/Modelconfig/EcoSIMCtrlMod.F90:41-46 (<module scope>)",
       "module": null,
       "id": "mechanism:Plant_Mass_Balance_And_Root_Clamp"
     },
@@ -418,6 +418,14 @@
       "code_location": "f90src/IOutils/PlantInfoMod.F90:332-349 (ReadPlantMgmtinfo); f90src/Plant_bgc/PlantDisturbsMod.F90:814-816 (RemoveBiomByHarvest); f90src/Plant_bgc/PlantDisturbsMod.F90:837-840 (RemoveBiomByHarvest); f90src/Plant_bgc/PlantDisturbsMod.F90:1719-1729 (HarvestCanopy); f90src/Plant_bgc/PlantDisturbsMod.F90:1127-1138 (CutBranchStalk); f90src/Plant_bgc/PlantDisturbsMod.F90:265-291 (RemoveStandingDead); f90src/Plant_bgc/PlantDisturbsMod.F90:669-680 (ApplyDisturbanceBiomRemoval); f90src/Plant_bgc/PlantDisturbsMod.F90:546-549 (AbvgBiomRemovalByDisturb); f90src/Plant_bgc/PlantDisturbsMod.F90:564-568 (AbvgBiomRemovalByDisturb); f90src/Plant_bgc/PlantDisturbsMod.F90:626-630 (AbvgBiomRemovalByDisturb); f90src/Plant_bgc/PlantDisturbsMod.F90:437-462 (LiterfallByDisturbance); f90src/Plant_bgc/GrosubsMod.F90:206-217 (Live2DeadTransformation)",
       "module": null,
       "id": "mechanism:Harvest_Cutting_Partition"
+    },
+    {
+      "node_type": "Mechanism",
+      "name": "Plant_Death_Root_Litterfall_And_Replanting",
+      "description": "What happens to a plant's root mass when the plant dies, is disturbed, or is replanted. When the roots die, ResetDeadPlant calls SetDeadPlant, LiterFallDeadRoots and LiterFallRootShootStorage, which move the root pools to litter layer by layer, and ResetBranchRootStates then zeroes the root states. Tillage, harvest thinning, annual death and annual termination remove root mass layer by layer too. On a planting day a plant slot that is not active is re-initialised by StartPlants, and InitRootMychorMorphoBio zeroes every root pool over all layers 1..NL. Every one of those removal loops ends at MaxNumRootLays, one layer short of NK = MaxNumRootLays + 1, the deepest layer roots grow into.",
+      "code_location": "f90src/Plant_bgc/LitterFallMod.F90:87-95 (ResetDeadPlant); f90src/Plant_bgc/LitterFallMod.F90:503-517 (LiterFallDeadRoots); f90src/Plant_bgc/LitterFallMod.F90:912 (ResetBranchRootStates); f90src/Plant_bgc/InitPlantMod.F90:114-130 (StartPlants); f90src/Plant_bgc/InitPlantMod.F90:1045-1062 (InitRootMychorMorphoBio); f90src/Plant_bgc/PlantBalMod.F90:484-488 (ZeroGrosub); f90src/Plant_bgc/GrosubsMod.F90:238-245 (Live2DeadTransformation); f90src/Plant_bgc/ExtractsMod.F90:109-117 (ExtractLitterfall)",
+      "module": null,
+      "id": "mechanism:Plant_Death_Root_Litterfall_And_Replanting"
     },
     {
       "node_type": "Mechanism",
@@ -858,7 +866,7 @@
       "description": "intercellular",
       "units": "none",
       "bounds": null,
-      "code_location": "f90src/Plant_bgc/StomatesMod.F90:268 (StomatalDynamics); f90src/Plant_bgc/StomatesMod.F90:943 (PrepPhotosynthesis); f90src/Plant_bgc/PlantBalMod.F90:807 (CheckPlantBalanceZ)",
+      "code_location": "f90src/Plant_bgc/StomatesMod.F90:268 (StomatalDynamics); f90src/Plant_bgc/StomatesMod.F90:943 (PrepPhotosynthesis); f90src/Plant_bgc/PlantBalMod.F90:832 (CheckPlantBalanceZ)",
       "read_site": "ReadPlantTraitTable (f90src/IOutils/PlantInfoMod.F90:1749)",
       "fortran_var": "CanopyCi2CaRatio_pft_tab",
       "id": "parameter:FCO2"
@@ -3647,7 +3655,7 @@
       "description": "Layer number of maximum rooting layer",
       "units": "none",
       "bounds": null,
-      "code_location": "f90src/IOutils/readimod.F90:454 (readTopoNC); f90src/IOutils/readimod.F90:460 (readTopoNC); f90src/APIs/PlantColumnTransferMod.F90:194-197 (SendPlantColumnInputs); f90src/Plant_bgc/RootMod.F90:5459 (GetInLayerRootDepth); f90src/Plant_bgc/PlantBalMod.F90:570 (SumRootBiome)",
+      "code_location": "f90src/IOutils/readimod.F90:454 (readTopoNC); f90src/IOutils/readimod.F90:460 (readTopoNC); f90src/APIs/PlantColumnTransferMod.F90:194-197 (SendPlantColumnInputs); f90src/Plant_bgc/RootMod.F90:5459 (GetInLayerRootDepth); f90src/Plant_bgc/PlantBalMod.F90:572 (SumRootBiome)",
       "read_site": "readTopoNC (f90src/IOutils/readimod.F90:454)",
       "fortran_var": "MaxNumRootLays_col",
       "id": "parameter:NJ"
@@ -10895,6 +10903,12 @@
       "target": "mechanism:Harvest_Cutting_Partition"
     },
     {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:balances_and_disturbance",
+      "target": "mechanism:Plant_Death_Root_Litterfall_And_Replanting"
+    },
+    {
       "relation_type": "affects",
       "weight": 1.0,
       "source": "category:balances_and_disturbance",
@@ -13215,6 +13229,42 @@
       "weight": 1.0,
       "source": "mechanism:Harvest_Cutting_Partition",
       "target": "output:Root_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Plant_Death_Root_Litterfall_And_Replanting",
+      "target": "output:LITRf_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Plant_Death_Root_Litterfall_And_Replanting",
+      "target": "output:LITRf_N_FLX_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Plant_Death_Root_Litterfall_And_Replanting",
+      "target": "output:Root_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Plant_Death_Root_Litterfall_And_Replanting",
+      "target": "output:Plant_BALANCE_C_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Plant_Death_Root_Litterfall_And_Replanting",
+      "target": "output:Plant_BALANCE_N_pft"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:Plant_Death_Root_Litterfall_And_Replanting",
+      "target": "output:Plant_BALANCE_P_pft"
     },
     {
       "relation_type": "affects",

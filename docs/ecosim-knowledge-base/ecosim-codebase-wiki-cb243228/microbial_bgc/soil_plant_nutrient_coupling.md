@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Microbial_bgc/Box_Micmodel/{MicBGCFGMod,MicrobMathFuncMod,MicAutoCplxFGMod}.F90`, `f90src/APIs/MicBGCAPI.F90`, `f90src/Transport/Nonsalt/InitNoSaltTransportMod.F90`, `f90src/Geochem/Layers_chem/SoluteMod.F90`, `f90src/Plant_bgc/{NutUptakeMod,ExtractsMod,RootMod,PlantNonstElmDynMod,PlantBranchMod,StomatesMod}.F90`, `f90src/Balances/RedistMod.F90`, `f90src/Modelforc/Hour1Mod.F90`, `f90src/IOutils/HistData/`
 **Last verified:** 2026-10-15
 ---

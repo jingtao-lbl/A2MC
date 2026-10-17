@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Geochem/Box_chem/{ChemEquilibriaMod,SaltChemEquilibriaMod,InitSoluteMod}.F90`, `f90src/Geochem/Layers_chem/SoluteMod.F90`, `f90src/Modelpars/SoluteParMod.F90`; soil-chemistry inputs in `f90src/IOutils/readimod.F90` and `f90src/Ecosim_mods/StarteMod.F90`
 **Last verified:** 2026-10-15
 ---

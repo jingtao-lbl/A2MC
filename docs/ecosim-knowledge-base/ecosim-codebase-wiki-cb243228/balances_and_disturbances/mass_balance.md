@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Balances/`, the hourly conservation checks wherever they live (`f90src/ModelDiags/BalancesMod.F90`, `f90src/HydroTherm/SoilPhys/WatsubMod.F90`, `f90src/Transport/Nonsalt/`, `f90src/Plant_bgc/PlantBalMod.F90`), and the ecosystem carbon accumulators assembled in `RedistMod`
 **Last verified:** 2026-10-15
 ---
@@ -18,7 +18,7 @@ Every check below ends the run through `endrun`, which writes `ENDRUN:` plus the
 |---|---|---|---|---|---|
 | 0 | `HOUR1` (`f90src/Modelforc/Hour1Mod.F90:151`) | `BegCheckBalances` (`f90src/ModelDiags/BalancesMod.F90:37-75`) | snapshot only | never | |
 | 1 | inside `WATSUB`, every sub-cycle `M` | `ExitMassBalanceM` (`f90src/HydroTherm/SoilPhys/WatsubMod.F90:214-294`) | soil water + ice from `NUM` to `NL` | sub-cycle residual `abs(dwat1) > 1e-4` (`:249-252`, abort `:274`) or cumulative residual `abs(dwat) > 1e-4` (`:242-247`, abort `:276-286`) | 993, 994, 995, 996 |
-| 2 | inside `PlantModel`, per column | `EnterPlantBalance` (`f90src/Plant_bgc/PlantBalMod.F90:668-711`) → `ExitPlantBalance` (`:715-735`) → `CheckPlantBalanceZ` (`:738` onward) | plant C, N, P per PFT | C: `abs(balE) > 1e-6` and (`abs(err_rel) > 1e-3`, or vegetation C below `VEGC_BAL_FLOOR_dying` when `guard_floor_dying_stand`) (`:849-852`, abort `:878`); N: `abs(balE) > 1e-6` and `abs(err_rel) > 1e-3` (`:910`); P: same test (`:919`) but not on the PFT's planting or harvest day (`:937-938`) | 888 |
+| 2 | inside `PlantModel`, per column | `EnterPlantBalance` (`f90src/Plant_bgc/PlantBalMod.F90:686-736`) → `ExitPlantBalance` (`:740-760`) → `CheckPlantBalanceZ` (`:763` onward) | plant C, N, P per PFT | C: `abs(balE) > 1e-6` and (`abs(err_rel) > 1e-3`, or vegetation C below `VEGC_BAL_FLOOR_dying` when `guard_floor_dying_stand`) (`:874-877`, abort `:905`); N: `abs(balE) > 1e-6` and `abs(err_rel) > 1e-3` (`:939`); P: same test (`:948`) but not on the PFT's planting or harvest day (`:968-969`) | 888 |
 | 3 | end of `TranspNoSalt` | `ExitMassCheck` (`f90src/Transport/Nonsalt/TranspNoSaltMod.F90:123-294`) | each gas in snow + litter + soil | `abs(errmass) > 1e-4` and `abs(safe_adb(errmass,delta_mass)) > 1e-3` (`:198`, abort `:286-287`) | 121 |
 | 3a | transport fast sub-steps | `ExitMassCheck` (`TranspNoSaltFastMod.F90:173` onward) | | `abs(err) > 1e-4` (`:239`) | |
 | 3b | transport slow sub-steps | `ExitMassCheck` (`TranspNoSaltSlowMod.F90:263` onward) | | `min(abs(err),abs(err_rel)) > 1e-5` (`:434`); `abs(err) > 1e-8` (`:460`) | |
@@ -60,16 +60,16 @@ NH3 adds its band pseudo-gas `idg_NH3B` (`:304-310`). A root-gas residual is com
 
 ## 4. The plant balance, summarised
 
-`EnterPlantBalance` stores, per PFT, `TotBegVegE = Root + Shoot + SeasonalNonst + StandDead + ShootNodule + nodulE + beyondE` (`PlantBalMod.F90:684-686`), where `nodulE` and `beyondE` come from `SumRootPoolsForBalance` (`:617-665`): root nodule pools from `NU` to `LBAL` and root pools in layers `MaxNumRootLays+1..LBAL`, with `LBAL = MAX(MaxNumRootLays, MaxSoilLays4Root_pft)` (`:640`). `CheckPlantBalanceZ` forms the same total at exit (`:817-818`) and the residual
+`EnterPlantBalance` stores, per PFT, `TotBegVegE = Root + Shoot + SeasonalNonst + StandDead + ShootNodule + nodulE + beyondE` (`PlantBalMod.F90:709-711`), where `nodulE` and `beyondE` come from `SumRootPoolsForBalance` (`:617-665`): root nodule pools from `NU` to `LBAL` and root pools in layers `MaxNumRootLays+1..LBAL`, with `LBAL = MAX(MaxNumRootLays, MaxSoilLays4Root_pft)` (`:654`). `CheckPlantBalanceZ` forms the same total at exit (`:842-843`) and the residual
 
 ```
-balE = TotEnd - TotBeg - NodulInfect - Soil2RootMycoExud + Litrfall + PlantElmDistLoss - SeedPlanted   (:820-822)
-balE(C) -= GrossCO2Fix + GrossResp + beyondAR                                                         (:827)
-balE(N) -= RootNutUptakeN + CanopyN2Fix + RootN2Fix + NH3Dep2Can                                     (:828)
-balE(P) -= RootNutUptakeP                                                                             (:829)
+balE = TotEnd - TotBeg - NodulInfect - Soil2RootMycoExud + Litrfall + PlantElmDistLoss - SeedPlanted   (:845-847)
+balE(C) -= GrossCO2Fix + GrossResp + beyondAR                                                         (:852)
+balE(N) -= RootNutUptakeN + CanopyN2Fix + RootN2Fix + NH3Dep2Can                                     (:853)
+balE(P) -= RootNutUptakeP                                                                             (:854)
 ```
 
-Harvest and disturbance removals enter through `PlantElmDistLoss_pft` ([disturbances.md](disturbances.md) §2). `guard_floor_dying_stand` (default `.false.`) only relaxes the relative C test for a stand below 1 gC/m2; `conserve_root_clamp` (default `.false.`) changes what `GrowFibrous1stRootAxes` does with a negative root pool so that the C test can close. The residual is accumulated into `PlantElmBalCum_pft` (`:941-943`).
+Harvest and disturbance removals enter through `PlantElmDistLoss_pft` ([disturbances.md](disturbances.md) §2). `guard_floor_dying_stand` (default `.false.`) only relaxes the relative C test for a stand below 1 gC/m2; `conserve_root_clamp` (default `.false.`) changes what `GrowFibrous1stRootAxes` does with a negative root pool so that the C test can close. The residual is accumulated into `PlantElmBalCum_pft` (`:972-974`).
 
 ## 5. `redist`: applying the hour (`f90src/Balances/RedistMod.F90:76-156`)
 

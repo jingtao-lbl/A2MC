@@ -24,7 +24,7 @@ python tools/render_kg_html.py --profile ecosim-cb243228 \
     --out-dir use_cases/<Model>_<Case>/reports/<stem>
 ```
 
-`--param-list` is repeatable, so one page can cover several rounds' lists. Regenerate after any graph rebuild (`scripts/build_ecosim_rag.py`). The renderer is model-agnostic: any profile in `rag/milestones.json` works, because every builder writes the same node-link format.
+`--param-list` is repeatable, so one page can cover several rounds' lists. Regenerate after any graph rebuild (`scripts/build_ecosim_rag.py`): `tools/check_kg_html_current.py` compares the page's embedded nodes and edges with the graph, pre-commit 35 refuses a commit that stages a graph and a page that disagree, and an agent hook runs the same check after a build. The renderer is model-agnostic: any profile in `rag/milestones.json` works, because every builder writes the same node-link format.
 
 ## What the graph does and does not hold
 

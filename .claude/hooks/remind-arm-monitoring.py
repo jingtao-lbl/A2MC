@@ -46,8 +46,7 @@ SUBMIT_RE = re.compile(
     r"|submit_ensemble\.sh"
     r"|submit_run\.py"               # A2MC submit-and-register wrapper (the route the sbatch hook enforces)
     r")\b",
-    re.I,
-)
+)   # case-SENSITIVE: a real command is lowercase; with re.I a `grep SBATCH` read as one (20261016e)
 # Previews and read-only queries must not trigger it.
 QUIET_RE = re.compile(r"--dry-run\b|--write-script\b|\bsqueue\b|\bsacct\b|\bscontrol\b"
                       r"|remind-arm-monitoring|block-unregistered-sbatch", re.I)
@@ -70,6 +69,20 @@ MESSAGE = (
     "  3. TERMINAL IS AN ALLOW-LIST, cross-checked against filesystem liveness. 'Not "
     "RUNNING' is not 'finished' -- a scheduler-database outage reads identically.\n"
     "Open the skill and follow it; do not re-derive a watcher shape."
+)
+
+# A submission declared OUTSIDE the run ledger (a full Phase-0 ensemble, or its relaunch) has no
+# ledger row, so its only record is the Phase-0 stem's run_tracking/ folder. Nothing said so at the
+# moment of submission, and one round ran a day with an empty one (phase0-design, Step 3).
+UNTRACKED_RE = re.compile(r"\bA2MC_UNTRACKED_JOB=")
+RUN_TRACKING = (
+    "\nUNTRACKED SUBMISSION -> its record is the Phase-0 stem's `run_tracking/` (phase0-design "
+    "Step 3), because the run ledger has no row for it. Archive it NOW, while the command line and "
+    "environment are in front of you: `SUBMISSION_r{RR}.md` (job id, run root, launcher, worklist, "
+    "overrides, environment, binary hash), the launcher as submitted, the worklist, and each "
+    "watcher's state file and log digest; use the case's `scripts/archive_run_tracking.py` where it "
+    "has one, and re-run it before the hand-off to Phase 1. `tools/check_phase0_run_tracking.py` "
+    "(pre-commit 31) blocks case work once the round moves past design without it."
 )
 
 
@@ -111,9 +124,10 @@ def main():
            not re.search(r"submitted (?:batch )?job", out, re.I):
             sys.exit(0)
 
+    message = MESSAGE + (RUN_TRACKING if UNTRACKED_RE.search(_unquoted(cmd)) else "")
     print(json.dumps({"hookSpecificOutput": {
         "hookEventName": "PostToolUse",
-        "additionalContext": MESSAGE}}))
+        "additionalContext": message}}))
     sys.exit(0)
 
 

@@ -44,6 +44,15 @@ four different ways, all live in this repo today:
   answering for R1 c00. The first measurement reported 1 missing cycle; the correct one reports 6.
   A checker that under-reports is worse than no checker, because it is trusted.
 
+THE MECHANISM-GRAPH SECTION (`memory/dev_logs_adapterkit/20261017d_*`). A cycle report must also draw the FULL mechanism
+network of the parameters the cycle tested (`tools/plot_kb_network.py`) and stage the knowledge-graph
+gaps it found in its own folder (`graph_gap_candidates.yaml`, `tools/graph_gaps.py`), for a human to
+review at cycle end before promotion to `models/<model>/`. For every cycle report whose folder stem
+sorts at or after GRAPH_SECTION_FROM, this WARNs when: no markdown in the folder embeds a figure whose
+file name contains `mechanism_graph`; the folder has no `graph_gap_candidates.yaml` (an empty
+`candidates: []` is the way to say no gap was found); or that file fails `tools/graph_gaps.py check`.
+Not retroactive: the rule took effect after the first report it would have covered was written.
+
 Exit 0 always unless the anti-silent-pass guard trips (2). Warnings are printed and counted.
 
 Usage:
@@ -73,6 +82,34 @@ REPORT_ROUND = re.compile(r"(?:^|[_-])R(\d+)[a-z]?(?=[_-]|$)", re.IGNORECASE)
 
 #: The cycle token, accepting every form in use: c0, c00, cycle0, cycle13.
 REPORT_CYCLE = re.compile(r"(?:^|[_-])(?:c|cycle)(\d{1,2})(?=[_-]|$)", re.IGNORECASE)
+
+#: Cycle reports whose folder stem (`YYYYMMDD` plus its letter) sorts at or after this must carry the
+#: mechanism-graph section. Compared as strings, which orders the date-letter stems correctly.
+GRAPH_SECTION_FROM = "20261017c"
+STEM = re.compile(r"^(\d{8}[a-z]+)_")
+EMBED = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+
+def graph_section_issues(report_dir: Path) -> list[str]:
+    """-> what the cycle report at `report_dir` lacks of its mechanism-graph section ([] if exempt)."""
+    m = STEM.match(report_dir.name)
+    if not m or m.group(1) < GRAPH_SECTION_FROM or not report_cycles(report_dir.name):
+        return []
+    out = []
+    embedded = [ref for md in report_dir.glob("*.md") for ref in EMBED.findall(md.read_text(errors="replace"))]
+    if not any("mechanism_graph" in Path(r).name for r in embedded):
+        out.append("embeds no `*mechanism_graph*` figure (`tools/plot_kb_network.py`)")
+    gaps = report_dir / "graph_gap_candidates.yaml"
+    if not gaps.is_file():
+        out.append("has no `graph_gap_candidates.yaml` (write `candidates: []` if no gap was found)")
+    else:
+        import importlib.util
+        sp = importlib.util.spec_from_file_location("_graph_gaps", ROOT / "tools" / "graph_gaps.py")
+        gg = importlib.util.module_from_spec(sp)
+        sp.loader.exec_module(gg)
+        errs, _ = gg.check(gaps)
+        out += [f"`graph_gap_candidates.yaml`: {e}" for e in errs]
+    return out
 
 
 def report_cycles(name: str) -> set[tuple[int | None, int]]:
@@ -135,6 +172,10 @@ def main(argv=None) -> int:
         mark = "✔" if not missing else " "
         print(f"  {mark} {case.name:<22} {n_closed:>3} closed cycle(s), {n_dirs:>3} report dir(s)"
               + (f", {len(missing)} MISSING" if missing else ""))
+        for d in sorted(p for p in (case / "reports").glob("*") if p.is_dir()) if (case / "reports").is_dir() else []:
+            for issue in graph_section_issues(d):
+                warnings.append(f"{case.name} cycle report `{d.name}` {issue}. `write-report` item 5 requires the "
+                                f"tested parameters' mechanism graph and the gaps staged beside it.")
         for rr, ee, stem in missing:
             warnings.append(
                 f"{case.name} round {rr} cycle {ee} was CLOSED (its Phase-6 log is `{stem}`) and no "
@@ -169,7 +210,7 @@ def main(argv=None) -> int:
     print()
     for w in warnings:
         print(f"  {label} {w}")
-    print(f"\n{len(warnings)} cycle(s) closed with no report"
+    print(f"\n{len(warnings)} cycle-report warning(s)"
           + (" — ERRORS" if a.strict else " (warnings; not blocking)"))
     print("Fix per .claude/skills/write-report/SKILL.md, the CYCLE report section.")
     return 1 if a.strict else 0

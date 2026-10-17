@@ -1013,4 +1013,134 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude_memor
     fi
 fi
 
+# (30) tools/check_todo_scope.py -- an item ADDED to the root TODO.md that names a case carries a
+# scope tag. The root TODO.md holds A2MC-level work, tagged (FRAMEWORK), and model-level work, tagged
+# (MODEL: <model>); an item that affects one case only belongs in that case's workflow_state
+# open_threads (memory feedback_todo_scope_by_impact, PI 2026-10-16). ADVISORY: the commit proceeds.
+# The tool is `visibility: private` (it polices a development-only file), so run_tool skips it in a
+# downstream copy.
+if git diff --cached --name-only --diff-filter=ACM | grep -qx 'TODO.md'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        TDS_OUT="$(run_tool "$PY" "$ROOT/tools/check_todo_scope.py" --staged 2>&1)"
+        TDS_RC=$?
+        set -e
+        if [[ $TDS_RC -eq 1 ]]; then
+            echo "" >&2
+            echo "$TDS_OUT" | sed 's/^/pre-commit: ADVISORY -- /' >&2
+            echo "  Not blocking." >&2
+        fi
+    fi
+fi
+
+# (31) tools/check_phase0_run_tracking.py -- a round past Phase 0 carries its full ensemble's run
+# record in the Phase-0 stem's run_tracking/. Testing runs are in the case's run ledger; the full
+# ensemble is submitted under A2MC_UNTRACKED_JOB, whose declaration says its record is the Phase-0
+# stem, and nothing checked that the record existed (phase0-design Step 3). BLOCKING: the record is
+# cheap to produce at the handoff and cannot be rebuilt once the run root and the watcher logs are
+# gone. Same case-work trigger as (9), narrowed by --staged to the cases this commit touches; stems
+# dated before the rule are exempt inside the tool.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^use_cases/[^/]+/'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        P0R_OUT="$(run_tool "$PY" "$ROOT/tools/check_phase0_run_tracking.py" --staged 2>&1)"
+        P0R_RC=$?
+        set -e
+        if [[ $P0R_RC -ne 0 ]]; then
+            echo "" >&2
+            echo "$P0R_OUT" >&2
+            echo "pre-commit: archive the Phase-0 ensemble's run record before committing -- see above." >&2
+            exit 1
+        fi
+    fi
+fi
+
+# (32) tools/case_script_index.py -- a case's scripts/README.md and case_template/README.md indexes list
+# every script template and run file, from each file's own first line. A phase chooses from those
+# READMEs; one case's hand-kept scripts table listed 3 of its 29 templates, the run-file tables named
+# 1 to 4 of their 3 to 7 files, and a phase script was written from scratch beside a template that
+# already did the job. BLOCKING, and only for the folders with a staged change, so an untouched folder
+# is not held to a rule it predates. The fix is one command, printed with the failure.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^use_cases/[^/]+/(scripts|case_template)/'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        CSI_OUT="$(run_tool "$PY" "$ROOT/tools/case_script_index.py" --staged 2>&1)"
+        CSI_RC=$?
+        set -e
+        if [[ $CSI_RC -ne 0 ]]; then
+            echo "" >&2
+            echo "$CSI_OUT" >&2
+            echo "pre-commit: a case's template or run-file index is stale -- regenerate it and stage the README." >&2
+            exit 1
+        fi
+    fi
+fi
+
+# (33) tools/check_script_provenance.py -- a phase script ADDED in this commit names the case template
+# it was adapted from (`Template: scripts/<name>`), or says `Template: none (first use)`; an unedited
+# copy of a template needs no line. BLOCKING, and only for scripts this commit adds, so the 900-odd
+# phase scripts written before the rule are not re-litigated. Archived run files (run_tracking/,
+# submit_scripts/) are records, not scripts, and are skipped.
+if git diff --cached --name-only --diff-filter=A | grep -qE '^use_cases/[^/]+/memory/phase_results/.+\.(py|sh)$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        CSP_OUT="$(run_tool "$PY" "$ROOT/tools/check_script_provenance.py" --staged 2>&1)"
+        CSP_RC=$?
+        set -e
+        if [[ $CSP_RC -ne 0 ]]; then
+            echo "" >&2
+            echo "$CSP_OUT" >&2
+            echo "pre-commit: a new phase script does not say which case template it came from -- see above." >&2
+            exit 1
+        fi
+    fi
+fi
+
+# (34) tools/check_kb_readme.py -- a commit that changes a model's knowledge base (its knowledge_base_dir,
+# curated seed, a profile's graph, metadata or index, or its rag/milestones.json entries) stages that
+# model's docs/<model>-knowledge-base/README.md, and the README names the commit the live profile's
+# knowledge base describes and every base and patch commit in its update history. Until 2026-10-16
+# nothing recorded which model commit a knowledge base described except milestones.json itself, which
+# no reader opens. BLOCKING; a model with no README is held to it only when its knowledge base changes.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(docs/[^/]+-knowledge-base/|models/[^/]+/curated_seed|rag/(milestones\.json|graphs/|metadata/|chroma_db/))'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        KBR_OUT="$(run_tool "$PY" "$ROOT/tools/check_kb_readme.py" --staged 2>&1)"
+        KBR_RC=$?
+        set -e
+        if [[ $KBR_RC -ne 0 ]]; then
+            echo "" >&2
+            echo "$KBR_OUT" >&2
+            echo "pre-commit: record this knowledge-base update in the model's knowledge-base README -- see above." >&2
+            exit 1
+        fi
+    fi
+fi
+
+# (35) tools/check_kg_html_current.py -- a knowledge graph's HTML view (<kb_dir>/graph_html/<profile>_
+# knowledge_graph.html) embeds the graph's nodes and edges at render time, so a rebuilt graph leaves the
+# page describing the previous one. On 2026-10-16 the EcoSIM graph gained a mechanism and seven edges while
+# its page stayed at the build before, until the PI asked. BLOCKING, for a commit that stages a profile's
+# graph JSON or its page; the expected data comes from the renderer's own page_data().
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^(rag/graphs/[^/]+\.json|docs/[^/]+/graph_html/)'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        KGH_OUT="$(run_tool "$PY" "$ROOT/tools/check_kg_html_current.py" --staged 2>&1)"
+        KGH_RC=$?
+        set -e
+        if [[ $KGH_RC -ne 0 ]]; then
+            echo "" >&2
+            echo "$KGH_OUT" >&2
+            echo "pre-commit: regenerate the knowledge graph's HTML view and stage it with the graph -- see above." >&2
+            exit 1
+        fi
+    fi
+fi
+
 exit 0

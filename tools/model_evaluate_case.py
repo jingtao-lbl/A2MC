@@ -31,6 +31,9 @@ Target spec (one dict per target):
     reduce     : "last" | "mean" | "max" (window only; default "mean")
     observed   : observed value
     weight     : optional (default 1.0)
+    scored     : optional (default true). ``false`` marks a GUARD: it is reduced and
+                 returned in the errors and simulated values like any target, but it
+                 does not enter ``total_cost``.
 
 Usage (library):
     from tools.model_evaluate_case import evaluate_model_case
@@ -198,6 +201,16 @@ def evaluate_model_case(
     from tools.cost_functions import compute_snapshot_cost
     total_cost, errors = compute_snapshot_cost(
         simulated, observed, method=method, aggregation=aggregation)
+    # A target marked `scored: false` is a GUARD: reported in `errors` and `simulated`, kept out
+    # of the aggregate. A guard that duplicates scored terms (an annual total beside the four
+    # seasons that sum to it) would otherwise be counted twice in the total.
+    scored = [t["name"] for t in targets if t.get("scored", True) is not False]
+    if not scored:
+        raise ValueError("every target is marked `scored: false`; there is nothing to aggregate")
+    if len(scored) < len(targets):
+        total_cost, _ = compute_snapshot_cost(
+            {k: simulated[k] for k in scored}, {k: observed[k] for k in scored},
+            method=method, aggregation=aggregation)
     return total_cost, errors, simulated
 
 

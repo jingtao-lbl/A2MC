@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `f90src/Plant_bgc/PlantPhenolMod.F90`, phenology parts of `PlantBranchMod.F90`, `StomatesMod.F90`, `UptakesMod.F90`, `GrosubsMod.F90`, `PlantDisturbsMod.F90`, `LitterFallMod.F90`, `InitPlantMod.F90`; `f90src/Prescribed_pheno/PrescribePhenolMod.F90`; `f90src/Ecosim_mods/StartqMod.F90`; `f90src/IOutils/PlantInfoMod.F90`; `f90src/Modelforc/WthrMod.F90`
 **Last verified:** 2026-10-15
 ---

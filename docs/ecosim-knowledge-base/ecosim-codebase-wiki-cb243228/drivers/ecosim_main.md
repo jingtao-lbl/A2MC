@@ -1,5 +1,5 @@
 ---
-**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits)
+**Source pin:** EcoSIM commit `cb243228` (jingtao-lbl/EcoSIM `fix/r2-plant-balance`; upstream `09eb674a` + 2 fix commits) · patched to `0340d71b` (see the wiki `index.md`, Patches applied)
 **Scope:** `drivers/ecosim/{ecosim.F90,EcoSIMAPI.F90}`, with the time manager `f90src/Utils/ecosim_time_mod.F90`, the run controls in `f90src/Modelconfig/{EcoSIMCtrlMod,EcoSIMConfig}.F90`, and `f90src/Utils/{fileUtil,abortutils}.F90`
 **Last verified:** 2026-10-15
 ---
@@ -162,7 +162,7 @@ Before the read it overwrites most declaration defaults (`drivers/ecosim/EcoSIMA
 
 Both are `EcoSIMCtrlMod` logicals appended to the second `/ecosim/` statement (`drivers/ecosim/EcoSIMAPI.F90:180-182`). A Fortran namelist read does not require every member, so a runfile that omits them keeps the `.false.` initialiser and reproduces the earlier binary's results (comment `:170-179`).
 
-`guard_floor_dying_stand` (`f90src/Modelconfig/EcoSIMCtrlMod.F90:41`) changes two sites. In `WithdrawNutBranchLeaves` the leaf nutrient-withdrawal divisions use `CPOOLT_div = AMAX1(CPOOLT, CPOOL_DIV_FLOOR_dying)` with `CPOOL_DIV_FLOOR_dying = 1.0e-12` (`f90src/Plant_bgc/PlantBranchMod.F90:308-312`; parameter `f90src/Modelconfig/EcoSIMCtrlMod.F90:53`). In `CheckPlantBalanceZ`, when total vegetation C is below `VEGC_BAL_FLOOR_dying = 1.0` gC m-2 (`f90src/Modelconfig/EcoSIMCtrlMod.F90:61`), the abort condition becomes the absolute test alone: `lbalC_abort = abs(balE) > 1e-6 .and. (lveg_too_small_for_relative_test .or. abs(err_rel) > 1e-3)` (`f90src/Plant_bgc/PlantBalMod.F90:849-852`). With the switch off this reduces to the original `abs(balE) > 1e-6 .and. abs(err_rel) > 1e-3`. The switch does not stop a stand dying; it changes which numerical failures abort.
+`guard_floor_dying_stand` (`f90src/Modelconfig/EcoSIMCtrlMod.F90:41`) changes two sites. In `WithdrawNutBranchLeaves` the leaf nutrient-withdrawal divisions use `CPOOLT_div = AMAX1(CPOOLT, CPOOL_DIV_FLOOR_dying)` with `CPOOL_DIV_FLOOR_dying = 1.0e-12` (`f90src/Plant_bgc/PlantBranchMod.F90:308-312`; parameter `f90src/Modelconfig/EcoSIMCtrlMod.F90:53`). In `CheckPlantBalanceZ`, when total vegetation C is below `VEGC_BAL_FLOOR_dying = 1.0` gC m-2 (`f90src/Modelconfig/EcoSIMCtrlMod.F90:61`), the abort condition becomes the absolute test alone: `lbalC_abort = abs(balE) > 1e-6 .and. (lveg_too_small_for_relative_test .or. abs(err_rel) > 1e-3)` (`f90src/Plant_bgc/PlantBalMod.F90:874-877`). With the switch off this reduces to the original `abs(balE) > 1e-6 .and. abs(err_rel) > 1e-3`. The switch does not stop a stand dying; it changes which numerical failures abort.
 
 `conserve_root_clamp` (`f90src/Modelconfig/EcoSIMCtrlMod.F90:46`) is used only in `GrowFibrous1stRootAxes`. When that routine clamps a negative secondary or primary structural root pool to zero, the switch calls `ChargeRootDeficitUpAxis` to charge the uncovered deficit to the axis above (`f90src/Plant_bgc/RootMod.F90:3255`, `:3265`; routine `:3309-3345`). Off, the clamp silently creates mass, which the plant balance then sees as a residual. See `../plant_bgc/roots_and_uptake.md` for the balance bookkeeping.
 
@@ -257,7 +257,7 @@ Abnormal end through `endrun`: every overload prints `ENDRUN:` with the message 
 | negative simulation length | `f90src/Modelconfig/EcoSIMCtrlMod.F90:179-181` |
 | any NetCDF error, including a missing variable in a bare `ncd_getvar` | `f90src/Utils/ncdio_pio.F90:463-466` (`check_ret`) |
 | missing plant trait file | `f90src/Modelpars/PlantBGCPars.F90:196-198` |
-| plant C, N or P balance failure | `f90src/Plant_bgc/PlantBalMod.F90:878` and the N and P aborts that follow, in `CheckPlantBalanceZ` |
+| plant C, N or P balance failure | `f90src/Plant_bgc/PlantBalMod.F90:905` and the N and P aborts that follow, in `CheckPlantBalanceZ` |
 | unreadable restart pointer | `f90src/IOutils/RestartMod.F90:10519-10525` |
 
 Non-zero exits come only from `abort()` in `namelist_to_buffer` (`f90src/Utils/fileUtil.F90:150`, `:173`), `error stop 'timings: wall clock unavailable'` (`f90src/Utils/timings.F90:78`), and floating-point traps from `-ffpe-trap=invalid,zero,overflow` (`cmake/Modules/set_up_compilers.cmake:79`). Several physics routines also execute a bare `stop` after a diagnostic print, for example `f90src/Balances/RedistMod.F90:363` and `f90src/Transport/Nonsalt/TranspNoSaltSlowMod.F90:2811`, which also exit 0.
@@ -279,7 +279,7 @@ Run evidence (a site probe run on binary `09eb674a`, same `abortutils.F90` as cb
 | `./ecosim.setup` | `write_modelconfig` | `drivers/ecosim/EcoSIMAPI.F90:656-657` |
 | `./<case>.plant_trait.desc.<year>` | plant info when `disp_planttrait` | `f90src/IOutils/PlantInfoMod.F90:83-87` |
 | `<cwd>/<case>_outputs/timing/*` | timers, only with `do_timing` | `f90src/Utils/timings.F90:54-65` |
-| `fort.888`, `fort.889` | diagnostic writes from the plant balance and other checks | for example `f90src/Plant_bgc/PlantBalMod.F90:854` |
+| `fort.888`, `fort.889` | diagnostic writes from the plant balance and other checks | for example `f90src/Plant_bgc/PlantBalMod.F90:879` |
 
 ## Cross-references
 
